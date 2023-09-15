@@ -13,6 +13,7 @@
     <script src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.js"
         integrity="sha384-o4ufwq3oKqc7IoCcR08YtZXmgOljhTggRwxP2CLbSqeXGtitAxwYaUln/05nJjit"
         crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/idb@7/build/umd.js"></script>
     <link href="style.css" rel="stylesheet">
 
 </head>
@@ -39,11 +40,11 @@
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="large-tab" data-bs-toggle="tab" data-bs-target="#large-tab-pane" type="button"
-                role="tab" aria-controls="large-tab-pane" aria-selected="false">Large files</button>
+                role="tab" aria-controls="large-tab-pane" aria-selected="false">Cleanup</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-tab-pane"
-                type="button" role="tab" aria-controls="contact-tab-pane" aria-selected="false">About</button>
+            <button class="nav-link" id="detail-tab" data-bs-toggle="tab" data-bs-target="#detail-tab-pane"
+                type="button" role="tab" aria-controls="detail-tab-pane" aria-selected="false">Details</button>
         </li>
     </ul>
     <div class="tab-content" id="myTabContent">
@@ -59,13 +60,22 @@
 
         </div>
         <div class="tab-pane fade" id="large-tab-pane" role="tabpanel" aria-labelledby="large-tab" tabindex="0">
-            <div class="container">
+            <div class="row row-cols-1 g-2">
+                <div class="col">
+                        <button onclick="scanAllFiles()">Scan all files</button>
+                        <button onclick="showLargeFiles()">Large files</button>
+                        <button onclick="showDuplicates()">Duplicates</button>
+                        <div id="scanLog"></div>
+                </div>
+            </div>
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="largeFilesDiv">
             </div>
         </div>
-        <div class="tab-pane fade" id="contact-tab-pane" role="tabpanel" aria-labelledby="contact-tab" tabindex="0">...
+        <div class="tab-pane fade" id="detail-tab-pane" role="tabpanel" aria-labelledby="detail-tab" tabindex="0">
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="detailDiv">
+                
+            </div>        
         </div>
-        <div class="tab-pane fade" id="disabled-tab-pane" role="tabpanel" aria-labelledby="disabled-tab" tabindex="0">
-            ...</div>
     </div>
 
 
@@ -74,6 +84,7 @@
     <script type="text/javascript" src="./ui.js"></script>
     <script type="text/javascript" src="./onedrive.js"></script>
     <script type="text/javascript" src="./authRedirect.js"></script>
+    
 
 </body>
 

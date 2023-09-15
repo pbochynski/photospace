@@ -8,53 +8,45 @@ function showWelcomeMessage(username) {
     signInButton.setAttribute('class', "btn btn-success")
     signInButton.innerHTML = "Sign Out";
 }
-const folderCache = {}
-let currentFolder
 
-function updateUI(data, endpoint) {
-    console.log('updateUI context:', endpoint);
-    if (endpoint.startsWith(graphConfig.graphFilesEndpoint)) {
-        const breadCrumbDiv = document.getElementById("breadCrumb");
-        breadCrumbDiv.innerHTML='<b>'+breadCrumb(currentFolder)+'</b>'
-        console.log(JSON.stringify(data, null, 2))
-        if (!data.value) {
-            alert("You do not have onedrive!")
-        } else if (data.value.length < 1) {
-            alert("Your drive is empty!")
-        } else {
-            const fileDiv = document.getElementById("fileDiv");
-            fileDiv.innerHTML = '';
-            data.value.map((d, i) => {
-                if (d.folder) {
-                    folderCache[d.id]=d
-                }
-                fileDiv.appendChild(fileCard(d))
-            });
-        }
-    }
-}
-function parentFolder(id) {
+addEventListener("popstate", (event) => {
+    console.log("Popstate event")
+    render()
+});
 
+function render() {
+    const url = new URL(window.location);
+    let currentFolder = url.searchParams.get("folder")
+    const fileDiv = document.getElementById("fileDiv");
+    fileDiv.innerHTML = '';
+    readFiles(currentFolder, renderFiles)
+    parentFolders([{id:currentFolder}],renderParents)
 }
 
-function breadCrumb(id) {
-    // let html = `<a href="" onclick="goBreadCrumb()>Root</a>`
+function renderParents(folders){
+    const breadCrumbDiv = document.getElementById("breadCrumb");
+
+    let i=folders.length-1
     let html = ""
-    while (folderCache[id]) {
-        let name = folderCache[id].name
-        if (html == "") {
-            html = `${name}`
-        } else {
-            html = `<a href="#" onclick="openFolder('${id}')">${name}</a>/` + html
-        }
-        id = folderCache[id].parentReference.id
+    while (i>0) {
+        html+= `/ <a href="javascript:void(0)" onclick="openFolder('${folders[i].id}')">${folders[i].name}</a>`
+        --i;
     }
-    if (html=="") {
-        html="My files"
+    breadCrumbDiv.innerHTML = html
+}
+function renderFiles(data) {
+    if (!data.value) {
+        alert("You do not have onedrive!")
     } else {
-        html = `<a href="#" onclick="openFolder()">My files</a>/` + html
+        const fileDiv = document.getElementById("fileDiv");
+        data.value.map((d, i) => {
+            fileDiv.appendChild(fileCard(d))
+        });
     }
-    return html;
+    cacheFiles(data)
+}
+async function onRoot(data) {
+    openFolder(data.id)
 }
 
 function formatFileSize(bytes, decimalPoint) {
@@ -74,40 +66,118 @@ function fileCard(d) {
     card.setAttribute("class", "card h-100");
     const body = document.createElement("div")
     const img = document.createElement("img")
-    img.setAttribute("class","card-img")
-    img.setAttribute("id","img_"+d.id)
+    img.setAttribute("class", "card-img")
+    img.setAttribute("id", "img_" + d.id)
+    img.setAttribute("height", "160")
     if (d.folder) {
-        img.setAttribute("src","folder.svg")
+        img.setAttribute("src", "folder.svg")
+    } else if (d.image) {
+        img.setAttribute("src", "picture.svg")
     } else {
-        img.setAttribute("src","picture.svg")        
+        img.setAttribute("src", "file.svg")
     }
-    if (d.image) {
-        thumbnails(d.id, (data, endpoint)=>(updateThumbnail(data, img)))
+    img.setAttribute("onclick", `window.open("${d.webUrl}")`)
+    if (!d.folder && d.thumbnails && d.thumbnails.length > 0 && d.thumbnails[0].large) {
+        img.setAttribute("src", d.thumbnails[0].large.url)
     }
     card.appendChild(img);
     body.setAttribute("class", "card-body");
     let name = `${d.name}<br/>`
 
     if (d.folder) {
-        name = `<a href="#" onclick="openFolder('${d.id}')">${d.name}</a><br/>`
+        name = `<a href="javascript:void(0)" onclick="openFolder('${d.id}')">${d.name}</a><br/>`
     }
-    body.innerHTML = `${name}<small>${formatFileSize(d.size, 2)}</small>`
+    body.innerHTML = `<small>${d.parentReference.path.replace('/drive/root:','')}<br/>${name}${formatFileSize(d.size, 2)}</small>`
     card.appendChild(body)
     col.appendChild(card)
     return col
 }
 
-function openFolder(id) {
-    currentFolder=id;
-    readFiles(id, updateUI)
+async function openFolder(id) {
+
+    const url = new URL(window.location);
+    if (!id) {
+        id = url.searchParams.get("folder")
+    }
+    if (!id) {
+        console.log("Find root folder")
+        rootFolder(onRoot)
+    } else {
+        if (url.searchParams.get("folder")!=id){
+            url.searchParams.set("folder", id);
+            window.history.pushState({}, "", url);    
+        }
+        render()
+    }
+}
+function scanAllFiles() {
+    cacheAllFiles(onScanLog)
+}
+function onScanLog({urls,processed}) {
+    let log = document.getElementById("scanLog")
+    log.innerHTML = `<small>${urls.map((o)=>o.path.replace('/drive/root:','')).join("<br/>")}</small>`
 }
 
-function updateThumbnail(data, img) {
-    console.log("AAAAAAAA", JSON.stringify(data,null,2))
-    if (data.value && data.value.length>0 && data.value[0].large) {
-      console.log("Changed src to:", data.value[0].large.url)
-      img.setAttribute("src",data.value[0].large.url)
-
+async function showLargeFiles() {
+    
+    let list = await largeFiles()
+    let div = document.getElementById("largeFilesDiv")
+    div.innerHTML=''
+    for (let d of list) {
+        div.appendChild(fileCard(d))
     }
-    // document.getElementById("img_"+data.)
+}
+let pairs = {}
+async function showDuplicates() {
+    pairs = await findDuplicates()
+
+
+    let div = document.getElementById("largeFilesDiv")
+    let keys = Object.keys(pairs).sort((a,b)=> pairs[b][0].items.length-pairs[a][0].items.length)    
+    div.innerHTML=""
+    for (let k of keys) {
+        div.appendChild(duplicateCard(k, pairs[k]))
+    }
+    // for (let d of list) {
+    //     div.appendChild(fileCard(d))
+    // }
+}
+
+function prettyPath(path) {
+    return decodeURI(path.replace('/drive/root:',''))
+}
+function duplicateCard(key, d) {
+    const col = document.createElement("div");
+    col.setAttribute("class", "col")
+    const card = document.createElement("div");
+    card.setAttribute("class", "card h-100");
+    const body = document.createElement("div")
+    body.setAttribute("class", "card-body");
+    let html=`${d[0].items.length} duplicates<br/>`
+    html+=`<small>${prettyPath(d[0].path)}</small><br/>`
+    html+=`<button onclick="showDetails('${key}',0)">show</button><button onclick="deleteDuplicates('${key}',0)">delete</button><br/>`
+    html+=`<small>${prettyPath(d[1].path)}</small><br/>`
+    html+=`<button onclick="showDetails('${key}',1)">show</button><button onclick="deleteDuplicates('${key}',1)">delete</button>`
+    body.innerHTML = html
+    card.appendChild(body)
+    col.appendChild(card)
+    return col
+}
+function showDetails(key,index) {
+    document.getElementById("detail-tab").click()
+    let div = document.getElementById("detailDiv")
+    div.innerHTML=""
+    console.log("Details for:",pairs[key][index].items.length)
+    for (let f of pairs[key][index].items) {
+
+        div.appendChild(fileCard(f))
+    }
+
+}
+
+async function deleteDuplicates(key, index) {
+    deleteItems(pairs[key][index].items).then((res)=>{
+        deleteFromCache(pairs[key][index].items)
+        console.log(res)
+    })
 }

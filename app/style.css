@@ -1,3 +1,7 @@
 .breadcrumb {
     margin: 0.5em;
 }
+
+img {
+    object-fit: contain;
+}

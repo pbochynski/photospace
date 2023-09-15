@@ -33,7 +33,7 @@ function selectAccount () {
         console.log("one user")
         username = currentAccounts[0].username;
         showWelcomeMessage(username);
-        openFolder();
+        openFolder()
     }
 }
 
@@ -43,7 +43,7 @@ function handleResponse(response) {
         console.log("not null response")
         username = response.account.username;
         showWelcomeMessage(username);
-        openFolder();
+        openFolder()
     } else {
         selectAccount();
     }
