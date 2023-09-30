@@ -87,7 +87,7 @@ function fileCard(d) {
     if (d.folder) {
         name = `<a href="javascript:void(0)" onclick="openFolder('${d.id}')">${d.name}</a><br/>`
     }
-    body.innerHTML = `<small>${d.parentReference.path.replace('/drive/root:','')}<br/>${name}${formatFileSize(d.size, 2)}</small>`
+    body.innerHTML = `<small>${prettyPath(d.parentReference.path)}<br/>${name}${formatFileSize(d.size, 2)}</small>`
     card.appendChild(body)
     col.appendChild(card)
     return col
