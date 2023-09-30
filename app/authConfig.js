@@ -11,7 +11,7 @@ const msalConfig = {
         authority: "https://login.microsoftonline.com/common",
         // Full redirect URL, in form of http://localhost:3000
         // redirectUri: "http://localhost:3000",
-        redirectUri: "https://pbochynski.github.io/photospace"
+        redirectUri: "https://photospace.app"
     },
     cache: {
         cacheLocation: "localStorage", // This configures where your cache will be stored
