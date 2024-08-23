@@ -14,22 +14,26 @@ addEventListener("popstate", (event) => {
     render()
 });
 
-function render() {
+async function render() {
     const url = new URL(window.location);
     let currentFolder = url.searchParams.get("folder")
     const fileDiv = document.getElementById("fileDiv");
-    fileDiv.innerHTML = '';
-    readFiles(currentFolder, renderFiles)
-    parentFolders([{id:currentFolder}],renderParents)
+    fileDiv.innerHTML = ""
+    const statusDiv = document.getElementById("statusDiv");
+    statusDiv.innerText = "Loading ..."
+    readFolder(currentFolder, renderFiles).then(() => {
+        statusDiv.innerText = ""
+    })
+    parentFolders(currentFolder).then(renderParents)
 }
 
-function renderParents(folders){
+function renderParents(folders) {
     const breadCrumbDiv = document.getElementById("breadCrumb");
 
-    let i=folders.length-1
+    let i = folders.length - 1
     let html = ""
-    while (i>0) {
-        html+= `/ <a href="javascript:void(0)" onclick="openFolder('${folders[i].id}')">${folders[i].name}</a>`
+    while (i > 0) {
+        html += `/ <a href="javascript:void(0)" onclick="openFolder('${folders[i].id}')">${folders[i].name}</a>`
         --i;
     }
     breadCrumbDiv.innerHTML = html
@@ -39,14 +43,14 @@ function renderFiles(data) {
         alert("You do not have onedrive!")
     } else {
         const fileDiv = document.getElementById("fileDiv");
+        const statusDiv = document.getElementById("statusDiv");
+        statusDiv.innerText = statusDiv.innerText + "."
+
         data.value.map((d, i) => {
             fileDiv.appendChild(fileCard(d))
         });
     }
     cacheFiles(data)
-}
-async function onRoot(data) {
-    openFolder(data.id)
 }
 
 function formatFileSize(bytes, decimalPoint) {
@@ -99,30 +103,25 @@ async function openFolder(id) {
     if (!id) {
         id = url.searchParams.get("folder")
     }
-    if (!id) {
-        console.log("Find root folder")
-        rootFolder(onRoot)
-    } else {
-        if (url.searchParams.get("folder")!=id){
-            url.searchParams.set("folder", id);
-            window.history.pushState({}, "", url);    
-        }
-        render()
+    if (url.searchParams.get("folder") != id) {
+        url.searchParams.set("folder", id);
+        window.history.pushState({}, "", url);
     }
+    render()
 }
 function scanAllFiles() {
     cacheAllFiles(onScanLog)
 }
-function onScanLog({urls,processed}) {
+function onScanLog({ urls, processed }) {
     let log = document.getElementById("scanLog")
-    log.innerHTML = `<small>${urls.map((o)=>o.path.replace('/drive/root:','')).join("<br/>")}</small>`
+    log.innerHTML = `<small>${urls.map((o) => o.path.replace('/drive/root:', '')).join("<br/>")}</small>`
 }
 
 async function showLargeFiles() {
-    
+
     let list = await largeFiles()
     let div = document.getElementById("largeFilesDiv")
-    div.innerHTML=''
+    div.innerHTML = ''
     for (let d of list) {
         div.appendChild(fileCard(d))
     }
@@ -133,8 +132,8 @@ async function showDuplicates() {
 
 
     let div = document.getElementById("largeFilesDiv")
-    let keys = Object.keys(pairs).sort((a,b)=> pairs[b][0].items.length-pairs[a][0].items.length)    
-    div.innerHTML=""
+    let keys = Object.keys(pairs).sort((a, b) => pairs[b][0].items.length - pairs[a][0].items.length)
+    div.innerHTML = ""
     for (let k of keys) {
         div.appendChild(duplicateCard(k, pairs[k]))
     }
@@ -144,7 +143,7 @@ async function showDuplicates() {
 }
 
 function prettyPath(path) {
-    return decodeURI(path.replace('/drive/root:',''))
+    return decodeURI(path.replace('/drive/root:', ''))
 }
 function duplicateCard(key, d) {
     const col = document.createElement("div");
@@ -153,21 +152,21 @@ function duplicateCard(key, d) {
     card.setAttribute("class", "card h-100");
     const body = document.createElement("div")
     body.setAttribute("class", "card-body");
-    let html=`${d[0].items.length} duplicates<br/>`
-    html+=`<small>${prettyPath(d[0].path)}</small><br/>`
-    html+=`<button onclick="showDetails('${key}',0)">show</button><button onclick="deleteDuplicates('${key}',0)">delete</button><br/>`
-    html+=`<small>${prettyPath(d[1].path)}</small><br/>`
-    html+=`<button onclick="showDetails('${key}',1)">show</button><button onclick="deleteDuplicates('${key}',1)">delete</button>`
+    let html = `${d[0].items.length} duplicates<br/>`
+    html += `<small>${prettyPath(d[0].path)}</small><br/>`
+    html += `<button onclick="showDetails('${key}',0)">show</button><button onclick="deleteDuplicates('${key}',0)">delete</button><br/>`
+    html += `<small>${prettyPath(d[1].path)}</small><br/>`
+    html += `<button onclick="showDetails('${key}',1)">show</button><button onclick="deleteDuplicates('${key}',1)">delete</button>`
     body.innerHTML = html
     card.appendChild(body)
     col.appendChild(card)
     return col
 }
-function showDetails(key,index) {
+function showDetails(key, index) {
     document.getElementById("detail-tab").click()
     let div = document.getElementById("detailDiv")
-    div.innerHTML=""
-    console.log("Details for:",pairs[key][index].items.length)
+    div.innerHTML = ""
+    console.log("Details for:", pairs[key][index].items.length)
     for (let f of pairs[key][index].items) {
 
         div.appendChild(fileCard(f))
@@ -176,7 +175,7 @@ function showDetails(key,index) {
 }
 
 async function deleteDuplicates(key, index) {
-    deleteItems(pairs[key][index].items).then((res)=>{
+    deleteItems(pairs[key][index].items).then((res) => {
         deleteFromCache(pairs[key][index].items)
         console.log(res)
     })

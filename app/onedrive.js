@@ -1,6 +1,6 @@
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"
 
-function callMSGraph(endpoint, token, callback) {
+function fetchWithToken(url, token) {
   const headers = new Headers();
   const bearer = `Bearer ${token}`;
 
@@ -11,63 +11,40 @@ function callMSGraph(endpoint, token, callback) {
     headers: headers
   };
 
-  console.log('request made to Graph API at: ' + new Date().toString(), endpoint);
-
-  fetch(endpoint, options)
-    .then(response => response.json())
-    .then(response => {
-      callback(response)
-      if (response["@odata.nextLink"]) {
-        callMSGraph(response["@odata.nextLink"], token, callback)
-      }
-    })
-    .catch(error => console.log(error));
+  return fetch(url, options)
 }
 
-function rootFolder(callback) {
-  getTokenRedirect(tokenRequest)
-    .then(response => {
-      callMSGraph(graphFilesEndpoint + '/root', response.accessToken, callback);
 
-    }).catch(error => {
-      console.error(error);
-    });
-
-}
-function parentFolders(folders, callback) {
+async function parentFolders(id) {
+  let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+  let folders = []
+  while (id) {
+    let data = await fetchWithToken(graphFilesEndpoint + `/items/${id}`, token).then(response => response.json())
+    folders.push({id, name: data.name})
+    id = (data.parentReference && data.parentReference.id) ? data.parentReference.id : null
+  }
   console.log("Folders: ", folders)
-  let id = folders[folders.length - 1].id
-  getTokenRedirect(tokenRequest)
-    .then(response => {
-      callMSGraph(graphFilesEndpoint + `/items/${id}`, response.accessToken, (data) => {
-        folders[folders.length - 1].name = data.name
-        if (data.parentReference && data.parentReference.id) {
-          folders.push({ id: data.parentReference.id })
-          parentFolders(folders, callback)
-        } else {
-          callback(folders)
-        }
-      });
-
-    }).catch(error => {
-      console.error(error);
-    });
-
+  return folders
 }
 
-
-
-
-function readFiles(id, callback) {
+async function readFolder(id, callback) {
+  let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
   const path = (id) ? `/items/${id}` : `/root`
-  getTokenRedirect(tokenRequest)
-    .then(response => {
-      callMSGraph(graphFilesEndpoint + path + '/children?$expand=thumbnails', response.accessToken, callback);
-
-    }).catch(error => {
-      console.error(error);
-    });
+  let data = await fetchWithToken(graphFilesEndpoint + path + '/children?$expand=thumbnails', token).then(response => response.json())
+  if (callback) {
+    callback(data)
+  }
+  while (data["@odata.nextLink"]) {
+    let next = await fetchWithToken(data["@odata.nextLink"], token).then(response => response.json())
+    data.value = data.value.concat(next.value)
+    data["@odata.nextLink"] = next["@odata.nextLink"]
+    if (callback) {
+      callback(next)
+    }
+  }
+  return data
 }
+
 async function deleteFromCache(items){
   let db = await getFilesDB()
   const tx = db.transaction('files', 'readwrite');
@@ -108,32 +85,6 @@ async function deleteItems(items) {
   )
 }
 
-async function getDriveData(url) {
-  return new Promise(async (resolve, reject) => {
-    getTokenRedirect(tokenRequest)
-      .then(response => {
-        const headers = new Headers();
-        const bearer = `Bearer ${response.accessToken}`;
-
-        headers.append("Authorization", bearer);
-
-        const options = {
-          method: "GET",
-          headers: headers
-        };
-        fetch(url, options)
-          .then(response => response.json())
-          .then(response => {
-            resolve(response)
-          })
-          .catch(error => reject(error));
-
-      }).catch(error => {
-        reject(error)
-      });
-
-  })
-}
 async function wait(t) {
   console.log("Waiting", t)
   return new Promise((resolve, reject) => {
@@ -147,6 +98,9 @@ async function worker(urls, number, callback) {
     console.log("Worker %s started", number)
     let waits=6
     let processed=0
+    let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+    console.log("Worker %s token", number, token)
+
     while (urls.length || waits>0) {
       if (urls.length==0) {
         console.log("Worker %s waits. Remaining waits: %s", number, waits)
@@ -154,8 +108,8 @@ async function worker(urls, number, callback) {
         waits--
         continue
       }
-      let url = urls.pop()
-      let data = await getDriveData(url.url)
+      let url = urls.shift()
+      let data = await fetchWithToken(url.url, token).then(response => response.json())
       if (!data || !data.value) {
         console.log("PROBLEM:", data)
       }
@@ -202,14 +156,16 @@ async function cacheFiles(data) {
 }
 
 async function getFilesDB() {
-  let db = await idb.openDB('Files', 1, {
+  let db = await idb.openDB('Files', 2, {
     upgrade(db) {
+      db.deleteObjectStore('files');
       // Create a store of objects
       const store = db.createObjectStore('files', {
         keyPath: 'id'
       });
       // Create an index on the 'date' property of the objects.
       store.createIndex('dateTaken', 'photo.takenDateTime');
+      store.createIndex('quckXorHash', 'file.hashes.quickXorHash');
     },
   });
   return db
@@ -268,12 +224,12 @@ async function findDuplicates() {
     if (cursor.value.photo) {
       p++
     }
-    if (cursor.value.file && cursor.value.file.hashes && cursor.value.file.hashes.sha256Hash && cursor.value.size > 100000) {
-      if (h[cursor.value.file.hashes.sha256Hash]) {
-        h[cursor.value.file.hashes.sha256Hash].push(cursor.value)
-        duplicates[cursor.value.file.hashes.sha256Hash] = true
+    if (cursor.value.file && cursor.value.file.hashes && cursor.value.file.hashes.quickXorHash && cursor.value.size > 100000) {
+      if (h[cursor.value.file.hashes.quickXorHash]) {
+        h[cursor.value.file.hashes.quickXorHash].push(cursor.value)
+        duplicates[cursor.value.file.hashes.quickXorHash] = true
       } else {
-        h[cursor.value.file.hashes.sha256Hash] = [cursor.value]
+        h[cursor.value.file.hashes.quickXorHash] = [cursor.value]
       }
     }
     cursor = await cursor.continue();
@@ -298,12 +254,5 @@ async function findDuplicates() {
       }
     }
   }
-  // for (let p of Object.values(pairs).sort(compareLength)[0]) {
-  //   for (let item of p.items) {
-  //     result.push(item)
-  //   }
-  // }
-  // return result
   return pairs
 }
-

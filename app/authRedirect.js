@@ -1,5 +1,6 @@
 // Create the main myMSALObj instance
 // configuration parameters are located at authConfig.js
+
 const myMSALObj = new msal.PublicClientApplication(msalConfig);
 
 let username = "";
