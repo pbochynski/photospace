@@ -23,6 +23,7 @@ async function render() {
     statusDiv.innerText = "Loading ..."
     readFolder(currentFolder, renderFiles).then(() => {
         statusDiv.innerText = ""
+        renderPredictions()
     })
     parentFolders(currentFolder).then(renderParents)
 }
@@ -51,6 +52,7 @@ function renderFiles(data) {
         });
     }
     cacheFiles(data)
+    calculateEmbeddings(data)
 }
 
 function formatFileSize(bytes, decimalPoint) {
@@ -93,8 +95,23 @@ function fileCard(d) {
     }
     body.innerHTML = `<small>${prettyPath(d.parentReference.path)}<br/>${name}${formatFileSize(d.size, 2)}</small>`
     card.appendChild(body)
+    const predictionDiv = document.createElement("div")
+    predictionDiv.setAttribute("class", "card-footer prediction")
+    predictionDiv.setAttribute("id", "prediction_" + d.id)
+    card.appendChild(predictionDiv)
     col.appendChild(card)
     return col
+}
+async function renderPredictions() {
+    let predictionDivs = document.getElementsByClassName("prediction")
+    for (let p of predictionDivs) {
+        let id = p.id.replace("prediction_", "")
+        let emb = await getEmbedding(id)
+        if (emb && emb.predictions) {
+            p.innerHTML = `<button onclick="showSimilarFiles('${id}')">Similar</button><br/>`+
+            emb.predictions.map((o) => `${o.className} ${Math.round(o.probability * 100)}%`).join("<br/>")
+        }
+    }
 }
 
 async function openFolder(id) {
@@ -126,6 +143,17 @@ async function showLargeFiles() {
         div.appendChild(fileCard(d))
     }
 }
+async function showSimilarFiles(id) {
+    let embedding = await getEmbedding(id)
+    let list = await findSimilarImages(embedding.embeddings)
+    document.getElementById("detail-tab").click()
+    let div = document.getElementById("detailDiv")
+    div.innerHTML = ''
+    for (let d of list) {
+        console.log('Similar:', d)
+        div.appendChild(fileCard(d))
+    }
+} 
 let pairs = {}
 async function showDuplicates() {
     pairs = await findDuplicates()

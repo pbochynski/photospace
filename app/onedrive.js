@@ -20,7 +20,7 @@ async function parentFolders(id) {
   let folders = []
   while (id) {
     let data = await fetchWithToken(graphFilesEndpoint + `/items/${id}`, token).then(response => response.json())
-    folders.push({id, name: data.name})
+    folders.push({ id, name: data.name })
     id = (data.parentReference && data.parentReference.id) ? data.parentReference.id : null
   }
   console.log("Folders: ", folders)
@@ -44,8 +44,13 @@ async function readFolder(id, callback) {
   }
   return data
 }
+async function readThumbnail(id, size) {
+  let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+  const path = (id) ? `/items/${id}` : `/root`
+  return fetchWithToken(graphFilesEndpoint + path + `/thumbnails/0/${size}/content`, token)
+}
 
-async function deleteFromCache(items){
+async function deleteFromCache(items) {
   let db = await getFilesDB()
   const tx = db.transaction('files', 'readwrite');
   const store = tx.objectStore('files');
@@ -53,8 +58,18 @@ async function deleteFromCache(items){
     console.log("Deleting from cache:", i.name, i.id)
     await store.delete(i.id)
   }
-  await tx.done;      
+  await tx.done;
 }
+
+async function getCachedFile(id) {
+  let db = await getFilesDB()
+  const tx = db.transaction('files', 'readonly');
+  const store = tx.objectStore('files');
+  const record = await store.get(id);
+  await tx.done;
+  return record;
+}
+
 async function deleteItems(items) {
   return new Promise(async (resolve, reject) => {
     getTokenRedirect(tokenRequest)
@@ -73,7 +88,7 @@ async function deleteItems(items) {
           for (let i of items) {
             console.log("Deleting file:", i.name, i.id)
             await fetch(graphFilesEndpoint + `/items/${i.id}`, options)
-          }          
+          }
           console.log("Items deleted:", items.length)
           resolve("items deleted: " + items.length)
         } catch (error) {
@@ -94,15 +109,15 @@ async function wait(t) {
   })
 }
 async function worker(urls, number, callback) {
-  return new Promise(async (resolve,reject)=>{
+  return new Promise(async (resolve, reject) => {
     console.log("Worker %s started", number)
-    let waits=6
-    let processed=0
+    let waits = 6
+    let processed = 0
     let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
     console.log("Worker %s token", number, token)
 
-    while (urls.length || waits>0) {
-      if (urls.length==0) {
+    while (urls.length || waits > 0) {
+      if (urls.length == 0) {
         console.log("Worker %s waits. Remaining waits: %s", number, waits)
         await wait(500)
         waits--
@@ -115,35 +130,36 @@ async function worker(urls, number, callback) {
       }
       for (let f of data.value) {
         if (f.folder) {
-          urls.push({url:`${graphFilesEndpoint}/items/${f.id}/children?$expand=thumbnails`, path:f.parentReference.path+"/"+f.name})
+          urls.push({ url: `${graphFilesEndpoint}/items/${f.id}/children?$expand=thumbnails`, path: f.parentReference.path + "/" + f.name })
         }
       }
       cacheFiles(data)
       if (data["@odata.nextLink"]) {
-        urls.push({url: data["@odata.nextLink"],path: url.path})
+        urls.push({ url: data["@odata.nextLink"], path: url.path })
       }
       console.log("Worker: %s, processed: %s, queue: %s, waits: %s", number, ++processed, urls.length, waits)
       callback({ urls, processed })
-  
+
     }
-    console.log("Worker %s done",number)
+    console.log("Worker %s done", number)
     resolve()
   })
 }
 
 async function cacheAllFiles(callback) {
-  let urls = [{url: graphFilesEndpoint + "/root/children?$expand=thumbnails", path: "/root"}]
+  let urls = [{ url: graphFilesEndpoint + "/root/children?$expand=thumbnails", path: "/root" }]
   let processed = 0
   let db = await getFilesDB()
   await db.clear('files')
   let tasks = []
-  for (let i=0;i<8;++i) {
-    tasks.push(worker(urls,i,callback))
+  for (let i = 0; i < 8; ++i) {
+    tasks.push(worker(urls, i, callback))
   }
   await Promise.all(tasks)
   console.log("All workers completed")
   return processed;
 }
+
 
 async function cacheFiles(data) {
   let db = await getFilesDB()
@@ -155,20 +171,20 @@ async function cacheFiles(data) {
   await tx.done;
 }
 
+
+
 async function getFilesDB() {
-  let db = await idb.openDB('Files', 2, {
+  let db = await idb.openDB('Files', 3, { // Increment the version number
     upgrade(db) {
-      db.deleteObjectStore('files');
-      // Create a store of objects
       const store = db.createObjectStore('files', {
         keyPath: 'id'
       });
-      // Create an index on the 'date' property of the objects.
+
       store.createIndex('dateTaken', 'photo.takenDateTime');
-      store.createIndex('quckXorHash', 'file.hashes.quickXorHash');
+      store.createIndex('quickXorHash', 'file.hashes.quickXorHash');
     },
   });
-  return db
+  return db;
 }
 
 async function largeFiles() {
