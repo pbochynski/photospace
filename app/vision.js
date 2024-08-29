@@ -1,5 +1,5 @@
 // Create a new Web Worker
-const visionWorker = new Worker('vision-worker.js');
+const visionWorker = new Worker('vision-worker.js', { type: 'module' });
 console.log("Worker created")
 // Map to store promises for each request by their unique identifier
 const pendingRequests = new Map();

@@ -1,5 +1,5 @@
-importScripts('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs');
-importScripts('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet');
+import * as _ from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/+esm';
+import * as mobilenet from 'https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/+esm';
 
 let model;
 
