@@ -2,6 +2,9 @@
 async function getEmbeddingsDB() {
   let db = await idb.openDB('Embeddings', 1, {
     upgrade(db) {
+      if (!db.objectStoreNames.contains('embeddings')) {
+        db.deleteObjectStore('embeddings');
+      }
       db.createObjectStore('embeddings', {
         keyPath: 'id'
       });

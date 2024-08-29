@@ -176,6 +176,9 @@ async function cacheFiles(data) {
 async function getFilesDB() {
   let db = await idb.openDB('Files', 3, { // Increment the version number
     upgrade(db) {
+      if (db.objectStoreNames.contains('files')) {
+        db.deleteObjectStore('files');
+      }
       const store = db.createObjectStore('files', {
         keyPath: 'id'
       });
