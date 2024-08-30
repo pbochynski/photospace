@@ -313,27 +313,30 @@ async function calculateEmbeddings(data) {
   for (let f of data.value) {
 
     if (f.file && f.image && f.thumbnails && f.thumbnails.length > 0 && f.thumbnails[0].large) {
-      console.log(`Processing file ${f.name}`);
       let emb = await getEmbedding(f.id);
       if (emb) {
-        console.log(`Embedding for ${f.name} already exists`);
         continue  // Skip if embedding already exists
       }
       inFlight++;
-      while (inFlight > 10 || pendingRequests.size > 5) {
+      while (inFlight > 10) {
         console.log("********* Waiting for 500 ms ********", inFlight, pendingRequests.size)  
         await wait(500);
       }
       //fetch('proxy?'+new URLSearchParams({url: f.thumbnails[0].large.url}).toString())
       readThumbnail(f.id, 'large')
-        .then(response => response.blob())
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.blob()
+        })
         .then((imageBlob) => {
-          console.log("Image loaded %s, processing...", f.name);
           return processImageData(imageBlob, 'image/jpeg', f.id)
         }).then(result => {
           saveEmbedding({ id: f.id, name: f.name, embeddings: result.embeddings, predictions: result.predictions });
           inFlight--;
         }).catch((error) => {
+          pendingRequests.delete(f.id);
           inFlight--;
           console.log("Error processing image", error)
         })

@@ -4,14 +4,19 @@ import * as mobilenet from 'https://cdn.jsdelivr.net/npm/@tensorflow-models/mobi
 let model;
 
 async function loadModel() {
+  console.log('Loading mobilenet..');
   model = await mobilenet.load();
+  console.log('Sucessfully loaded model');
 }
 loadModel();
 
+async function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 self.onmessage = async function (event) {
-  if (!model) {
-    await loadModel();
+  while (!model) {
+    await wait(300);
   }
 
   const { id, imageBlob } = event.data;
