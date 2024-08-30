@@ -35,14 +35,14 @@ async function readFolder(id, callback) {
   const path = (id) ? `/items/${id}` : `/root`
   let data = await fetchWithToken(graphFilesEndpoint + path + '/children?$expand=thumbnails', token).then(response => response.json())
   cacheFiles(data)
-  calculateEmbeddings(data)
+  calculateEmbeddings(token, data)
   if (callback) {
     callback(data)
   }
   while (data["@odata.nextLink"]) {
     let next = await fetchWithToken(data["@odata.nextLink"], token).then(response => response.json())
     cacheFiles(next)
-    calculateEmbeddings(next)
+    calculateEmbeddings(token, next)
     data.value = data.value.concat(next.value)
     data["@odata.nextLink"] = next["@odata.nextLink"]
     if (callback) {
@@ -51,10 +51,8 @@ async function readFolder(id, callback) {
   }
   return data
 }
-async function readThumbnail(id, size) {
-  let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
-  const path = (id) ? `/items/${id}` : `/root`
-  return fetchWithToken(graphFilesEndpoint + path + `/thumbnails/0/${size}/content`, token)
+async function readThumbnail(token, id, size) {
+  return fetchWithToken(graphFilesEndpoint + `/items/${id}/thumbnails/0/${size}/content`, token)
 }
 
 async function deleteFromCache(items) {
@@ -309,7 +307,7 @@ async function wait(ms) {
 
 let inFlight = 0;
 
-async function calculateEmbeddings(data) {
+async function calculateEmbeddings(token, data) {
   for (let f of data.value) {
 
     if (f.file && f.image && f.thumbnails && f.thumbnails.length > 0 && f.thumbnails[0].large) {
@@ -323,7 +321,7 @@ async function calculateEmbeddings(data) {
         await wait(500);
       }
       //fetch('proxy?'+new URLSearchParams({url: f.thumbnails[0].large.url}).toString())
-      readThumbnail(f.id, 'large')
+      readThumbnail(token, f.id, 'large')
         .then(response => {
           if (!response.ok) {
             throw new Error('Network response was not ok');
