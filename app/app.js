@@ -34,11 +34,15 @@ async function readFolder(id, callback) {
   let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
   const path = (id) ? `/items/${id}` : `/root`
   let data = await fetchWithToken(graphFilesEndpoint + path + '/children?$expand=thumbnails', token).then(response => response.json())
+  cacheFiles(data)
+  calculateEmbeddings(data)
   if (callback) {
     callback(data)
   }
   while (data["@odata.nextLink"]) {
     let next = await fetchWithToken(data["@odata.nextLink"], token).then(response => response.json())
+    cacheFiles(next)
+    calculateEmbeddings(next)
     data.value = data.value.concat(next.value)
     data["@odata.nextLink"] = next["@odata.nextLink"]
     if (callback) {
@@ -222,9 +226,6 @@ function compareParentId(a, b) {
   return 0
 }
 
-function compareLength(a, b) {
-  return b[0].items.length - a[0].items.length
-}
 
 async function findDuplicates() {
   let db = await getFilesDB()
@@ -306,9 +307,9 @@ async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+let inFlight = 0;
 
 async function calculateEmbeddings(data) {
-  let inFlight = 0;
   for (let f of data.value) {
 
     if (f.file && f.image && f.thumbnails && f.thumbnails.length > 0 && f.thumbnails[0].large) {
@@ -319,19 +320,19 @@ async function calculateEmbeddings(data) {
         continue  // Skip if embedding already exists
       }
       inFlight++;
-      while (inFlight > 10) {
-        console.log("********* Waiting for 500 ms ********")
+      while (inFlight > 10 || pendingRequests.size > 5) {
+        console.log("********* Waiting for 500 ms ********", inFlight, pendingRequests.size)  
         await wait(500);
       }
       //fetch('proxy?'+new URLSearchParams({url: f.thumbnails[0].large.url}).toString())
       readThumbnail(f.id, 'large')
         .then(response => response.blob())
         .then((imageBlob) => {
-          inFlight--;
           console.log("Image loaded %s, processing...", f.name);
           return processImageData(imageBlob, 'image/jpeg', f.id)
         }).then(result => {
           saveEmbedding({ id: f.id, name: f.name, embeddings: result.embeddings, predictions: result.predictions });
+          inFlight--;
         }).catch((error) => {
           inFlight--;
           console.log("Error processing image", error)
@@ -340,7 +341,6 @@ async function calculateEmbeddings(data) {
 
     }
   }
-
 }
 
 
@@ -401,7 +401,9 @@ function processImageData(imageBlob, mimeType, id) {
     console.log("queue size", pendingRequests.size)
   });
 }
-
+function processingStatus() {
+  return { inFlight, pending: pendingRequests.size }
+}
 // Handle messages from the Web Worker
 visionWorker.onmessage = function(event) {
   const { id, predictions, embeddings } = event.data;
@@ -429,6 +431,5 @@ function generateUniqueId() {
 export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
   findDuplicates, deleteItems, deleteFromCache, findSimilarImages, 
-  getEmbedding, saveEmbedding, parentFolders
+  getEmbedding, saveEmbedding, parentFolders, processingStatus
 }
-

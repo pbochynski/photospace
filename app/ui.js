@@ -6,6 +6,7 @@ addEventListener("popstate", (event) => {
 document.getElementById("scanAllFilesBtn").addEventListener("click", scanAllFiles)
 document.getElementById("largeFilesBtn").addEventListener("click", showLargeFiles)
 document.getElementById("duplicatesBtn").addEventListener("click", showDuplicates)
+setInterval(processingStatus, 1000)
 
 async function render() {
     const url = new URL(window.location);
@@ -19,6 +20,23 @@ async function render() {
         renderPredictions()
     })
     app.parentFolders(currentFolder).then(renderParents)
+}
+function processingStatus() {
+    const processingDiv = document.getElementById("processingDiv");
+    let {inFlight, pending} = app.processingStatus()
+    if (inFlight > 0 || pending > 0) {
+        if (processingDiv.innerText.startsWith("Processing")) {
+            processingDiv.innerText = processingDiv.innerText + "."
+        } else { 
+            processingDiv.innerText = "Processing ..."
+        }
+        if (processingDiv.innerText.length > 30) {
+            processingDiv.innerText = processingDiv.innerText.substring(0, 15);
+        }
+    } else {
+        processingDiv.innerText = ""
+    }   
+    
 }
 
 function renderParents(folders) {
@@ -52,8 +70,6 @@ function renderFiles(data) {
             fileDiv.appendChild(fileCard(d))
         });
     }
-    app.cacheFiles(data)
-    app.calculateEmbeddings(data)
 }
 
 function formatFileSize(bytes, decimalPoint) {
