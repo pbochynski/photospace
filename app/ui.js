@@ -1,18 +1,11 @@
-// Select DOM elements to work with
-const signInButton = document.getElementById("SignIn");
-const driveHeader = document.getElementById("driveHeader");
-
-function showWelcomeMessage(username) {
-    // Reconfiguring DOM elements
-    signInButton.setAttribute("onclick", "signOut();");
-    signInButton.setAttribute('class', "btn btn-success")
-    signInButton.innerHTML = "Sign Out";
-}
-
+import * as app from "./app.js";
 addEventListener("popstate", (event) => {
     console.log("Popstate event")
     render()
 });
+document.getElementById("scanAllFilesBtn").addEventListener("click", scanAllFiles)
+document.getElementById("largeFilesBtn").addEventListener("click", showLargeFiles)
+document.getElementById("duplicatesBtn").addEventListener("click", showDuplicates)
 
 async function render() {
     const url = new URL(window.location);
@@ -21,23 +14,31 @@ async function render() {
     fileDiv.innerHTML = ""
     const statusDiv = document.getElementById("statusDiv");
     statusDiv.innerText = "Loading ..."
-    readFolder(currentFolder, renderFiles).then(() => {
+    app.readFolder(currentFolder, renderFiles).then(() => {
         statusDiv.innerText = ""
         renderPredictions()
     })
-    parentFolders(currentFolder).then(renderParents)
+    app.parentFolders(currentFolder).then(renderParents)
 }
 
 function renderParents(folders) {
     const breadCrumbDiv = document.getElementById("breadCrumb");
 
     let i = folders.length - 1
-    let html = ""
-    while (i > 0) {
-        html += `/ <a href="javascript:void(0)" onclick="openFolder('${folders[i].id}')">${folders[i].name}</a>`
+    breadCrumbDiv.innerHTML = ""
+    while (i >= 0) {
+        breadCrumbDiv.appendChild(document.createTextNode(" > "))
+        let a = document.createElement("a")
+        a.href = "javascript:void(0)"
+        let id = folders[i].id
+        a.onclick = () => {
+            console.log("click", id)
+            openFolder(id)
+        }
+        a.innerText = folders[i].name   
+        breadCrumbDiv.appendChild(a)
         --i;
     }
-    breadCrumbDiv.innerHTML = html
 }
 function renderFiles(data) {
     if (!data.value) {
@@ -51,8 +52,8 @@ function renderFiles(data) {
             fileDiv.appendChild(fileCard(d))
         });
     }
-    cacheFiles(data)
-    calculateEmbeddings(data)
+    app.cacheFiles(data)
+    app.calculateEmbeddings(data)
 }
 
 function formatFileSize(bytes, decimalPoint) {
@@ -63,6 +64,11 @@ function formatFileSize(bytes, decimalPoint) {
         sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],
         i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+function small(text) {
+    let s = document.createElement("small")
+    s.innerText = text
+    return s
 }
 
 function fileCard(d) {
@@ -88,12 +94,19 @@ function fileCard(d) {
     }
     card.appendChild(img);
     body.setAttribute("class", "card-body");
-    let name = `${d.name}<br/>`
-
+    body.appendChild(small(prettyPath(d.parentReference.path)))
+    body.appendChild(document.createElement("br"))  
     if (d.folder) {
-        name = `<a href="javascript:void(0)" onclick="openFolder('${d.id}')">${d.name}</a><br/>`
+        const link = document.createElement('a');
+        link.href = 'javascript:void(0)';
+        link.textContent = d.name;
+        link.addEventListener('click', () => openFolder(d.id));
+        body.appendChild(link)
+    } else { 
+        body.appendChild(small(d.name))
     }
-    body.innerHTML = `<small>${prettyPath(d.parentReference.path)}<br/>${name}${formatFileSize(d.size, 2)}</small>`
+    body.appendChild(document.createElement("br"))
+    body.appendChild(small(formatFileSize(d.size, 2)))
     card.appendChild(body)
     const predictionDiv = document.createElement("div")
     predictionDiv.setAttribute("class", "card-footer prediction")
@@ -106,10 +119,18 @@ async function renderPredictions() {
     let predictionDivs = document.getElementsByClassName("prediction")
     for (let p of predictionDivs) {
         let id = p.id.replace("prediction_", "")
-        let emb = await getEmbedding(id)
-        if (emb && emb.predictions) {
-            p.innerHTML = `<button onclick="showSimilarFiles('${id}')">Similar</button><br/>`+
-            emb.predictions.map((o) => `${o.className} ${Math.round(o.probability * 100)}%`).join("<br/>")
+        let emb = await app.getEmbedding(id)
+        if (emb && emb.embeddings) {
+            p.innerHTML = ''
+            let btn = document.createElement("button")
+            btn.innerText = "Similar"
+            btn.onclick = () => showSimilarFiles(id)
+            p.appendChild(btn)
+            p.appendChild(document.createElement("br"))
+            let predictions = document.createElement("p")
+            predictions.innerText = emb.predictions.map((p) => `${p.className} (${Math.round(p.probability * 100)}%)`).join(", ")   
+            p.appendChild(predictions)
+
         }
     }
 }
@@ -127,7 +148,7 @@ async function openFolder(id) {
     render()
 }
 function scanAllFiles() {
-    cacheAllFiles(onScanLog)
+    app.cacheAllFiles(onScanLog)
 }
 function onScanLog({ urls, processed }) {
     let log = document.getElementById("scanLog")
@@ -136,7 +157,7 @@ function onScanLog({ urls, processed }) {
 
 async function showLargeFiles() {
 
-    let list = await largeFiles()
+    let list = await app.largeFiles()
     let div = document.getElementById("largeFilesDiv")
     div.innerHTML = ''
     for (let d of list) {
@@ -144,8 +165,8 @@ async function showLargeFiles() {
     }
 }
 async function showSimilarFiles(id) {
-    let embedding = await getEmbedding(id)
-    let list = await findSimilarImages(embedding.embeddings)
+    let embedding = await app.getEmbedding(id)
+    let list = await app.findSimilarImages(embedding.embeddings)
     document.getElementById("detail-tab").click()
     let div = document.getElementById("detailDiv")
     div.innerHTML = ''
@@ -153,10 +174,10 @@ async function showSimilarFiles(id) {
         console.log('Similar:', d)
         div.appendChild(fileCard(d))
     }
-} 
+}
 let pairs = {}
 async function showDuplicates() {
-    pairs = await findDuplicates()
+    pairs = await app.findDuplicates()
 
 
     let div = document.getElementById("largeFilesDiv")
@@ -208,3 +229,14 @@ async function deleteDuplicates(key, index) {
         console.log(res)
     })
 }
+
+function showWelcomeMessage(username) {
+    // Select DOM elements to work with
+    const signInButton = document.getElementById("SignIn");
+    // Reconfiguring DOM elements
+    signInButton.setAttribute("onclick", "signOut();");
+    signInButton.setAttribute('class', "btn btn-success")
+    signInButton.innerHTML = "Sign Out";
+}
+
+export {openFolder, showWelcomeMessage }
