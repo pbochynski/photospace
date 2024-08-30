@@ -272,9 +272,9 @@ async function findDuplicates() {
 }
 
 async function getEmbeddingsDB() {
-  let db = await openDB('Embeddings', 1, {
+  let db = await openDB('Embeddings', 2, {
     upgrade(db) {
-      if (!db.objectStoreNames.contains('embeddings')) {
+      if (db.objectStoreNames.contains('embeddings')) {
         db.deleteObjectStore('embeddings');
       }
       db.createObjectStore('embeddings', {
