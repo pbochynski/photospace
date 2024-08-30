@@ -23,11 +23,11 @@ async function render() {
 }
 function processingStatus() {
     const processingDiv = document.getElementById("processingDiv");
-    let {inFlight, pending} = app.processingStatus()
+    let { inFlight, pending } = app.processingStatus()
     if (inFlight > 0 || pending > 0) {
         if (processingDiv.innerText.startsWith("Processing")) {
             processingDiv.innerText = processingDiv.innerText + "."
-        } else { 
+        } else {
             processingDiv.innerText = "Processing ..."
         }
         if (processingDiv.innerText.length > 30) {
@@ -35,8 +35,8 @@ function processingStatus() {
         }
     } else {
         processingDiv.innerText = ""
-    }   
-    
+    }
+
 }
 
 function renderParents(folders) {
@@ -53,7 +53,7 @@ function renderParents(folders) {
             console.log("click", id)
             openFolder(id)
         }
-        a.innerText = folders[i].name   
+        a.innerText = folders[i].name
         breadCrumbDiv.appendChild(a)
         --i;
     }
@@ -110,16 +110,15 @@ function fileCard(d) {
     }
     card.appendChild(img);
     body.setAttribute("class", "card-body");
-    body.appendChild(small(prettyPath(d.parentReference.path)))
-    body.appendChild(document.createElement("br"))  
     if (d.folder) {
         const link = document.createElement('a');
         link.href = 'javascript:void(0)';
         link.textContent = d.name;
         link.addEventListener('click', () => openFolder(d.id));
         body.appendChild(link)
-    } else { 
-        body.appendChild(small(d.name))
+        body.appendChild(document.createElement("br"))
+    } else {
+        body.appendChild(small(prettyPath(d.parentReference.path)+'/'+d.name))
     }
     body.appendChild(document.createElement("br"))
     body.appendChild(small(formatFileSize(d.size, 2)))
@@ -127,6 +126,13 @@ function fileCard(d) {
     const predictionDiv = document.createElement("div")
     predictionDiv.setAttribute("class", "card-footer prediction")
     predictionDiv.setAttribute("id", "prediction_" + d.id)
+    if (d.embeddings) {
+        let btn = document.createElement("button")
+        btn.innerText = "Similar"
+        btn.onclick = () => showSimilarFiles(d.id)
+        predictionDiv.appendChild(btn)
+    }
+
     card.appendChild(predictionDiv)
     col.appendChild(card)
     return col
@@ -142,11 +148,6 @@ async function renderPredictions() {
             btn.innerText = "Similar"
             btn.onclick = () => showSimilarFiles(id)
             p.appendChild(btn)
-            p.appendChild(document.createElement("br"))
-            let predictions = document.createElement("p")
-            predictions.innerText = emb.predictions.map((p) => `${p.className} (${Math.round(p.probability * 100)}%)`).join(", ")   
-            p.appendChild(predictions)
-
         }
     }
 }
@@ -255,4 +256,4 @@ function showWelcomeMessage(username) {
     signInButton.innerHTML = "Sign Out";
 }
 
-export {openFolder, showWelcomeMessage }
+export { openFolder, showWelcomeMessage }

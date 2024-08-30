@@ -5,3 +5,13 @@
 img {
     object-fit: contain;
 }
+
+small {
+    font-size: smaller;
+    margin-top: 0;
+}
+
+.card-body {
+    line-height: 80%;
+}
+

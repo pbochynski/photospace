@@ -317,7 +317,7 @@ async function calculateEmbeddings(token, data) {
       }
       inFlight++;
       while (inFlight > 10) {
-        console.log("********* Waiting for 500 ms ********", inFlight, pendingRequests.size)  
+        console.log("********* Waiting for 500 ms ********", inFlight, pendingRequests.size)
         await wait(500);
       }
       //fetch('proxy?'+new URLSearchParams({url: f.thumbnails[0].large.url}).toString())
@@ -361,14 +361,20 @@ async function findSimilarImages(emb) {
 
   let cursor = await store.openCursor();
   const similarImages = [];
+  const maxImages = 100;
+  const maxDistance = 0.3;
 
   while (cursor) {
     const record = cursor.value;
     const dist = distance(emb, record.embeddings);
-    console.log(`Distance: ${dist}`);
-    if (dist < 0.17) {
+    if (dist < maxDistance
+      && (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance)) {
       record.distance = dist;
       similarImages.push(record);
+      similarImages.sort((a, b) => a.distance - b.distance);
+      if (similarImages.length > maxImages) {
+        similarImages.pop();
+      }
     }
     cursor = await cursor.continue();
   }
@@ -379,7 +385,6 @@ async function findSimilarImages(emb) {
     const file = await filesStore.get(f.id);
     Object.assign(f, file);
   }
-  similarImages.sort((a, b) => a.distance - b.distance);
   return similarImages;
 
 
@@ -392,7 +397,7 @@ const pendingRequests = new Map();
 
 // Function to process image data using the Web Worker
 function processImageData(imageBlob, mimeType, id) {
-  if (!id){
+  if (!id) {
     id = generateUniqueId(); // Function to generate a unique ID
   }
   return new Promise((resolve, reject) => {
@@ -406,7 +411,7 @@ function processingStatus() {
   return { inFlight, pending: pendingRequests.size }
 }
 // Handle messages from the Web Worker
-visionWorker.onmessage = function(event) {
+visionWorker.onmessage = function (event) {
   const { id, predictions, embeddings } = event.data;
   if (pendingRequests.has(id)) {
     const { resolve } = pendingRequests.get(id);
@@ -416,7 +421,7 @@ visionWorker.onmessage = function(event) {
   console.log("queue size", pendingRequests.size)
 };
 
-visionWorker.onerror = function(error) {
+visionWorker.onerror = function (error) {
   // Handle errors and reject the corresponding promise
   for (const [id, { reject }] of pendingRequests) {
     reject(error);
@@ -431,6 +436,6 @@ function generateUniqueId() {
 
 export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
-  findDuplicates, deleteItems, deleteFromCache, findSimilarImages, 
+  findDuplicates, deleteItems, deleteFromCache, findSimilarImages,
   getEmbedding, saveEmbedding, parentFolders, processingStatus
 }

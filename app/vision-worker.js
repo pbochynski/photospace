@@ -35,9 +35,9 @@ self.onmessage = async function (event) {
   // Draw the image onto the canvas
   ctx.drawImage(imageBitmap, 0, 0);
 
-  const predictions = await model.classify(offscreenCanvas);
+  // const predictions = await model.classify(offscreenCanvas);
   const embeddings = await model.infer(offscreenCanvas, true);
   const embeddingArray = await embeddings.array();
 
-  self.postMessage({ id, predictions, embeddings: embeddingArray[0] });
+  self.postMessage({ id, embeddings: embeddingArray[0] });
 };
