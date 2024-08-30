@@ -34,7 +34,12 @@ function processingStatus() {
             processingDiv.innerText = processingDiv.innerText.substring(0, 15);
         }
     } else {
-        processingDiv.innerText = ""
+        if (processingDiv.innerText.startsWith("Processing ...")) {
+            processingDiv.innerText = "Processing done."
+            renderPredictions()
+        } else {
+            processingDiv.innerText = ""
+        }
     }
 
 }
@@ -141,13 +146,15 @@ async function renderPredictions() {
     let predictionDivs = document.getElementsByClassName("prediction")
     for (let p of predictionDivs) {
         let id = p.id.replace("prediction_", "")
-        let emb = await app.getEmbedding(id)
-        if (emb && emb.embeddings) {
-            p.innerHTML = ''
-            let btn = document.createElement("button")
-            btn.innerText = "Similar"
-            btn.onclick = () => showSimilarFiles(id)
-            p.appendChild(btn)
+        if (p.innerHTML == "") {
+            let emb = await app.getEmbedding(id)
+            if (emb && emb.embeddings) {
+                p.innerHTML = ''
+                let btn = document.createElement("button")
+                btn.innerText = "Similar"
+                btn.onclick = () => showSimilarFiles(id)
+                p.appendChild(btn)
+            }    
         }
     }
 }
