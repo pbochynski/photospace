@@ -45,13 +45,17 @@
             <button class="nav-link" id="detail-tab" data-bs-toggle="tab" data-bs-target="#detail-tab-pane"
                 type="button" role="tab" aria-controls="detail-tab-pane" aria-selected="false">Details</button>
         </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="search-tab" data-bs-toggle="tab" data-bs-target="#search-tab-pane"
+                type="button" role="tab" aria-controls="search-tab-pane" aria-selected="false">Search</button>
+        </li>
     </ul>
     <div class="tab-content" id="myTabContent">
         <div class="tab-pane fade show active" id="drive-tab-pane" role="tabpanel" aria-labelledby="drive-tab"
             tabindex="0">
             <div class="row row-cols-1 g-2">
                 <div class="col">
-                        <div id="breadCrumb" class="breadcrumb"></div>
+                    <div id="breadCrumb" class="breadcrumb"></div>
                 </div>
                 <div id="statusDiv"></div>
                 <div id="processingDiv"></div>
@@ -62,11 +66,15 @@
         </div>
         <div class="tab-pane fade" id="large-tab-pane" role="tabpanel" aria-labelledby="large-tab" tabindex="0">
             <div class="row row-cols-1 g-2">
-                <div class="col">
-                        <button id="scanAllFilesBtn">Scan all files</button>
-                        <button id="largeFilesBtn">Large files</button>
-                        <button id="duplicatesBtn">Duplicates</button>
-                        <div id="scanLog"></div>
+                <div class="col" id="toolsDiv">
+                    <button id="scanAllFilesBtn">Scan all files</button>
+                    <button id="cleanBtn">Clean embeddings</button>
+                    <button id="quickBtn">Quick embeddings</button>
+                    <button id="missingBtn">Process embeddings</button>
+                    <button id="largeFilesBtn">Large files</button>
+                    <button id="duplicatesBtn">Duplicates</button>
+                    <button id="exportBtn">Export</button>
+                    <button id="importBtn">Import</button>
                 </div>
             </div>
             <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="largeFilesDiv">
@@ -74,15 +82,27 @@
         </div>
         <div class="tab-pane fade" id="detail-tab-pane" role="tabpanel" aria-labelledby="detail-tab" tabindex="0">
             <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="detailDiv">
-                
-            </div>        
+
+            </div>
+        </div>
+        <div class="tab-pane fade" id="search-tab-pane" role="tabpanel" aria-labelledby="search-tab" tabindex="0">
+            <div class="row row-cols-1 g-2">
+            </div>
+            <div>
+                <br/>
+                <input type="text" id="searchText" value="path:/drive/root:/family/2014 date:2014-07-01T00:00:00Z..2014-09-06T00:00:00Z church">
+                <br/>
+            </div>
+        
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="searchDiv">
+            </div>
         </div>
     </div>
 
     <script type="module" src="./authRedirect.js"></script>
     <script type="module" src="./app.js"></script>
     <script type="module" src="./ui.js"></script>
-      
+
 
 </body>
 

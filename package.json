@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Web application to optimize onedrive space occupied by photos",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
@@ -18,7 +19,8 @@
   "homepage": "https://github.com/pbochynski/photospace#readme",
   "dependencies": {
     "express": "^4.18.1",
-    "morgan": "^1.10.0"
+    "morgan": "^1.10.0",
+    "@xenova/transformers": "^2.0.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.20"

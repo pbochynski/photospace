@@ -1,7 +1,24 @@
-import { openDB } from 'https://cdn.jsdelivr.net/npm/idb@8/+esm';
 import { getTokenRedirect, tokenRequest } from './authRedirect.js';
+import {getEmbeddingsDB, getFilesDB, saveEmbedding, getQuickEmbeddingsDB,payload } from './db.js';
 
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"
+
+const cacheWorkers = []
+const cacheQueue = []
+let cacheProcessed = 0
+const embeddingQueue = []
+let processed = 0
+
+const embeddingWorkers = []
+for (let i = 0; i < 4; ++i) {
+  embeddingWorkers.push(embeddingWorker(embeddingQueue, i))
+}
+// for (let i = 0; i < 12; ++i) {
+//   embeddingWorkers.push(serverEmbeddingWorker(embeddingQueue, i))
+// }
+for (let i = 0; i < 4; ++i) {
+  cacheWorkers.push(worker(cacheQueue, i))
+}
 
 function fetchWithToken(url, token) {
   const headers = new Headers();
@@ -57,23 +74,12 @@ async function readThumbnail(token, id, size) {
 
 async function deleteFromCache(items) {
   let db = await getFilesDB()
-  const tx = db.transaction('files', 'readwrite');
-  const store = tx.objectStore('files');
   for (let i of items) {
     console.log("Deleting from cache:", i.name, i.id)
-    await store.delete(i.id)
+    await db.files.delete(i.id)
   }
-  await tx.done;
 }
 
-async function getCachedFile(id) {
-  let db = await getFilesDB()
-  const tx = db.transaction('files', 'readonly');
-  const store = tx.objectStore('files');
-  const record = await store.get(id);
-  await tx.done;
-  return record;
-}
 
 async function deleteItems(items) {
   return new Promise(async (resolve, reject) => {
@@ -105,115 +111,142 @@ async function deleteItems(items) {
   )
 }
 
-async function worker(urls, number, callback) {
-  return new Promise(async (resolve, reject) => {
-    console.log("Worker %s started", number)
-    let waits = 6
-    let processed = 0
-    let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
-    console.log("Worker %s token", number, token)
+async function embeddingWorker(queue, number) {
+  let token
+  // Create a new Web Worker
+  const visionWorker = new Worker('clip-worker.js', { type: 'module' });
+  console.log("Worker created")
+  // Map to store promises for each request by their unique identifier
+  const pendingRequests = new Map();
 
-    while (urls.length || waits > 0) {
-      if (urls.length == 0) {
-        console.log("Worker %s waits. Remaining waits: %s", number, waits)
-        await wait(500)
-        waits--
-        continue
-      }
-      let url = urls.shift()
-      let data = await fetchWithToken(url.url, token).then(response => response.json())
-      if (!data || !data.value) {
-        console.log("PROBLEM:", data)
-      }
-      for (let f of data.value) {
-        if (f.folder) {
-          urls.push({ url: `${graphFilesEndpoint}/items/${f.id}/children?$expand=thumbnails`, path: f.parentReference.path + "/" + f.name })
-        }
-      }
-      cacheFiles(data)
-      if (data["@odata.nextLink"]) {
-        urls.push({ url: data["@odata.nextLink"], path: url.path })
-      }
-      console.log("Worker: %s, processed: %s, queue: %s, waits: %s", number, ++processed, urls.length, waits)
-      callback({ urls, processed })
+  // Function to process image data using the Web Worker
+  function processImageData(id, url, token) {
+    return new Promise((resolve, reject) => {
+      pendingRequests.set(id, { resolve, reject });
 
-    }
-    console.log("Worker %s done", number)
-    resolve()
-  })
-}
-
-async function cacheAllFiles(callback) {
-  let urls = [{ url: graphFilesEndpoint + "/root/children?$expand=thumbnails", path: "/root" }]
-  let processed = 0
-  let db = await getFilesDB()
-  await db.clear('files')
-  let tasks = []
-  for (let i = 0; i < 8; ++i) {
-    tasks.push(worker(urls, i, callback))
+      visionWorker.postMessage({ id, url, token });
+    });
   }
-  await Promise.all(tasks)
-  console.log("All workers completed")
-  return processed;
+  // Handle messages from the Web Worker
+  visionWorker.onmessage = function (event) {
+    const { id, predictions, embeddings } = event.data;
+    if (pendingRequests.has(id)) {
+      const { resolve } = pendingRequests.get(id);
+      resolve({ predictions, embeddings });
+      pendingRequests.delete(id);
+    }
+  };
+
+  visionWorker.onerror = function (error) {
+    // Handle errors and reject the corresponding promise
+    for (const [id, { reject }] of pendingRequests) {
+      reject(error);
+      pendingRequests.delete(id);
+    }
+  };
+
+  while (true) {
+    if (queue.length == 0) {
+      await wait(500)
+      continue
+    }
+    if (!token) {
+      token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+    }
+    let f = embeddingQueue.shift()
+    let thumbnailUrl = graphFilesEndpoint + `/items/${f.id}/thumbnails/0/large/content`
+    await processImageData(f.id, thumbnailUrl, token)
+    .then(result => {
+        processed++
+        saveEmbedding({ id: f.id, name: f.name, embeddings: result.embeddings, ...payload(f) });
+      }).catch((error) => {
+        pendingRequests.delete(f.id);
+        console.log("Error processing image", error)
+      })
+  }
 }
+
+async function serverEmbeddingWorker(queue, number) {
+  while (true) {
+    if (queue.length == 0) {
+      await wait(500)
+      continue
+    }
+    let f = queue.shift()
+    let result = await serverEmbedding(f)
+    if (result.status == 'ok' && result.embeddings) {
+      processed++
+      await saveEmbedding({ id: f.id, name: f.name, embeddings:result.embeddings,...payload(f) });
+    } else {
+      console.log("Error processing image", result.error, f)
+    }
+  }
+}
+
+async function worker(urls, number) {
+  console.log("Cache worker %s started", number)
+  let token
+  while (true) {
+    if (urls.length == 0) {
+      await wait(1000)
+      continue
+    }
+    if (!token) {
+      token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+      console.log("Worker %s token", number, token)    
+    }
+    let url = urls.shift()
+    let data = await fetchWithToken(url.url, token).then(response => response.json())
+    if (!data || !data.value) {
+      console.log("PROBLEM:", data)
+    }
+    for (let f of data.value) {
+      if (f.folder) {
+        urls.push({ url: `${graphFilesEndpoint}/items/${f.id}/children?$expand=thumbnails`, path: f.parentReference.path + "/" + f.name })
+      }
+    }
+    await cacheFiles(data)
+    // calculateEmbeddings(token, data)
+    if (data["@odata.nextLink"]) {
+      urls.push({ url: data["@odata.nextLink"], path: url.path })
+    }
+
+  }
+}
+
+
+async function cacheAllFiles(id) {
+  cacheQueue.length = 0
+  if (id) {
+    cacheQueue.push({ url: graphFilesEndpoint + `/items/${id}/children?$expand=thumbnails`, path: `/items/${id}` })
+  } else {
+    cacheQueue.push({ url: graphFilesEndpoint + "/root/children?$expand=thumbnails", path: "/root" })
+  }
+}
+
+
 
 
 async function cacheFiles(data) {
   let db = await getFilesDB()
-  const tx = db.transaction('files', 'readwrite');
-  const store = tx.objectStore('files');
-  for (let f of data.value) {
-    await store.put(f);
-  }
-  await tx.done;
+  db.files.bulkPut(data.value.filter(f => f.image))
 }
 
 
 
-async function getFilesDB() {
-  let db = await openDB('Files', 3, { // Increment the version number
-    upgrade(db) {
-      if (db.objectStoreNames.contains('files')) {
-        db.deleteObjectStore('files');
-      }
-      const store = db.createObjectStore('files', {
-        keyPath: 'id'
-      });
-
-      store.createIndex('dateTaken', 'photo.takenDateTime');
-      store.createIndex('quickXorHash', 'file.hashes.quickXorHash');
-    },
-  });
-  return db;
-}
 
 async function largeFiles() {
   let db = await getFilesDB()
-  let cursor = await db.transaction('files').store.openCursor();
-  let n = 0, p = 0
+
   let top = []
-  while (cursor) {
-    // console.log(cursor.key, cursor.value);
-    n++
-    if (cursor.value.photo) {
-      p++
+  const max = 100
+  db.files.each(record => {
+    top.push(record)
+    if (top.length > max) {
+      top.sort((a, b) => b.size - a.size)
+      top.pop()
     }
-    if (!cursor.value.folder && cursor.value.size) {
-      if (top.length < 100) {
-        top.push(cursor.value)
-        top.sort((a, b) => b.size - a.size)
-      } else {
-        let last = top[top.length - 1]
-        if (cursor.value.size > last.size) {
-          top.pop()
-          top.push(cursor.value)
-          top.sort((a, b) => b.size - a.size)
-        }
-      }
-    }
-    cursor = await cursor.continue();
-  }
-  console.log("Total files: %s, photos: %s", n, p)
+  })
   return top
 }
 function compareParentId(a, b) {
@@ -227,28 +260,25 @@ function compareParentId(a, b) {
 
 async function findDuplicates() {
   let db = await getFilesDB()
-  let cursor = await db.transaction('files').store.openCursor();
   let n = 0, p = 0
   let h = {}
   let duplicates = {}
-  while (cursor) {
-    // console.log(cursor.key, cursor.value);
+  db.files.each(value => {
     n++
-    if (cursor.value.photo) {
+    if (value.photo) {
       p++
     }
-    if (cursor.value.file && cursor.value.file.hashes && cursor.value.file.hashes.quickXorHash && cursor.value.size > 100000) {
-      if (h[cursor.value.file.hashes.quickXorHash]) {
-        h[cursor.value.file.hashes.quickXorHash].push(cursor.value)
-        duplicates[cursor.value.file.hashes.quickXorHash] = true
+    if (value.file && value.file.hashes && value.file.hashes.quickXorHash && value.size > 100000) {
+      if (h[value.file.hashes.quickXorHash]) {
+        h[value.file.hashes.quickXorHash].push(value)
+        duplicates[value.file.hashes.quickXorHash] = true
       } else {
-        h[cursor.value.file.hashes.quickXorHash] = [cursor.value]
+        h[value.file.hashes.quickXorHash] = [value]
       }
     }
-    cursor = await cursor.continue();
-  }
+
+  })
   console.log("Total files: %s, photos: %s, duplicates", n, p, Object.keys(duplicates).length)
-  let result = []
   let pairs = {}
   for (let key of Object.keys(duplicates)) {
 
@@ -270,172 +300,70 @@ async function findDuplicates() {
   return pairs
 }
 
-async function getEmbeddingsDB() {
-  let db = await openDB('Embeddings', 2, {
-    upgrade(db) {
-      if (db.objectStoreNames.contains('embeddings')) {
-        db.deleteObjectStore('embeddings');
-      }
-      db.createObjectStore('embeddings', {
-        keyPath: 'id'
-      });
-    },
-  });
-  return db;
-}
 
-async function saveEmbedding(record) {
-
-  const db = await getEmbeddingsDB();
-  const tx = db.transaction('embeddings', 'readwrite');
-  const store = tx.objectStore('embeddings');
-  await store.put(record);
-  await tx.done;
-  console.log(`Embedding for ${record.name} saved`);
-}
-async function getEmbedding(id) {
-  const db = await getEmbeddingsDB();
-  const tx = db.transaction('embeddings', 'readonly');
-  const store = tx.objectStore('embeddings');
-  const record = await store.get(id);
-  await tx.done;
-  return record;
-}
 async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-let inFlight = 0;
+async function queueMissingEmbeddings() {
+  let filesDB = await getFilesDB()
+  let db = await getEmbeddingsDB()
+  let count = await filesDB.files.count()
+  console.log("Number of files", count)
+  let offset = 0
+  while (offset < count) {
+    let records = await filesDB.files.offset(offset).limit(1000).toArray()
+    let ids = records.map(r => r.id)
+    let embeddings = await db.embeddings.bulkGet(ids)
+    let missing = records.filter((r, i) => { return !embeddings[i] })
+    console.log("Missing embeddings", missing.length)
+    for (let f of missing) {
+      embeddingQueue.push(f)
+    }
+    offset += 1000
+  }
+
+
+}
+
 
 async function calculateEmbeddings(token, data) {
+  let db = await getEmbeddingsDB()
+  let embeddings = await db.embeddings.bulkGet(data.value.map(f => f.id))
+
   for (let f of data.value) {
 
     if (f.file && f.image && f.thumbnails && f.thumbnails.length > 0 && f.thumbnails[0].large) {
-      let emb = await getEmbedding(f.id);
-      if (emb) {
-        continue  // Skip if embedding already exists
-      }
-      inFlight++;
-      while (inFlight > 10) {
-        console.log("********* Waiting for 500 ms ********", inFlight, pendingRequests.size)
-        await wait(500);
-      }
-      //fetch('proxy?'+new URLSearchParams({url: f.thumbnails[0].large.url}).toString())
-      readThumbnail(token, f.id, 'large')
-        .then(response => {
-          if (!response.ok) {
-            throw new Error('Network response was not ok');
-          }
-          return response.blob()
-        })
-        .then((imageBlob) => {
-          return processImageData(imageBlob, 'image/jpeg', f.id)
-        }).then(result => {
-          saveEmbedding({ id: f.id, name: f.name, embeddings: result.embeddings, predictions: result.predictions });
-          inFlight--;
-        }).catch((error) => {
-          pendingRequests.delete(f.id);
-          inFlight--;
-          console.log("Error processing image", error)
-        })
-
-
-    }
-  }
-}
-
-
-// calculate distance between two embeddings using cosine similarity
-function distance(embedding1, embedding2) {
-  const dotProduct = embedding1.reduce((acc, val, i) => acc + val * embedding2[i], 0);
-  const norm1 = Math.sqrt(embedding1.reduce((acc, val) => acc + val * val, 0));
-  const norm2 = Math.sqrt(embedding2.reduce((acc, val) => acc + val * val, 0));
-  console.log(dotProduct, norm1, norm2);
-  return 1 - dotProduct / (norm1 * norm2);
-}
-
-// Find similar images based on embeddings
-async function findSimilarImages(emb) {
-  const db = await getEmbeddingsDB();
-  const store = db.transaction('embeddings', 'readonly').store;
-
-  let cursor = await store.openCursor();
-  const similarImages = [];
-  const maxImages = 100;
-  const maxDistance = 0.3;
-
-  while (cursor) {
-    const record = cursor.value;
-    const dist = distance(emb, record.embeddings);
-    if (dist < maxDistance
-      && (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance)) {
-      record.distance = dist;
-      similarImages.push(record);
-      similarImages.sort((a, b) => a.distance - b.distance);
-      if (similarImages.length > maxImages) {
-        similarImages.pop();
+      let emb = embeddings.find(e => e && e.id == f.id)
+      if (!emb) {
+        embeddingQueue.push(f)
       }
     }
-    cursor = await cursor.continue();
   }
-  console.log('Number of similar images', similarImages.length);
-  const filesDb = await getFilesDB();
-  const filesStore = filesDb.transaction('files', 'readonly').store;
-  for (let f of similarImages) {
-    const file = await filesStore.get(f.id);
-    Object.assign(f, file);
-  }
-  return similarImages;
-
-
 }
-// Create a new Web Worker
-const visionWorker = new Worker('vision-worker.js', { type: 'module' });
-console.log("Worker created")
-// Map to store promises for each request by their unique identifier
-const pendingRequests = new Map();
 
-// Function to process image data using the Web Worker
-function processImageData(imageBlob, mimeType, id) {
-  if (!id) {
-    id = generateUniqueId(); // Function to generate a unique ID
-  }
-  return new Promise((resolve, reject) => {
-    pendingRequests.set(id, { resolve, reject });
 
-    visionWorker.postMessage({ id, imageBlob, mimeType });
-    console.log("queue size", pendingRequests.size)
-  });
+
+async function processingStatus() {
+
+  return { pending: embeddingQueue.length, processed, cacheProcessed, cacheQueue: cacheQueue.length }
 }
-function processingStatus() {
-  return { inFlight, pending: pendingRequests.size }
-}
-// Handle messages from the Web Worker
-visionWorker.onmessage = function (event) {
-  const { id, predictions, embeddings } = event.data;
-  if (pendingRequests.has(id)) {
-    const { resolve } = pendingRequests.get(id);
-    resolve({ predictions, embeddings });
-    pendingRequests.delete(id);
-  }
-  console.log("queue size", pendingRequests.size)
-};
 
-visionWorker.onerror = function (error) {
-  // Handle errors and reject the corresponding promise
-  for (const [id, { reject }] of pendingRequests) {
-    reject(error);
-    pendingRequests.delete(id);
-  }
-};
-
-// Function to generate a unique ID
-function generateUniqueId() {
-  return '_' + Math.random().toString(36).substr(2, 9);
+async function serverEmbedding(file) {
+  let url = file.thumbnails[0].large.url
+  return fetch('/classify',{
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({url, id: file.id})
+   }).then(response => response.json())
 }
+
 
 export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
   findDuplicates, deleteItems, deleteFromCache, findSimilarImages,
-  getEmbedding, saveEmbedding, parentFolders, processingStatus
+  parentFolders, processingStatus, serverEmbedding, distance,
+  queueMissingEmbeddings
 }

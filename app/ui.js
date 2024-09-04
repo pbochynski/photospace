@@ -1,12 +1,93 @@
 import * as app from "./app.js";
+import { getEmbedding } from "./db.js"; 
+import { importDatabase, exportDatabase, cleanEmbeddings, quickEmbeddings } from "./impex.js";
+import { search } from "./search.js";
+
 addEventListener("popstate", (event) => {
     console.log("Popstate event")
     render()
 });
-document.getElementById("scanAllFilesBtn").addEventListener("click", scanAllFiles)
-document.getElementById("largeFilesBtn").addEventListener("click", showLargeFiles)
-document.getElementById("duplicatesBtn").addEventListener("click", showDuplicates)
+
+function addToolsButtons() {
+    const tools = [
+        {label: "Scan All Files", fn: scanAllFiles},
+        {label: "Clean Embeddings", fn: cleanEmbeddings},
+        {label: "Quick Embeddings", fn: quickEmbeddings},
+        {label: "Missing Embeddings", fn: app.queueMissingEmbeddings},
+        {label: "Large Files", fn: showLargeFiles},
+        {label: "Duplicates", fn: showDuplicates},
+        {label: "Export", fn: exportHandler},
+        {label: "Import", fn: importHandler},
+    ]
+    const toolsDiv = document.getElementById("toolsDiv")
+    toolsDiv.innerHTML = ""
+    for (let t of tools) {
+        let btn = document.createElement("button")
+        btn.innerText = t.label
+        btn.onclick = t.fn
+        toolsDiv.appendChild(btn)
+    }
+}
+addToolsButtons()
+
+async function importHandler(e) {    
+    let btn = e.target
+    const [fileHandle] = await window.showOpenFilePicker();
+    const file = await fileHandle.getFile();
+    btn.disabled = true
+    btn.innerText = "Importing ..."
+    const db = await importDatabase(file);
+    console.log("Imported db", db)
+    btn.innerText = "Import"
+    btn.disabled = false    
+    render()
+}
 setInterval(processingStatus, 1000)
+
+function searchCallback(data){
+    console.log("Search callback", data)
+    document.getElementById("search-tab").click()
+
+    let div = document.getElementById("searchDiv")
+    div.innerHTML = ""
+    if (data.files){
+        for (let d of data.files) {
+            div.appendChild(fileCard(d))
+        }
+    
+    }
+}
+// register callback for search text input field that triggers search when enter is pressed
+document.getElementById("searchText").addEventListener("keyup", function(event) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        search({query:document.getElementById("searchText").value}, searchCallback)
+    }
+})
+
+
+async function exportHandler(e){
+    let btn = e.target
+    const opts = {
+        types: [{
+            description: 'My onedrive files',
+            suggestedName: 'my-files.json',
+            accept: { 'text/json': ['.json'] },
+        }],
+    };
+    const handle = await window.showSaveFilePicker(opts);
+    const writable = await handle.createWritable();
+    // disable button
+    btn.disabled = true
+    btn.innerText = "Exporting ..."
+    let blob = await exportDatabase("Embeddings")
+    btn.innerText = "Writing ..."
+    await writable.write(blob);
+    await writable.close();
+    btn.innerText = "Export"
+    btn.disabled = false
+
+}
 
 async function render() {
     const url = new URL(window.location);
@@ -21,27 +102,20 @@ async function render() {
     })
     app.parentFolders(currentFolder).then(renderParents)
 }
-function processingStatus() {
+async function processingStatus() {
     const processingDiv = document.getElementById("processingDiv");
-    let { inFlight, pending } = app.processingStatus()
-    if (inFlight > 0 || pending > 0) {
-        if (processingDiv.innerText.startsWith("Processing")) {
-            processingDiv.innerText = processingDiv.innerText + "."
-        } else {
-            processingDiv.innerText = "Processing ..."
-        }
-        if (processingDiv.innerText.length > 30) {
-            processingDiv.innerText = processingDiv.innerText.substring(0, 15);
-        }
+    let { pending, processed, cacheProcessed, cacheQueue } = await app.processingStatus()
+    if (pending > 0 || cacheQueue > 0) {
+        processingDiv.innerText = `Processing (${processed}/${pending + processed}), cacheQueue: ${cacheQueue}`    
     } else {
-        if (processingDiv.innerText.startsWith("Processing ...")) {
+        if (processingDiv.innerText.startsWith("Processing (")) {
             processingDiv.innerText = "Processing done."
+            console.log("Processing done, rendering predictions")
             renderPredictions()
         } else {
             processingDiv.innerText = ""
         }
     }
-
 }
 
 function renderParents(folders) {
@@ -92,6 +166,16 @@ function small(text) {
     return s
 }
 
+function filePath(d) {
+    if (d.parentReference) {
+        return prettyPath(d.parentReference.path) + '/' + d.name
+    }
+    if (d.path) {
+        return prettyPath(d.path) + '/' + d.name
+    }
+    return d.name
+}
+
 function fileCard(d) {
     const col = document.createElement("div");
     col.setAttribute("class", "col")
@@ -112,10 +196,17 @@ function fileCard(d) {
     img.setAttribute("onclick", `window.open("${d.webUrl}")`)
     if (!d.folder && d.thumbnails && d.thumbnails.length > 0 && d.thumbnails[0].large) {
         img.setAttribute("src", d.thumbnails[0].large.url)
+    } else if (d.thumbnailUrl) {
+        img.setAttribute("src", d.thumbnailUrl)
     }
     card.appendChild(img);
+
     body.setAttribute("class", "card-body");
     if (d.folder) {
+        let scanBtn = document.createElement("button")
+        scanBtn.innerText = "Scan"
+        scanBtn.onclick = () => app.cacheAllFiles(d.id)  
+        body.appendChild(scanBtn)
         const link = document.createElement('a');
         link.href = 'javascript:void(0)';
         link.textContent = d.name;
@@ -123,10 +214,14 @@ function fileCard(d) {
         body.appendChild(link)
         body.appendChild(document.createElement("br"))
     } else {
-        body.appendChild(small(prettyPath(d.parentReference.path)+'/'+d.name))
+        body.appendChild(small(filePath(d)))
     }
     body.appendChild(document.createElement("br"))
     body.appendChild(small(formatFileSize(d.size, 2)))
+    if (d.distance) {
+        body.appendChild(document.createElement("br"))
+        body.appendChild(small("Distance: " + d.distance.toFixed(2)))
+    }
     card.appendChild(body)
     const predictionDiv = document.createElement("div")
     predictionDiv.setAttribute("class", "card-footer prediction")
@@ -134,7 +229,7 @@ function fileCard(d) {
     if (d.embeddings) {
         let btn = document.createElement("button")
         btn.innerText = "Similar"
-        btn.onclick = () => showSimilarFiles(d.id)
+        btn.onclick = () => searchSimilarHandler(d.id)
         predictionDiv.appendChild(btn)
     }
 
@@ -142,19 +237,26 @@ function fileCard(d) {
     col.appendChild(card)
     return col
 }
+
+function searchSimilarHandler(id){
+    document.getElementById("search-tab").click()
+    let query = document.getElementById("searchText").value
+    search({similar:id, query}, searchCallback)
+}
+
 async function renderPredictions() {
     let predictionDivs = document.getElementsByClassName("prediction")
     for (let p of predictionDivs) {
         let id = p.id.replace("prediction_", "")
         if (p.innerHTML == "") {
-            let emb = await app.getEmbedding(id)
+            let emb = await getEmbedding(id)
             if (emb && emb.embeddings) {
                 p.innerHTML = ''
                 let btn = document.createElement("button")
                 btn.innerText = "Similar"
-                btn.onclick = () => showSimilarFiles(id)
+                btn.onclick = () => searchSimilarHandler(id)
                 p.appendChild(btn)
-            }    
+            }
         }
     }
 }
@@ -172,11 +274,7 @@ async function openFolder(id) {
     render()
 }
 function scanAllFiles() {
-    app.cacheAllFiles(onScanLog)
-}
-function onScanLog({ urls, processed }) {
-    let log = document.getElementById("scanLog")
-    log.innerHTML = `<small>${urls.map((o) => o.path.replace('/drive/root:', '')).join("<br/>")}</small>`
+    app.cacheAllFiles()
 }
 
 async function showLargeFiles() {
@@ -188,14 +286,14 @@ async function showLargeFiles() {
         div.appendChild(fileCard(d))
     }
 }
+
 async function showSimilarFiles(id) {
-    let embedding = await app.getEmbedding(id)
+    let embedding = await getEmbedding(id)
     let list = await app.findSimilarImages(embedding.embeddings)
     document.getElementById("detail-tab").click()
     let div = document.getElementById("detailDiv")
     div.innerHTML = ''
     for (let d of list) {
-        console.log('Similar:', d)
         div.appendChild(fileCard(d))
     }
 }
