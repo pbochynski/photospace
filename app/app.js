@@ -363,7 +363,7 @@ async function serverEmbedding(file) {
 
 export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
-  findDuplicates, deleteItems, deleteFromCache, findSimilarImages,
-  parentFolders, processingStatus, serverEmbedding, distance,
+  findDuplicates, deleteItems, deleteFromCache,
+  parentFolders, processingStatus, serverEmbedding,
   queueMissingEmbeddings
 }
