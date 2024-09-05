@@ -13,7 +13,7 @@ function addToolsButtons() {
     const tools = [
         {label: "Scan All Files", fn: scanAllFiles},
         {label: "Fix Embeddings", fn: cleanEmbeddings},
-        {label: "Clear DB", fn: clearDB},
+        {label: "Clear DB", fn: clearDbHandler},
         {label: "Missing Embeddings", fn: app.queueMissingEmbeddings},
         {label: "Large Files", fn: showLargeFiles},
         {label: "Duplicates", fn: showDuplicates},
@@ -35,7 +35,14 @@ addToolsButtons()
 
 document.getElementById("SignIn").onclick = signIn
 
-
+async function clearDbHandler(e) {
+    let btn = e.target
+    btn.disabled = true
+    btn.innerText = "Clearing ..."
+    await clearDB()
+    btn.innerText = "Clear DB"
+    btn.disabled = false
+}
 async function importHandler(e) {    
     let btn = e.target
     const [fileHandle] = await window.showOpenFilePicker();
@@ -80,12 +87,17 @@ function impexProgress({offset,count}){
 }
 
 async function exportToOneDriveHandler(e) {
-    let count = await exportToOneDrive(impexProgress)
+    // ask for model name (popup)
+    let name = prompt("Enter model name", "clip")
+
+    let count = await exportToOneDrive(name, impexProgress)
     document.getElementById("largeFilesDiv").innerText = `Exported ${count} embeddings to OneDrive`
 
 }
 async function importFromOneDriveHandler(e) {
-    let count = await importFromOneDrive(impexProgress)
+    // ask for model name (popup)
+    let name = prompt("Enter model name", "clip")
+    let count = await importFromOneDrive(name, impexProgress)
     document.getElementById("largeFilesDiv").innerText = `Imported ${count} embeddings from OneDrive`
 }
 async function exportHandler(e){

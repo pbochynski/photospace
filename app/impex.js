@@ -54,6 +54,7 @@ async function clearDB() {
   await db.embeddings.clear()
   const filesDB = await getFilesDB();
   await filesDB.files.clear()
+  return true
 }
 
 let token = null
@@ -82,7 +83,7 @@ async function readJsonFile(name) {
   }
   return fetch(graphFilesEndpoint + `/root:/photospace/${name}:/content`, options).then(response => response.json())
 }
-async function exportToOneDrive(progress_callback) {
+async function exportToOneDrive(name, progress_callback) {
   const db = await getEmbeddingsDB();
   token = await getTokenRedirect().then(token => token.accessToken)
   console.log("Token", token)
@@ -91,22 +92,22 @@ async function exportToOneDrive(progress_callback) {
   let count = await db.embeddings.count()
   let chunk = 500
   console.log("Number of embeddings", count)
-  await createJsonFile({ count, chunk }, 'embeddings.json')
+  await createJsonFile({ count, chunk }, `${name}.json`)
   while (offset < count) {
     let records = await db.embeddings.offset(offset).limit(chunk).toArray()
     progress_callback({ offset, count })
-    await createJsonFile(records, `embeddings-${offset}.json`)
+    await createJsonFile(records, `${name}-${offset}.json`)
     offset += records.length
   }
   return count
 }
-async function importFromOneDrive(progress_callback) {
+async function importFromOneDrive(name, progress_callback) {
   token = await getTokenRedirect().then(token => token.accessToken)
   const db = await getEmbeddingsDB();
-  let { count, chunk } = await readJsonFile('embeddings.json')
+  let { count, chunk } = await readJsonFile(`${name}.json`)
   let offset = 0
   while (offset < count) {
-    let json = await readJsonFile(`embeddings-${offset}.json`)
+    let json = await readJsonFile(`${name}-${offset}.json`)
     await db.embeddings.bulkPut(json)
     offset += chunk
     progress_callback({ offset, count })
