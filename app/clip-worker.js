@@ -1,6 +1,6 @@
 //import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.14';
 
-import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'hhttps://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
+import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
 
 console.log('ClIP worker loaded');
 // Load processor and vision model
