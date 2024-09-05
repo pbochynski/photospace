@@ -1,6 +1,6 @@
 import * as app from "./app.js";
 import { getEmbedding } from "./db.js"; 
-import { importDatabase, exportDatabase, cleanEmbeddings, quickEmbeddings,exportToOneDrive, importFromOneDrive } from "./impex.js";
+import { importDatabase, exportDatabase, cleanEmbeddings, clearDB,exportToOneDrive, importFromOneDrive } from "./impex.js";
 import { search } from "./search.js";
 import {signIn, signOut} from "./authRedirect.js";
 
@@ -12,8 +12,8 @@ addEventListener("popstate", (event) => {
 function addToolsButtons() {
     const tools = [
         {label: "Scan All Files", fn: scanAllFiles},
-        {label: "Clean Embeddings", fn: cleanEmbeddings},
-        {label: "Quick Embeddings", fn: quickEmbeddings},
+        {label: "Fix Embeddings", fn: cleanEmbeddings},
+        {label: "Clear DB", fn: clearDB},
         {label: "Missing Embeddings", fn: app.queueMissingEmbeddings},
         {label: "Large Files", fn: showLargeFiles},
         {label: "Duplicates", fn: showDuplicates},

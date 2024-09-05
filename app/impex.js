@@ -1,6 +1,6 @@
-import {importDB, exportDB, importInto, peakImportFile}  from 'https://cdn.jsdelivr.net/npm/dexie-export-import@4.1.2/+esm'
-import {getFilesDB,getEmbeddingsDB, getQuickEmbeddingsDB, payload} from './db.js'
-import {getTokenRedirect, tokenRequest} from './authRedirect.js'
+import { importDB, exportDB, importInto, peakImportFile } from 'https://cdn.jsdelivr.net/npm/dexie-export-import@4.1.2/+esm'
+import { getFilesDB, getEmbeddingsDB, getQuickEmbeddingsDB, payload } from './db.js'
+import { getTokenRedirect, tokenRequest } from './authRedirect.js'
 
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"
 
@@ -14,7 +14,7 @@ async function exportDatabase() {
 
 async function importDatabase(file) {
   // Import a file into a Dexie instance:
-  const db = await importDB(file,{overwriteValues: true});
+  const db = await importDB(file, { overwriteValues: true });
   return db.backendDB(); // backendDB() gives you the native IDBDatabase object.
 }
 
@@ -49,20 +49,13 @@ async function cleanEmbeddings() {
   db.embeddings.bulkDelete(toDelete)
 }
 
-async function quickEmbeddings() {
+async function clearDB() {
   const db = await getEmbeddingsDB();
-  const quickDb = await getQuickEmbeddingsDB();
-  let count = await db.embeddings.count()
-  console.log("Number of embeddings", count)
-  let offset = 0
-  while (offset < count) {
-    let records = await db.embeddings.offset(offset).limit(1000).toArray()
-    // console.log("Inserting", embeddings)
-    await quickDb.embeddings.bulkPut(records)
-    offset += records.length
-    console.log("Offset", offset)
-  }
+  await db.embeddings.clear()
+  const filesDB = await getFilesDB();
+  await filesDB.files.clear()
 }
+
 let token = null
 async function createPhotspaceFolder() {
   const options = {
@@ -78,7 +71,7 @@ async function createJsonFile(json, name) {
     method: "PUT",
     headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(json)
-  } 
+  }
   return fetch(graphFilesEndpoint + `/root:/photospace/${name}:/content`, options)
 
 }
@@ -91,17 +84,17 @@ async function readJsonFile(name) {
 }
 async function exportToOneDrive(progress_callback) {
   const db = await getEmbeddingsDB();
-  token = await getTokenRedirect().then(token => token.accessToken) 
+  token = await getTokenRedirect().then(token => token.accessToken)
   console.log("Token", token)
   await createPhotspaceFolder()
   let offset = 0
   let count = await db.embeddings.count()
   let chunk = 500
   console.log("Number of embeddings", count)
-  await createJsonFile({count, chunk}, 'embeddings.json')
+  await createJsonFile({ count, chunk }, 'embeddings.json')
   while (offset < count) {
     let records = await db.embeddings.offset(offset).limit(chunk).toArray()
-    progress_callback({offset, count})
+    progress_callback({ offset, count })
     await createJsonFile(records, `embeddings-${offset}.json`)
     offset += records.length
   }
@@ -116,9 +109,9 @@ async function importFromOneDrive(progress_callback) {
     let json = await readJsonFile(`embeddings-${offset}.json`)
     await db.embeddings.bulkPut(json)
     offset += chunk
-    progress_callback({offset, count})
+    progress_callback({ offset, count })
   }
   return count
 }
 
-export {exportDatabase, importDatabase, cleanEmbeddings, quickEmbeddings, importFromOneDrive, exportToOneDrive};
+export { exportDatabase, importDatabase, cleanEmbeddings, clearDB, importFromOneDrive, exportToOneDrive };
