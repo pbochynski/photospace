@@ -1,5 +1,5 @@
 
-import {env, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.14';
+import {env, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
 import { getEmbeddingsDB, getFilesDB } from './db.js';
 
 env.allowLocalModels = false;
