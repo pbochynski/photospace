@@ -15,4 +15,12 @@ small {
     line-height: 80%;
 }
 
+.center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 5px;
+}
+
+
 #searchText { width: 100%; } 

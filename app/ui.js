@@ -70,6 +70,9 @@ document.getElementById("searchText").addEventListener("keyup", function(event) 
         search({query:document.getElementById("searchText").value}, searchCallback)
     }
 })
+document.getElementById("searchButton").onclick = function(){
+    search({query:document.getElementById("searchText").value}, searchCallback)
+}
 
 function impexProgress({offset,count}){
     let div = document.getElementById("largeFilesDiv")
