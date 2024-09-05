@@ -3,7 +3,8 @@ import {env, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdeli
 import { getEmbeddingsDB, getFilesDB } from './db.js';
 
 env.allowLocalModels = false;
-
+// const textModelId = 'jinaai/jina-clip-v1';
+const textModelId = 'Xenova/clip-vit-base-patch16';
 // calculate distance between two embeddings using cosine similarity
 function distance(embedding1, embedding2) {
   const dotProduct = embedding1.reduce((acc, val, i) => acc + val * embedding2[i], 0);
@@ -26,11 +27,11 @@ class ApplicationSingleton {
       console.log('Loading tokenizer and text model');  
     // Load tokenizer and text model
       if (this.tokenizer === null) {
-          this.tokenizer = AutoTokenizer.from_pretrained('jinaai/jina-clip-v1');
+          this.tokenizer = AutoTokenizer.from_pretrained(textModelId);
       }
       console.log('Loaded tokenizer');
       if (this.text_model === null) {
-          this.text_model = CLIPTextModelWithProjection.from_pretrained('jinaai/jina-clip-v1');
+          this.text_model = CLIPTextModelWithProjection.from_pretrained(textModelId);
       }
       console.log('Loaded text model');
 
