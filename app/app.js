@@ -8,15 +8,14 @@ const cacheQueue = []
 let cacheProcessed = 0
 const embeddingQueue = []
 let processed = 0
-
 const embeddingWorkers = []
-for (let i = 0; i < 4; ++i) {
+for (let i = 0; i < 8; ++i) {
   embeddingWorkers.push(embeddingWorker(embeddingQueue, i))
 }
 // for (let i = 0; i < 12; ++i) {
 //   embeddingWorkers.push(serverEmbeddingWorker(embeddingQueue, i))
 // }
-for (let i = 0; i < 4; ++i) {
+for (let i = 0; i < 8; ++i) {
   cacheWorkers.push(worker(cacheQueue, i))
 }
 

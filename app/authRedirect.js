@@ -139,10 +139,14 @@ function signOut() {
 }
 
 function getTokenRedirect(request) {
+
     /**
      * See here for more info on account retrieval: 
      * https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/dev/lib/msal-common/docs/Accounts.md
      */
+    if (!request) {
+        request = tokenRequest
+    }
     request.account = myMSALObj.getAccountByUsername(username);
 
     return myMSALObj.acquireTokenSilent(request)
@@ -157,4 +161,4 @@ function getTokenRedirect(request) {
         });
 }
 
-export {getTokenRedirect, tokenRequest}
+export {getTokenRedirect, tokenRequest, signIn, signOut}

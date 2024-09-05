@@ -1,7 +1,8 @@
 import * as app from "./app.js";
 import { getEmbedding } from "./db.js"; 
-import { importDatabase, exportDatabase, cleanEmbeddings, quickEmbeddings } from "./impex.js";
+import { importDatabase, exportDatabase, cleanEmbeddings, quickEmbeddings,exportToOneDrive, importFromOneDrive } from "./impex.js";
 import { search } from "./search.js";
+import {signIn, signOut} from "./authRedirect.js";
 
 addEventListener("popstate", (event) => {
     console.log("Popstate event")
@@ -17,6 +18,8 @@ function addToolsButtons() {
         {label: "Large Files", fn: showLargeFiles},
         {label: "Duplicates", fn: showDuplicates},
         {label: "Export", fn: exportHandler},
+        {label: "Export to OneDrive", fn: exportToOneDriveHandler},
+        {label: "Import from OneDrive", fn: importFromOneDriveHandler},
         {label: "Import", fn: importHandler},
     ]
     const toolsDiv = document.getElementById("toolsDiv")
@@ -29,6 +32,9 @@ function addToolsButtons() {
     }
 }
 addToolsButtons()
+
+document.getElementById("SignIn").onclick = signIn
+
 
 async function importHandler(e) {    
     let btn = e.target
@@ -65,7 +71,20 @@ document.getElementById("searchText").addEventListener("keyup", function(event) 
     }
 })
 
+function impexProgress({offset,count}){
+    let div = document.getElementById("largeFilesDiv")
+    div.innerText = `in progress... ${offset}/${count}`
+}
 
+async function exportToOneDriveHandler(e) {
+    let count = await exportToOneDrive(impexProgress)
+    document.getElementById("largeFilesDiv").innerText = `Exported ${count} embeddings to OneDrive`
+
+}
+async function importFromOneDriveHandler(e) {
+    let count = await importFromOneDrive(impexProgress)
+    document.getElementById("largeFilesDiv").innerText = `Imported ${count} embeddings from OneDrive`
+}
 async function exportHandler(e){
     let btn = e.target
     const opts = {
@@ -80,7 +99,7 @@ async function exportHandler(e){
     // disable button
     btn.disabled = true
     btn.innerText = "Exporting ..."
-    let blob = await exportDatabase("Embeddings")
+    let blob = await exportDatabase()
     btn.innerText = "Writing ..."
     await writable.write(blob);
     await writable.close();
@@ -356,7 +375,9 @@ function showWelcomeMessage(username) {
     // Select DOM elements to work with
     const signInButton = document.getElementById("SignIn");
     // Reconfiguring DOM elements
-    signInButton.setAttribute("onclick", "signOut();");
+    // replace click event with signOut function
+    signInButton.onclick = signOut;
+    
     signInButton.setAttribute('class', "btn btn-success")
     signInButton.innerHTML = "Sign Out";
 }

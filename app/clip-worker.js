@@ -1,18 +1,15 @@
 
-import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
+import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.14';
 
 console.log('ClIP worker loaded');
 // Load processor and vision model
-const model_id = 'Xenova/clip-vit-base-patch16';
+const model_id = 'jinaai/jina-clip-v1' //'Xenova/clip-vit-base-patch16';
 
-const processor = await AutoProcessor.from_pretrained(model_id, { feature_extractor_type: "ImageFeatureExtractor" });
-const vision_model = await CLIPVisionModelWithProjection.from_pretrained(model_id, {
-  quantized: false,
-});
-console.log('ClIP model loaded');
+const processor = await AutoProcessor.from_pretrained('Xenova/clip-vit-base-patch32');
+const vision_model = await CLIPVisionModelWithProjection.from_pretrained('jinaai/jina-clip-v1');
+console.log('Jina model loaded');
 
 self.onmessage = async function (event) {
-
   const { id, url, token } = event.data;
   let image;
   try {

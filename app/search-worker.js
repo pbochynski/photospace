@@ -1,5 +1,5 @@
 
-import {env, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
+import {env, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.14';
 import { getEmbeddingsDB, getFilesDB } from './db.js';
 
 env.allowLocalModels = false;
@@ -16,20 +16,23 @@ function distance(embedding1, embedding2) {
 
 
 class ApplicationSingleton {
-  static model_id = 'Xenova/clip-vit-base-patch16';
+  // static model_id = 'Xenova/clip-vit-base-patch16';
 
   static tokenizer = null;
   static text_model = null;
 
 
   static async getInstance(progress_callback = null) {
-      // Load tokenizer and text model
+      console.log('Loading tokenizer and text model');  
+    // Load tokenizer and text model
       if (this.tokenizer === null) {
-          this.tokenizer = AutoTokenizer.from_pretrained(this.model_id, { progress_callback });
+          this.tokenizer = AutoTokenizer.from_pretrained('jinaai/jina-clip-v1');
       }
+      console.log('Loaded tokenizer');
       if (this.text_model === null) {
-          this.text_model = CLIPTextModelWithProjection.from_pretrained(this.model_id, { progress_callback });
+          this.text_model = CLIPTextModelWithProjection.from_pretrained('jinaai/jina-clip-v1');
       }
+      console.log('Loaded text model');
 
       return Promise.all([this.tokenizer, this.text_model, this.db]);
   }
@@ -84,8 +87,8 @@ async function findSimilarImages(queryParams) {
   }
   const db = await getEmbeddingsDB();
   let similarImages = [];
-  const maxImages = 100;
-  const maxDistance = 1;
+  const maxImages = 200;
+  const maxDistance = 2;
 
   let collection = db.embeddings;
   if (queryParams.date) {
