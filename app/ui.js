@@ -27,6 +27,7 @@ function addToolsButtons() {
     for (let t of tools) {
         let btn = document.createElement("button")
         btn.innerText = t.label
+        btn.setAttribute("class", "btn btn-primary btn-sm")
         btn.onclick = t.fn
         toolsDiv.appendChild(btn)
     }
@@ -237,15 +238,16 @@ function fileCard(d) {
 
     body.setAttribute("class", "card-body");
     if (d.folder) {
-        let scanBtn = document.createElement("button")
-        scanBtn.innerText = "Scan"
-        scanBtn.onclick = () => app.cacheAllFiles(d.id)  
-        body.appendChild(scanBtn)
         const link = document.createElement('a');
         link.href = 'javascript:void(0)';
         link.textContent = d.name;
         link.addEventListener('click', () => openFolder(d.id));
         body.appendChild(link)
+        let scanBtn = document.createElement("button")
+        scanBtn.innerText = "Scan"
+        scanBtn.setAttribute("class", "btn btn-primary btn-sm")
+        scanBtn.onclick = () => app.cacheAllFiles(d.id)  
+        body.appendChild(scanBtn)
         body.appendChild(document.createElement("br"))
     } else {
         body.appendChild(small(filePath(d)))

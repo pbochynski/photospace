@@ -21,6 +21,9 @@ small {
     align-items: center;
     margin: 5px;
 }
+.btn {
+    margin: 5px;
+}
 
 
 #searchText { width: 100%; } 
