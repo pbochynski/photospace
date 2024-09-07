@@ -4,11 +4,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://getbootstrap.com/docs/5.3/assets/css/docs.css" rel="stylesheet">
     <title>Photospace</title>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <!-- msal.min.js can be used in the place of msal.js; included msal.js to make debug easy -->
     <script src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.js"
         integrity="sha384-o4ufwq3oKqc7IoCcR08YtZXmgOljhTggRwxP2CLbSqeXGtitAxwYaUln/05nJjit"
@@ -17,83 +13,88 @@
 
 </head>
 
-<body class="p-3 m-0 border-0 bd-example m-0 border-0">
-
-    <!-- Example Code -->
-
-    <nav class="navbar navbar-expand-lg bg-body-tertiary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="#">Photospace</a>
-            <div class="btn-group ml-auto dropleft">
-                <button type="button" id="SignIn" class="btn btn-secondary">
-                    Sign In
-                </button>
-            </div>
+<body>
+    <header class="app-header">
+        <button class="menu-button" id="menu-button">
+            &#9776; <!-- Three bars icon -->
+        </button>
+        <span class="app-title">Photospace</span>
+        <div class="user-section" id="user-section">
+            <button type="button" id="sign-in-button" class="btn">Sign In</button>
+            <!-- User icon will be dynamically added here when signed in -->
         </div>
+    </header>
+
+    <nav class="side-menu" id="side-menu">
+        <ul>
+            <li><button class="nav-button home-button">Home</button></li>
+            <li><button class="nav-button drive-button">Drive</button></li>
+            <li><button class="nav-button album-button">Album</button></li>
+            <li><button class="nav-button tools-button">Tools</button></li>
+            <li><button class="nav-button search-button">Search</button></li>
+        </ul>
     </nav>
 
-    <ul class="nav nav-tabs" id="myTab" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="drive-tab" data-bs-toggle="tab" data-bs-target="#drive-tab-pane"
-                type="button" role="tab" aria-controls="drive-tab-pane" aria-selected="true">Drive</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="large-tab" data-bs-toggle="tab" data-bs-target="#large-tab-pane" type="button"
-                role="tab" aria-controls="large-tab-pane" aria-selected="false">Cleanup</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="detail-tab" data-bs-toggle="tab" data-bs-target="#detail-tab-pane"
-                type="button" role="tab" aria-controls="detail-tab-pane" aria-selected="false">Details</button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="search-tab" data-bs-toggle="tab" data-bs-target="#search-tab-pane"
-                type="button" role="tab" aria-controls="search-tab-pane" aria-selected="false">Search</button>
-        </li>
-    </ul>
-    <div class="tab-content" id="myTabContent">
-        <div class="tab-pane fade show active" id="drive-tab-pane" role="tabpanel" aria-labelledby="drive-tab"
-            tabindex="0">
-            <div class="row row-cols-1 g-2">
-                <div class="col">
-                    <div id="breadCrumb" class="breadcrumb"></div>
-                </div>
-                <div id="statusDiv"></div>
-                <div id="processingDiv"></div>
+    <div id="home" class="content">
+        <h1>Photospace</h1>
+        <p>Photospace is a web application that allows you to view and manage your photos stored in OneDrive. You can
+            navigate through your OneDrive folders, view photos, create albums, and search for photos based on their
+            properties.</p>
+        <p>Photospace uses the Microsoft Identity Platform to sign in users and access their OneDrive data. The
+            application uses the Microsoft Graph API to interact with OneDrive.</p>
+        <p>Click the Sign In button to sign in and start using Photospace.</p>
+    </div>
+    <div id="drive"" class=" content">
+        <div class="row row-cols-1 g-2">
+            <div class="col">
+                <div id="breadCrumb" class="breadcrumb"></div>
             </div>
-            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="fileDiv">
-            </div>
-
+            <div id="statusDiv"></div>
+            <div id="processingDiv"></div>
         </div>
-        <div class="tab-pane fade" id="large-tab-pane" role="tabpanel" aria-labelledby="large-tab" tabindex="0">
-            <div class="row row-cols-1 g-2">
-                <div class="col" id="toolsDiv">
-                </div>
-            </div>
+        <div class="card-container" id="fileDiv">
+        </div>
 
-            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="largeFilesDiv">
+    </div>
+    <div id="album" class="content">
+        <div class="row row-cols-1 g-2">
+        </div>
+
+        <div class="card-container" id="albumDiv"></div>
+    </div>
+
+    <div id="tools" class="content">
+        <div class="row row-cols-1 g-2">
+            <div class="col" id="toolsDiv">
             </div>
         </div>
-        <div class="tab-pane fade" id="detail-tab-pane" role="tabpanel" aria-labelledby="detail-tab" tabindex="0">
-            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="detailDiv">
 
-            </div>
+        <div class="card-container" id="largeFilesDiv">
         </div>
-        <div class="tab-pane fade" id="search-tab-pane" role="tabpanel" aria-labelledby="search-tab" tabindex="0">
-            <div class="row row-cols-1 g-2">
-            </div>
-            <div class="center">
-                <br />
-                <input type="text" placeholder="type search criteria here..." id="searchText" value="">
-                <br />
-                <button type="button" class="center btn btn-sm btn-primary" id="searchButton">Search</button>
-            </div>
+    </div>
+    <div id="search" class="content">
+        <div class="row row-cols-1 g-2">
+        </div>
+        <div class="center">
+            <br />
+            <input type="text" placeholder="type search criteria here..." id="searchText" value="">
+            <br />
+            <button type="button" class="center btn btn-sm btn-primary" id="searchButton">Search</button>
+        </div>
 
-            <div class="row row-cols-1 row-cols-sm-2 row-cols-md-4 row-cols-lg-6 g-2" id="searchDiv">
-            </div>
+        <div class="card-container" id="searchDiv">
         </div>
     </div>
 
-    <script type="module" src="./authRedirect.js"></script>
+
+    <div class="bottom-nav">
+        <button class="nav-button drive-button">Drive</button>
+        <button class="nav-button album-button">Album</button>
+        <button class="nav-button tools-button">Tools</button>
+        <button class="nav-button search-button">Search</button>
+    </div>
+
+    <script type="module" src="./auth.js"></script>
     <script type="module" src="./app.js"></script>
     <script type="module" src="./ui.js"></script>
 

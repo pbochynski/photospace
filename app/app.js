@@ -1,5 +1,5 @@
-import { getTokenRedirect, tokenRequest } from './authRedirect.js';
-import {getEmbeddingsDB, getFilesDB, saveEmbedding, getQuickEmbeddingsDB,payload } from './db.js';
+import { getTokenRedirect } from './auth.js';
+import {getEmbeddingsDB, getFilesDB, saveEmbedding, payload } from './db.js';
 
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"
 
@@ -33,9 +33,8 @@ function fetchWithToken(url, token) {
   return fetch(url, options)
 }
 
-
 async function parentFolders(id) {
-  let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+  let token = await getTokenRedirect().then(response => response.accessToken)
   let folders = []
   while (id) {
     let data = await fetchWithToken(graphFilesEndpoint + `/items/${id}`, token).then(response => response.json())
@@ -47,7 +46,7 @@ async function parentFolders(id) {
 }
 
 async function readFolder(id, callback) {
-  let token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+  let token = await getTokenRedirect().then(response => response.accessToken)
   const path = (id) ? `/items/${id}` : `/root`
   let data = await fetchWithToken(graphFilesEndpoint + path + '/children?$expand=thumbnails', token).then(response => response.json())
   cacheFiles(data)
@@ -65,7 +64,7 @@ async function readFolder(id, callback) {
       callback(next)
     }
   }
-  return data
+  return data.value
 }
 async function readThumbnail(token, id, size) {
   return fetchWithToken(graphFilesEndpoint + `/items/${id}/thumbnails/0/${size}/content`, token)
@@ -82,7 +81,7 @@ async function deleteFromCache(items) {
 
 async function deleteItems(items) {
   return new Promise(async (resolve, reject) => {
-    getTokenRedirect(tokenRequest)
+    getTokenRedirect()
       .then(async (response) => {
         const headers = new Headers();
         const bearer = `Bearer ${response.accessToken}`;
@@ -150,7 +149,7 @@ async function embeddingWorker(queue, number) {
       continue
     }
     if (!token) {
-      token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+      token = await getTokenRedirect().then(response => response.accessToken)
     }
     let f = embeddingQueue.shift()
     let thumbnailUrl = graphFilesEndpoint + `/items/${f.id}/thumbnails/0/large/content`
@@ -191,7 +190,7 @@ async function worker(urls, number) {
       continue
     }
     if (!token) {
-      token = await getTokenRedirect(tokenRequest).then(response => response.accessToken)
+      token = await getTokenRedirect().then(response => response.accessToken)
       console.log("Worker %s token", number, token)    
     }
     let url = urls.shift()
@@ -262,7 +261,7 @@ async function findDuplicates() {
   let n = 0, p = 0
   let h = {}
   let duplicates = {}
-  db.files.each(value => {
+  await db.files.each(value => {
     n++
     if (value.photo) {
       p++

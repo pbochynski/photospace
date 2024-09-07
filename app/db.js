@@ -14,6 +14,15 @@ async function getEmbeddingsDB() {
   })
   return db;
 }
+
+async function getAlbumsDB() {
+  const db = new Dexie('Albums');
+  db.version(2).stores({
+    albums: '[fileId+albumId],fileId,albumId'
+  })
+  return db;
+}
+
 async function getQuickEmbeddingsDB() {
   const db = new Dexie('QuickEmbeddings');
   db.version(2).stores({
@@ -45,4 +54,4 @@ function payload(file) {
     image: file.image
   }
 }
-export {getFilesDB, getEmbeddingsDB, saveEmbedding, getEmbedding, getQuickEmbeddingsDB, payload};
+export {getFilesDB, getEmbeddingsDB, saveEmbedding, getEmbedding, getQuickEmbeddingsDB, payload, getAlbumsDB};

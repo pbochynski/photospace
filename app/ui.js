@@ -1,26 +1,87 @@
 import * as app from "./app.js";
-import { getEmbedding } from "./db.js"; 
-import { importDatabase, exportDatabase, cleanEmbeddings, clearDB,exportToOneDrive, importFromOneDrive } from "./impex.js";
+import { importDatabase, exportDatabase, cleanEmbeddings, clearDB, exportToOneDrive, importFromOneDrive } from "./impex.js";
 import { search } from "./search.js";
-import {signIn, signOut} from "./authRedirect.js";
+import { getAllAlbums, getAlbum, indexAlbums, getFileAlbums } from "./album.js";
 
 addEventListener("popstate", (event) => {
     console.log("Popstate event")
     render()
 });
 
+function activateContent(id) {
+    const tabs = document.getElementsByClassName("content");
+    for (let tab of tabs) {
+        tab.style.display = "none";
+    }
+
+    const navButtons = document.querySelectorAll('.nav-button');
+    navButtons.forEach(button => button.classList.remove('active'));
+
+    const buttons = document.querySelectorAll(`.${id}-button`);
+    buttons.forEach(button => button.classList.add('active'));
+
+    document.getElementById('side-menu').style.display = 'none';
+    document.getElementById(id).style.display = "block";
+}
+
+function addListenerToAll(selector, event, handler) {
+    document.querySelectorAll(selector).forEach((element) => {
+        element.addEventListener(event, handler);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    const buttons = ['home', 'drive', 'search', 'tools', 'album']
+    const menuButton = document.getElementById('menu-button');
+    const sideMenu = document.getElementById('side-menu');
+    // const signInButton = document.getElementById('sign-in-button');
+    // const userSection = document.getElementById('user-section');
+
+    for (let b of buttons) {
+        addListenerToAll(`.${b}-button`, 'click', () => {
+            activateContent(b);
+        });
+    }
+    addListenerToAll('.album-button', 'click', albumsHandler);
+    addListenerToAll('.drive-button', 'click', () => openFolder());
+
+    menuButton.addEventListener('click', () => {
+        sideMenu.style.display = sideMenu.style.display === 'block' ? 'none' : 'block';
+    });
+    addToolsButtons()
+    setInterval(processingStatus, 1000)
+    // register callback for search text input field that triggers search when enter is pressed
+    document.getElementById("searchText").addEventListener("keyup", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            search({ query: document.getElementById("searchText").value }, searchCallback)
+        }
+    })
+    document.getElementById("searchButton").onclick = function () {
+        search({ query: document.getElementById("searchText").value }, searchCallback)
+    }
+
+
+    activateContent("home")
+    // signInButton.addEventListener('click', () => {
+    //     // Handle sign-in logic here
+    //     // For demonstration, we'll just replace the button with a user icon
+    //     userSection.innerHTML = '<img src="user-icon.png" alt="User Icon" class="user-icon">';
+    // });
+});
+
 function addToolsButtons() {
     const tools = [
-        {label: "Scan All Files", fn: scanAllFiles},
-        {label: "Fix Embeddings", fn: cleanEmbeddings},
-        {label: "Clear DB", fn: clearDbHandler},
-        {label: "Missing Embeddings", fn: app.queueMissingEmbeddings},
-        {label: "Large Files", fn: showLargeFiles},
-        {label: "Duplicates", fn: showDuplicates},
-        {label: "Export", fn: exportHandler},
-        {label: "Export to OneDrive", fn: exportToOneDriveHandler},
-        {label: "Import from OneDrive", fn: importFromOneDriveHandler},
-        {label: "Import", fn: importHandler},
+        { label: "Scan All Files", fn: scanAllFiles },
+        { label: "Fix Embeddings", fn: cleanEmbeddings },
+        { label: "Clear DB", fn: clearDbHandler },
+        { label: "Missing Embeddings", fn: app.queueMissingEmbeddings },
+        { label: "Export", fn: exportHandler },
+        { label: "Import", fn: importHandler },
+        { label: "Export to OneDrive", fn: exportToOneDriveHandler },
+        { label: "Import from OneDrive", fn: importFromOneDriveHandler },
+        { label: "Index albums", fn: indexAlbums },
     ]
     const toolsDiv = document.getElementById("toolsDiv")
     toolsDiv.innerHTML = ""
@@ -32,9 +93,7 @@ function addToolsButtons() {
         toolsDiv.appendChild(btn)
     }
 }
-addToolsButtons()
 
-document.getElementById("SignIn").onclick = signIn
 
 async function clearDbHandler(e) {
     let btn = e.target
@@ -44,7 +103,7 @@ async function clearDbHandler(e) {
     btn.innerText = "Clear DB"
     btn.disabled = false
 }
-async function importHandler(e) {    
+async function importHandler(e) {
     let btn = e.target
     const [fileHandle] = await window.showOpenFilePicker();
     const file = await fileHandle.getFile();
@@ -53,36 +112,73 @@ async function importHandler(e) {
     const db = await importDatabase(file);
     console.log("Imported db", db)
     btn.innerText = "Import"
-    btn.disabled = false    
+    btn.disabled = false
     render()
 }
-setInterval(processingStatus, 1000)
 
-function searchCallback(data){
+function albumCard(a) {
+    let card = document.createElement("div");
+    card.setAttribute("class", "album-card");
+
+    let imgWrapper = document.createElement("div");
+    imgWrapper.setAttribute("class", "img-wrapper");
+
+    let img = document.createElement("img");
+    img.src = a.thumbnails[0].large.url;
+    imgWrapper.appendChild(img);
+
+    let link = document.createElement("a");
+    link.href = "javascript:void(0)";
+    link.innerText = a.name;
+    link.onclick = () => openAlbum(a.id);
+    link.setAttribute("class", "album-link");
+
+    imgWrapper.appendChild(link);
+    card.appendChild(imgWrapper);
+
+    return card;
+}
+
+async function albumsHandler() {
+    if (document.getElementById("albumDiv").innerHTML != "") {
+        return
+    }
+    const albums = await getAllAlbums()
+    console.log("Albums", albums)
+    let div = document.getElementById("albumDiv")
+    div.innerHTML = ""
+    for (let a of albums) {
+        if (a.bundle.album) {
+            let card = albumCard(a)
+            console.log("Album card", card)
+            div.appendChild(card)
+        }
+    }
+}
+async function openAlbum(id) {
+    let div = document.getElementById("albumDiv")
+    div.innerHTML = ""
+    let files = await getAlbum(id)
+    console.log("Album files", files)
+    for (let f of files) {
+        div.appendChild(fileCard(f))
+    }
+}
+
+
+function searchCallback(data) {
     console.log("Search callback", data)
-    document.getElementById("search-tab").click()
-
     let div = document.getElementById("searchDiv")
     div.innerHTML = ""
-    if (data.files){
+    if (data.files) {
         for (let d of data.files) {
             div.appendChild(fileCard(d))
         }
-    
+
     }
-}
-// register callback for search text input field that triggers search when enter is pressed
-document.getElementById("searchText").addEventListener("keyup", function(event) {
-    if (event.key === "Enter") {
-        event.preventDefault();
-        search({query:document.getElementById("searchText").value}, searchCallback)
-    }
-})
-document.getElementById("searchButton").onclick = function(){
-    search({query:document.getElementById("searchText").value}, searchCallback)
 }
 
-function impexProgress({offset,count}){
+function impexProgress({ offset, count }) {
     let div = document.getElementById("largeFilesDiv")
     div.innerText = `in progress... ${offset}/${count}`
 }
@@ -101,7 +197,7 @@ async function importFromOneDriveHandler(e) {
     let count = await importFromOneDrive(name, impexProgress)
     document.getElementById("largeFilesDiv").innerText = `Imported ${count} embeddings from OneDrive`
 }
-async function exportHandler(e){
+async function exportHandler(e) {
     let btn = e.target
     const opts = {
         types: [{
@@ -131,9 +227,13 @@ async function render() {
     fileDiv.innerHTML = ""
     const statusDiv = document.getElementById("statusDiv");
     statusDiv.innerText = "Loading ..."
-    app.readFolder(currentFolder, renderFiles).then(() => {
+    app.readFolder(currentFolder, renderFiles).then((files) => {
         statusDiv.innerText = ""
-        renderPredictions()
+        for (let f of files) {
+            let albums = getFileAlbums(f.id)
+
+
+        }
     })
     app.parentFolders(currentFolder).then(renderParents)
 }
@@ -141,12 +241,11 @@ async function processingStatus() {
     const processingDiv = document.getElementById("processingDiv");
     let { pending, processed, cacheProcessed, cacheQueue } = await app.processingStatus()
     if (pending > 0 || cacheQueue > 0) {
-        processingDiv.innerText = `Processing (${processed}/${pending + processed}), cacheQueue: ${cacheQueue}`    
+        processingDiv.innerText = `Processing (${processed}/${pending + processed}), cacheQueue: ${cacheQueue}`
     } else {
         if (processingDiv.innerText.startsWith("Processing (")) {
             processingDiv.innerText = "Processing done."
-            console.log("Processing done, rendering predictions")
-            renderPredictions()
+            render()
         } else {
             processingDiv.innerText = ""
         }
@@ -156,19 +255,25 @@ async function processingStatus() {
 function renderParents(folders) {
     const breadCrumbDiv = document.getElementById("breadCrumb");
 
-    let i = folders.length - 1
-    breadCrumbDiv.innerHTML = ""
+    let i = folders.length - 1;
+    breadCrumbDiv.innerHTML = "";
     while (i >= 0) {
-        breadCrumbDiv.appendChild(document.createTextNode(" > "))
-        let a = document.createElement("a")
-        a.href = "javascript:void(0)"
-        let id = folders[i].id
-        a.onclick = () => {
-            console.log("click", id)
-            openFolder(id)
+        if (i < folders.length - 1) {
+            let separator = document.createElement("span");
+            separator.className = "separator";
+            separator.innerText = ">";
+            breadCrumbDiv.appendChild(separator);
         }
-        a.innerText = folders[i].name
-        breadCrumbDiv.appendChild(a)
+
+        let a = document.createElement("a");
+        a.href = "javascript:void(0)";
+        let id = folders[i].id;
+        a.onclick = () => {
+            console.log("click", id);
+            openFolder(id);
+        };
+        a.innerText = folders[i].name;
+        breadCrumbDiv.appendChild(a);
         --i;
     }
 }
@@ -211,99 +316,127 @@ function filePath(d) {
     return d.name
 }
 
-function fileCard(d) {
-    const col = document.createElement("div");
-    col.setAttribute("class", "col")
+function folderCard(d) {
     const card = document.createElement("div");
-    card.setAttribute("class", "card h-100");
-    const body = document.createElement("div")
+    card.setAttribute("class", "folder-card");
+
     const img = document.createElement("img")
     img.setAttribute("class", "card-img")
     img.setAttribute("id", "img_" + d.id)
     img.setAttribute("height", "160")
+    img.setAttribute("src", "folder.svg")
+    card.appendChild(img);
+
+    const link = document.createElement('a');
+    link.href = 'javascript:void(0)';
+    link.textContent = d.name;
+    link.setAttribute("class", "folder-link")
+    link.addEventListener('click', () => openFolder(d.id));
+    card.appendChild(link)
+    card.appendChild(document.createElement("br"))
+    card.appendChild(small(formatFileSize(d.size, 2)))
+
+    let scanBtn = document.createElement("button")
+    scanBtn.innerText = "scan..."
+    scanBtn.setAttribute("class", "btn btn-primary btn-sm scan-btn")
+    scanBtn.onclick = () => app.cacheAllFiles(d.id)
+    card.appendChild(scanBtn)
+
+    return card
+}
+
+function fileCard(d) {
     if (d.folder) {
-        img.setAttribute("src", "folder.svg")
-    } else if (d.image) {
+        return folderCard(d)
+    }
+    const card = document.createElement("div");
+    card.setAttribute("class", "card");
+    let imgWrapper = document.createElement("div");
+    imgWrapper.setAttribute("class", "img-wrapper");
+
+    const img = document.createElement("img")
+    img.setAttribute("class", "card-img")
+    img.setAttribute("id", "img_" + d.id)
+    img.setAttribute("height", "160")
+    if (d.image) {
         img.setAttribute("src", "picture.svg")
     } else {
         img.setAttribute("src", "file.svg")
     }
     img.setAttribute("onclick", `window.open("${d.webUrl}")`)
-    if (!d.folder && d.thumbnails && d.thumbnails.length > 0 && d.thumbnails[0].large) {
+    if (d.thumbnails && d.thumbnails.length > 0 && d.thumbnails[0].large) {
         img.setAttribute("src", d.thumbnails[0].large.url)
     } else if (d.thumbnailUrl) {
         img.setAttribute("src", d.thumbnailUrl)
     }
-    card.appendChild(img);
+    imgWrapper.appendChild(img);
+    card.appendChild(imgWrapper);
 
+    const body = document.createElement("div")
     body.setAttribute("class", "card-body");
-    if (d.folder) {
-        const link = document.createElement('a');
-        link.href = 'javascript:void(0)';
-        link.textContent = d.name;
-        link.addEventListener('click', () => openFolder(d.id));
-        body.appendChild(link)
-        let scanBtn = document.createElement("button")
-        scanBtn.innerText = "Scan"
-        scanBtn.setAttribute("class", "btn btn-primary btn-sm")
-        scanBtn.onclick = () => app.cacheAllFiles(d.id)  
-        body.appendChild(scanBtn)
-        body.appendChild(document.createElement("br"))
-    } else {
-        body.appendChild(small(filePath(d)))
-    }
+    body.appendChild(small(filePath(d)))
     body.appendChild(document.createElement("br"))
     body.appendChild(small(formatFileSize(d.size, 2)))
-    if (d.distance) {
+    body.appendChild(document.createElement("br"))
+
+    let taken = d.photo && d.photo.takenDateTime || d.createdDateTime
+    if (taken) {
+        body.appendChild(small(taken))
         body.appendChild(document.createElement("br"))
+    }
+    if (d.distance) {
         body.appendChild(small("Distance: " + d.distance.toFixed(2)))
+        body.appendChild(document.createElement("br"))
+    }
+    if (d.image) {
+        let star = document.createElement("button")
+        star.innerText = "★"
+        star.setAttribute("id", "star_" + d.id)
+        star.setAttribute("class", "star-disabled")
+        star.onclick = () => toggleAlbum(d)
+        star.enabled = false
+        card.appendChild(star)
+
+        let btn = document.createElement("button")
+        btn.innerText = "🔎"
+        btn.setAttribute("class", "similar-btn")
+        btn.onclick = () => searchSimilarHandler(d.id)
+        btn.enabled = (d.embeddings) ? true : false
+        card.appendChild(btn)
     }
     card.appendChild(body)
-    const predictionDiv = document.createElement("div")
-    predictionDiv.setAttribute("class", "card-footer prediction")
-    predictionDiv.setAttribute("id", "prediction_" + d.id)
-    if (d.embeddings) {
-        let btn = document.createElement("button")
-        btn.innerText = "Similar"
-        btn.onclick = () => searchSimilarHandler(d.id)
-        predictionDiv.appendChild(btn)
-    }
-
-    card.appendChild(predictionDiv)
-    col.appendChild(card)
-    return col
+    return card
 }
 
-function searchSimilarHandler(id){
-    document.getElementById("search-tab").click()
+function toggleAlbum(d) {
+    console.log("Toggle album", d)
+    let star = document.getElementById("star_" + d.id)
+    if (star.enabled) {
+        star.enabled = false
+        star.setAttribute("class", "star-disabled")
+    } else {
+        star.enabled = true
+        star.setAttribute("class", "star-enabled")
+    }
+}
+
+function searchSimilarHandler(id) {
+    activateContent("search")
     let query = document.getElementById("searchText").value
-    search({similar:id, query}, searchCallback)
-}
-
-async function renderPredictions() {
-    let predictionDivs = document.getElementsByClassName("prediction")
-    for (let p of predictionDivs) {
-        let id = p.id.replace("prediction_", "")
-        if (p.innerHTML == "") {
-            let emb = await getEmbedding(id)
-            if (emb && emb.embeddings) {
-                p.innerHTML = ''
-                let btn = document.createElement("button")
-                btn.innerText = "Similar"
-                btn.onclick = () => searchSimilarHandler(id)
-                p.appendChild(btn)
-            }
-        }
-    }
+    search({ similar: id, query }, searchCallback)
 }
 
 async function openFolder(id) {
+    console.log("Open folder 1", id)
 
     const url = new URL(window.location);
     if (!id) {
         id = url.searchParams.get("folder")
     }
+    console.log("Open folder 2", id)
     if (url.searchParams.get("folder") != id) {
+        console.log("folder", id)
+
         url.searchParams.set("folder", id);
         window.history.pushState({}, "", url);
     }
@@ -323,16 +456,6 @@ async function showLargeFiles() {
     }
 }
 
-async function showSimilarFiles(id) {
-    let embedding = await getEmbedding(id)
-    let list = await app.findSimilarImages(embedding.embeddings)
-    document.getElementById("detail-tab").click()
-    let div = document.getElementById("detailDiv")
-    div.innerHTML = ''
-    for (let d of list) {
-        div.appendChild(fileCard(d))
-    }
-}
 let pairs = {}
 async function showDuplicates() {
     pairs = await app.findDuplicates()
@@ -350,6 +473,7 @@ async function showDuplicates() {
 }
 
 function prettyPath(path) {
+    if (!path) return ""
     return decodeURI(path.replace('/drive/root:', ''))
 }
 function duplicateCard(key, d) {
@@ -388,15 +512,5 @@ async function deleteDuplicates(key, index) {
     })
 }
 
-function showWelcomeMessage(username) {
-    // Select DOM elements to work with
-    const signInButton = document.getElementById("SignIn");
-    // Reconfiguring DOM elements
-    // replace click event with signOut function
-    signInButton.onclick = signOut;
-    
-    signInButton.setAttribute('class', "btn btn-success")
-    signInButton.innerHTML = "Sign Out";
-}
 
-export { openFolder, showWelcomeMessage }
+export { openFolder }

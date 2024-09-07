@@ -66,6 +66,7 @@ const tokenRequest = {
 const myMSALObj = new msal.PublicClientApplication(msalConfig);
 
 let username = "";
+document.getElementById("sign-in-button").onclick = signIn
 
 /**
  * A promise handler needs to be registered for handling the
@@ -86,7 +87,7 @@ function selectAccount () {
      */
 
     const currentAccounts = myMSALObj.getAllAccounts();
-
+    console.log("accounts", currentAccounts)
     if (currentAccounts.length === 0) {
         return;
     } else if (currentAccounts.length > 1) {
@@ -95,18 +96,29 @@ function selectAccount () {
     } else if (currentAccounts.length === 1) {
         console.log("one user")
         username = currentAccounts[0].username;
-        ui.showWelcomeMessage(username);
+        showWelcomeMessage(username);
         ui.openFolder()
     }
 }
 
+function showWelcomeMessage(username) {
+    // Select DOM elements to work with
+    const signInButton = document.getElementById("sign-in-button");
+    // Reconfiguring DOM elements
+    // replace click event with signOut function
+    signInButton.onclick = signOut;
+    
+    signInButton.setAttribute('class', "btn btn-success")
+    signInButton.innerHTML = "Sign Out";
+}
+
 
 function handleResponse(response) {
-    console.log("response handling")
+    console.log("response handling:", response)
     if (response !== null) {
         console.log("not null response")
         username = response.account.username;
-        ui.showWelcomeMessage(username);
+        showWelcomeMessage(username);
         ui.openFolder()
     } else {
         selectAccount();
