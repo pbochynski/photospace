@@ -1,6 +1,5 @@
 // Create the main myMSALObj instance
 // configuration parameters are located at authConfig.js
-import * as ui from "./ui.js";
 
 /**
  * Configuration object to be passed to MSAL instance on creation. 
@@ -97,7 +96,6 @@ function selectAccount () {
         console.log("one user")
         username = currentAccounts[0].username;
         showWelcomeMessage(username);
-        ui.openFolder()
     }
 }
 
@@ -119,7 +117,6 @@ function handleResponse(response) {
         console.log("not null response")
         username = response.account.username;
         showWelcomeMessage(username);
-        ui.openFolder()
     } else {
         selectAccount();
     }

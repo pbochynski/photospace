@@ -1,28 +1,25 @@
-#breadCrumb {
+.breadcrumb {
     display: flex;
     align-items: center;
     font-size: 16px;
     font-family: Arial, sans-serif;
+    margin: 0.5em;
 }
 
-#breadCrumb a {
+.breadcrumb a {
     color: #333; /* Change to your desired color */
     text-decoration: none; /* Remove underline */
     padding: 0 5px;
     transition: color 0.3s;
 }
 
-#breadCrumb a:hover {
+.breadcrumb a:hover {
     color: #007BFF; /* Change to your desired hover color */
 }
 
-#breadCrumb .separator {
+.breadcrumb .separator {
     color: #999; /* Change to your desired separator color */
     padding: 0 5px;
-}
-
-.breadcrumb {
-    margin: 0.5em;
 }
 
 .folder-link {
@@ -30,6 +27,7 @@
     text-decoration: none;
     /* font-size: larger; */
     color: black;
+    font-weight: bold;
     padding: 5px;
 }
 img {

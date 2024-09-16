@@ -52,6 +52,12 @@ async function getAlbum(albumId) {
   return items
 }
 
+async function getAlbumName(id) {
+  let response = await fetchWithToken(`https://graph.microsoft.com/v1.0/drive/items/${id}`, {});
+  let album =  await response.json();
+  return album.name;
+}
+
 async function addToAlbum(albumId, fileId) {
   let response = await fetchWithToken(`https://graph.microsoft.com/v1.0/drive/bundles/${albumId}/children`, {
     method: 'POST',
@@ -86,4 +92,6 @@ async function getFileAlbums(fileId) {
 }
 
 
-export { getAllAlbums, getAlbum, addToAlbum, removeFromAlbum, indexAlbums, getFileAlbums };
+export { getAllAlbums, getAlbum, addToAlbum, removeFromAlbum, indexAlbums, getFileAlbums,
+  getAlbumName
+ };

@@ -1,14 +1,23 @@
 import * as app from "./app.js";
 import { importDatabase, exportDatabase, cleanEmbeddings, clearDB, exportToOneDrive, importFromOneDrive } from "./impex.js";
 import { search } from "./search.js";
-import { getAllAlbums, getAlbum, indexAlbums, getFileAlbums } from "./album.js";
+import { getAllAlbums, getAlbum, indexAlbums, getFileAlbums, getAlbumName } from "./album.js";
 
 addEventListener("popstate", (event) => {
     console.log("Popstate event")
-    render()
+    podStateHandler(event)
 });
 
 function activateContent(id) {
+
+    const url = new URL(window.location);
+    let viewId = url.searchParams.get("view")
+    if (viewId != id) {
+        url.searchParams.set("view", id);
+        window.history.pushState({}, "", url);
+    }
+
+
     const tabs = document.getElementsByClassName("content");
     for (let tab of tabs) {
         tab.style.display = "none";
@@ -43,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activateContent(b);
         });
     }
-    addListenerToAll('.album-button', 'click', albumsHandler);
+    addListenerToAll('.album-button', 'click', openAlbum());
     addListenerToAll('.drive-button', 'click', () => openFolder());
 
     menuButton.addEventListener('click', () => {
@@ -62,8 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         search({ query: document.getElementById("searchText").value }, searchCallback)
     }
 
-
-    activateContent("home")
+    podStateHandler()
     // signInButton.addEventListener('click', () => {
     //     // Handle sign-in logic here
     //     // For demonstration, we'll just replace the button with a user icon
@@ -113,7 +121,6 @@ async function importHandler(e) {
     console.log("Imported db", db)
     btn.innerText = "Import"
     btn.disabled = false
-    render()
 }
 
 function albumCard(a) {
@@ -139,29 +146,60 @@ function albumCard(a) {
     return card;
 }
 
-async function albumsHandler() {
-    if (document.getElementById("albumDiv").innerHTML != "") {
-        return
-    }
-    const albums = await getAllAlbums()
-    console.log("Albums", albums)
-    let div = document.getElementById("albumDiv")
-    div.innerHTML = ""
-    for (let a of albums) {
-        if (a.bundle.album) {
-            let card = albumCard(a)
-            console.log("Album card", card)
-            div.appendChild(card)
-        }
-    }
-}
 async function openAlbum(id) {
+    const url = new URL(window.location);
+    console.log("Open album", id)
+    if (url.searchParams.get("album") != id) {
+        console.log("adding to history")
+        if (id) {
+            url.searchParams.set("album", id);
+        } else {
+            url.searchParams.delete("album")
+        }
+        window.history.pushState({}, "", url);
+    }
+
+
     let div = document.getElementById("albumDiv")
     div.innerHTML = ""
-    let files = await getAlbum(id)
-    console.log("Album files", files)
-    for (let f of files) {
-        div.appendChild(fileCard(f))
+    let header = document.getElementById("albumHeaderDiv")
+    header.innerHTML = ""
+    if (id) {
+        let allAlbumsLink = document.createElement("a")
+        allAlbumsLink.href = "javascript:void(0)"
+        allAlbumsLink.innerText = "All albums"
+        allAlbumsLink.onclick = () => openAlbum()
+        header.appendChild(allAlbumsLink)
+        
+        let separator = document.createElement("span");
+        separator.className = "separator";
+        separator.innerText = ">";
+        header.appendChild(separator);
+
+        let albumName = document.createElement("a")
+        albumName.href = "javascript:void(0)"
+        albumName.innerText = ""
+        albumName.onclick = () => openAlbum(id)
+        header.appendChild(albumName)
+
+        getAlbumName(id).then((name) => {albumName.innerText = name})   
+
+        let files = await getAlbum(id)
+        console.log("Album files", files)
+        for (let f of files) {
+            div.appendChild(fileCard(f))
+        }    
+    } else {
+        const albums = await getAllAlbums()
+
+        for (let a of albums) {
+            if (a.bundle.album) {
+                let card = albumCard(a)
+                console.log("Album card", card)
+                div.appendChild(card)
+            }
+        }
+
     }
 }
 
@@ -219,6 +257,27 @@ async function exportHandler(e) {
     btn.disabled = false
 
 }
+async function podStateHandler(e) {
+    console.log("Popstate", e)
+    let url = new URL(window.location)
+    let folder = url.searchParams.get("folder")
+    let album = url.searchParams.get("album")
+    let search = url.searchParams.get("search")
+    let view = url.searchParams.get("view") 
+    if (folder || view == "drive") {
+        openFolder(folder)
+    }
+    if (album || view == "album") {
+        openAlbum(album)
+    } else if (search) {
+        search({ query: search }, searchCallback)
+    }
+    if (view) {
+        activateContent(view)
+    } else {
+        activateContent("home")
+    }
+}
 
 async function render() {
     const url = new URL(window.location);
@@ -245,7 +304,6 @@ async function processingStatus() {
     } else {
         if (processingDiv.innerText.startsWith("Processing (")) {
             processingDiv.innerText = "Processing done."
-            render()
         } else {
             processingDiv.innerText = ""
         }
@@ -427,13 +485,11 @@ function searchSimilarHandler(id) {
 }
 
 async function openFolder(id) {
-    console.log("Open folder 1", id)
 
     const url = new URL(window.location);
     if (!id) {
         id = url.searchParams.get("folder")
     }
-    console.log("Open folder 2", id)
     if (url.searchParams.get("folder") != id) {
         console.log("folder", id)
 
