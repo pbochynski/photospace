@@ -78,7 +78,11 @@ document.addEventListener('DOMContentLoaded', () => {
     //     userSection.innerHTML = '<img src="user-icon.png" alt="User Icon" class="user-icon">';
     // });
 });
-
+function testGPU() {
+    if (!navigator.gpu) {
+        throw new Error("WebGPU not supported on this browser.");
+    }
+}
 function addToolsButtons() {
     const tools = [
         { label: "Scan All Files", fn: scanAllFiles },
@@ -90,6 +94,7 @@ function addToolsButtons() {
         { label: "Export to OneDrive", fn: exportToOneDriveHandler },
         { label: "Import from OneDrive", fn: importFromOneDriveHandler },
         { label: "Index albums", fn: indexAlbums },
+        { label: "GPU test", fn: testGPU },
     ]
     const toolsDiv = document.getElementById("toolsDiv")
     toolsDiv.innerHTML = ""

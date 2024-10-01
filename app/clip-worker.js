@@ -1,6 +1,6 @@
 //import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.14';
 
-import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
+import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19';
 
 console.log('ClIP worker loaded');
 // Load processor and vision model
@@ -9,8 +9,17 @@ console.log('ClIP worker loaded');
 const processorModelId = 'Xenova/clip-vit-base-patch16';
 const visionModelId = 'Xenova/clip-vit-base-patch16'; 
 
-const processor = await AutoProcessor.from_pretrained(processorModelId);
-const vision_model = await CLIPVisionModelWithProjection.from_pretrained(visionModelId);
+let accelerator
+if (navigator.gpu) {
+  accelerator = { device: 'webgpu'};
+  const adapter = await navigator.gpu.requestAdapter();
+  accelerator.dtype = (adapter.features.has('shader-f16')) ? 'fp16' : 'fp32';
+  console.log('Using WebGPU', accelerator.dtype);
+} else {
+  console.warn('WebGPU not supported, using CPU');
+}
+const processor = await AutoProcessor.from_pretrained(processorModelId, accelerator);
+const vision_model = await CLIPVisionModelWithProjection.from_pretrained(visionModelId, accelerator);
 console.log('CLIP model loaded');
 
 self.onmessage = async function (event) {
