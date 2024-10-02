@@ -1,5 +1,5 @@
 import { getTokenRedirect } from './auth.js';
-import {getEmbeddingsDB, getFilesDB, saveEmbedding, payload } from './db.js';
+import { getEmbeddingsDB, getFilesDB, saveEmbedding, payload } from './db.js';
 
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"
 
@@ -9,12 +9,16 @@ let cacheProcessed = 0
 const embeddingQueue = []
 let processed = 0
 const embeddingWorkers = []
-for (let i = 0; i < 2; ++i) {
-  embeddingWorkers.push(embeddingWorker(embeddingQueue, i))
+
+function startVisionWorkers() {
+  console.log("Starting vision worker, queue length", embeddingQueue.length)
+  let consoleDiv = document.getElementById('consoleDiv') 
+  embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length))
+  
+  consoleDiv.appendChild(document.createTextNode(`Embedding worker no ${embeddingWorkers.length} started`))
+  consoleDiv.appendChild(document.createElement('br'))
+
 }
-// for (let i = 0; i < 12; ++i) {
-//   embeddingWorkers.push(serverEmbeddingWorker(embeddingQueue, i))
-// }
 for (let i = 0; i < 4; ++i) {
   cacheWorkers.push(worker(cacheQueue, i))
 }
@@ -111,75 +115,58 @@ async function deleteItems(items) {
 
 async function embeddingWorker(queue, number) {
   let token
+  let initialized = false
   // Create a new Web Worker
   const visionWorker = new Worker('clip-worker.js', { type: 'module' });
-  console.log("Worker created")
   // Map to store promises for each request by their unique identifier
   const pendingRequests = new Map();
 
-  // Function to process image data using the Web Worker
-  function processImageData(id, url, token) {
-    return new Promise((resolve, reject) => {
-      pendingRequests.set(id, { resolve, reject });
-
-      visionWorker.postMessage({ id, url, token });
-    });
-  }
   // Handle messages from the Web Worker
   visionWorker.onmessage = function (event) {
-    const { id, predictions, embeddings } = event.data;
-    if (pendingRequests.has(id)) {
-      const { resolve } = pendingRequests.get(id);
-      resolve({ predictions, embeddings });
-      pendingRequests.delete(id);
+    if (event.data.status == 'initialized') {
+      initialized = true
+      return
+    }  
+    console.log("Worker %s message", number, event.data)
+    const { id, embeddings } = event.data;
+    processed++
+    const f = pendingRequests.get(id);
+    if (embeddings) {
+      saveEmbedding({ id, embeddings, ...payload(f) });
     }
+    pendingRequests.delete(id);
   };
 
   visionWorker.onerror = function (error) {
+    console.error('Worker error:', error);
     // Handle errors and reject the corresponding promise
     for (const [id, { reject }] of pendingRequests) {
       reject(error);
       pendingRequests.delete(id);
     }
   };
-
+  console.log("Worker %s started", number)
   while (true) {
-    if (queue.length == 0) {
+    console.log("Worker %s loop", number)
+    if (queue.length == 0 || !initialized || pendingRequests.size > 20) {
+      console.log("Worker %s waiting", number)
       await wait(500)
       continue
     }
     if (!token) {
       token = await getTokenRedirect().then(response => response.accessToken)
+      console.log("Worker %s token", number, token)
     }
-    let f = embeddingQueue.shift()
+    let f = queue.shift()
     let thumbnailUrl = graphFilesEndpoint + `/items/${f.id}/thumbnails/0/large/content`
-    await processImageData(f.id, thumbnailUrl, token)
-    .then(result => {
-        processed++
-        saveEmbedding({ id: f.id, name: f.name, embeddings: result.embeddings, ...payload(f) });
-      }).catch((error) => {
-        pendingRequests.delete(f.id);
-        console.log("Error processing image", error)
-      })
+
+    console.log("Processing image", f.name, f.id)
+    pendingRequests.set(f.id, f);
+    visionWorker.postMessage({ id:f.id, url:thumbnailUrl, token });
+
   }
 }
 
-async function serverEmbeddingWorker(queue, number) {
-  while (true) {
-    if (queue.length == 0) {
-      await wait(500)
-      continue
-    }
-    let f = queue.shift()
-    let result = await serverEmbedding(f)
-    if (result.status == 'ok' && result.embeddings) {
-      processed++
-      await saveEmbedding({ id: f.id, name: f.name, embeddings:result.embeddings,...payload(f) });
-    } else {
-      console.log("Error processing image", result.error, f)
-    }
-  }
-}
 
 async function worker(urls, number) {
   console.log("Cache worker %s started", number)
@@ -191,7 +178,7 @@ async function worker(urls, number) {
     }
     if (!token) {
       token = await getTokenRedirect().then(response => response.accessToken)
-      console.log("Worker %s token", number, token)    
+      console.log("Worker %s token", number, token)
     }
     let url = urls.shift()
     let data = await fetchWithToken(url.url, token).then(response => response.json())
@@ -349,13 +336,13 @@ async function processingStatus() {
 
 async function serverEmbedding(file) {
   let url = file.thumbnails[0].large.url
-  return fetch('/classify',{
+  return fetch('/classify', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({url, id: file.id})
-   }).then(response => response.json())
+    body: JSON.stringify({ url, id: file.id })
+  }).then(response => response.json())
 }
 
 
@@ -363,5 +350,5 @@ export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
   findDuplicates, deleteItems, deleteFromCache,
   parentFolders, processingStatus, serverEmbedding,
-  queueMissingEmbeddings
+  queueMissingEmbeddings, startVisionWorkers
 }

@@ -95,6 +95,7 @@ function addToolsButtons() {
         { label: "Import from OneDrive", fn: importFromOneDriveHandler },
         { label: "Index albums", fn: indexAlbums },
         { label: "GPU test", fn: testGPU },
+        { label: "Start workers", fn: app.startVisionWorkers },
     ]
     const toolsDiv = document.getElementById("toolsDiv")
     toolsDiv.innerHTML = ""
