@@ -127,7 +127,6 @@ async function embeddingWorker(queue, number) {
       initialized = true
       return
     }  
-    console.log("Worker %s message", number, event.data)
     const { id, embeddings } = event.data;
     processed++
     const f = pendingRequests.get(id);
@@ -145,22 +144,18 @@ async function embeddingWorker(queue, number) {
       pendingRequests.delete(id);
     }
   };
-  console.log("Worker %s started", number)
   while (true) {
-    console.log("Worker %s loop", number)
-    if (queue.length == 0 || !initialized || pendingRequests.size > 20) {
-      console.log("Worker %s waiting", number)
+    if (queue.length == 0 || !initialized || pendingRequests.size > 100) {
+      console.log("Worker %s waiting, queue length %s, pending %s", number, queue.length, pendingRequests.size)
       await wait(500)
       continue
     }
     if (!token) {
       token = await getTokenRedirect().then(response => response.accessToken)
-      console.log("Worker %s token", number, token)
     }
     let f = queue.shift()
     let thumbnailUrl = graphFilesEndpoint + `/items/${f.id}/thumbnails/0/large/content`
 
-    console.log("Processing image", f.name, f.id)
     pendingRequests.set(f.id, f);
     visionWorker.postMessage({ id:f.id, url:thumbnailUrl, token });
 

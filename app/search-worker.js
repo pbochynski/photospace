@@ -1,5 +1,5 @@
 
-import {env, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.6.0';
+import {env, dot, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19';
 import { getEmbeddingsDB, getFilesDB } from './db.js';
 
 env.allowLocalModels = false;
@@ -13,31 +13,12 @@ function distance(embedding1, embedding2) {
   return 1 - dotProduct / (norm1 * norm2);
 }
 
-// Find similar images based on embeddings
+const tokenizer = await AutoTokenizer.from_pretrained(textModelId);
+const text_model = await CLIPTextModelWithProjection.from_pretrained(textModelId);
+// See `model.logit_scale` parameter of original model
+const exp_logit_scale = Math.exp(4.6052);
 
-
-class ApplicationSingleton {
-  // static model_id = 'Xenova/clip-vit-base-patch16';
-
-  static tokenizer = null;
-  static text_model = null;
-
-
-  static async getInstance(progress_callback = null) {
-      console.log('Loading tokenizer and text model');  
-    // Load tokenizer and text model
-      if (this.tokenizer === null) {
-          this.tokenizer = AutoTokenizer.from_pretrained(textModelId);
-      }
-      console.log('Loaded tokenizer');
-      if (this.text_model === null) {
-          this.text_model = CLIPTextModelWithProjection.from_pretrained(textModelId);
-      }
-      console.log('Loaded text model');
-
-      return Promise.all([this.tokenizer, this.text_model, this.db]);
-  }
-}
+console.log('Text model loaded');
 
 function parseQuery(query) {
   if (!query) {
@@ -104,13 +85,16 @@ async function findSimilarImages(queryParams) {
   console.time('findSimilarImages');
   await collection.each(record => {
     const dist = distance(emb, record.embeddings);
+    // const dist = dot(emb, record.embeddings)
     if (dist < maxDistance
       && (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance)) {
       record.distance = dist;
+      console.log('Adding similar image', record.id, record.distance);
       similarImages.push(record);
       similarImages.sort((a, b) => a.distance - b.distance);
       if (similarImages.length > maxImages) {
-        similarImages.pop();
+        let removed = similarImages.pop();
+        console.log('Removed similar image', removed.id, removed.distance);
       }
     }
   })
@@ -128,7 +112,6 @@ async function findSimilarImages(queryParams) {
 
 
 self.onmessage = async function (event) {
-  const [tokenizer, text_model] = await ApplicationSingleton.getInstance(self.postMessage);
   console.log("event", event.data)
   const { similar, query } = event.data;
   const queryParams = parseQuery(query);
@@ -139,7 +122,8 @@ self.onmessage = async function (event) {
   } else if (queryParams.text) {
     const text_inputs = tokenizer(queryParams.text, { padding: true, truncation: true });
     const { text_embeds } = await text_model(text_inputs);
-    queryParams.embeddings = text_embeds[0].tolist();
+    queryParams.embeddings = text_embeds.normalize().tolist()[0];
+    console.log('Text embeddings', queryParams.embeddings);
   }
   const files = await findSimilarImages(queryParams);
   self.postMessage({ status: 'ok', files });

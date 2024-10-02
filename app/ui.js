@@ -154,9 +154,7 @@ function albumCard(a) {
 
 async function openAlbum(id) {
     const url = new URL(window.location);
-    console.log("Open album", id)
     if (url.searchParams.get("album") != id) {
-        console.log("adding to history")
         if (id) {
             url.searchParams.set("album", id);
         } else {
@@ -191,7 +189,6 @@ async function openAlbum(id) {
         getAlbumName(id).then((name) => {albumName.innerText = name})   
 
         let files = await getAlbum(id)
-        console.log("Album files", files)
         for (let f of files) {
             div.appendChild(fileCard(f))
         }    
@@ -201,7 +198,6 @@ async function openAlbum(id) {
         for (let a of albums) {
             if (a.bundle.album) {
                 let card = albumCard(a)
-                console.log("Album card", card)
                 div.appendChild(card)
             }
         }
@@ -211,7 +207,6 @@ async function openAlbum(id) {
 
 
 function searchCallback(data) {
-    console.log("Search callback", data)
     let div = document.getElementById("searchDiv")
     div.innerHTML = ""
     if (data.files) {
