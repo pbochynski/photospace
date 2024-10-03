@@ -89,12 +89,10 @@ async function findSimilarImages(queryParams) {
     if (dist < maxDistance
       && (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance)) {
       record.distance = dist;
-      console.log('Adding similar image', record.id, record.distance);
       similarImages.push(record);
       similarImages.sort((a, b) => a.distance - b.distance);
       if (similarImages.length > maxImages) {
-        let removed = similarImages.pop();
-        console.log('Removed similar image', removed.id, removed.distance);
+        similarImages.pop();
       }
     }
   })

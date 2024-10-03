@@ -1,5 +1,5 @@
 import { AutoProcessor, RawImage, CLIPVisionModelWithProjection } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19';
-
+import { Queue } from './queue.js';
 // Load processor and vision model
 // const processorModelId = 'Xenova/clip-vit-base-patch32';
 // const visionModelId = 'jinaai/jina-clip-v1';
@@ -20,41 +20,8 @@ const processor = await AutoProcessor.from_pretrained(processorModelId, accelera
 const vision_model = await CLIPVisionModelWithProjection.from_pretrained(visionModelId, accelerator);
 console.log('CLIP model loaded');
 
-class EmbeddingQueue {
-  constructor(concurrency = 1, maxPending = 10) {
-    this.queue = [];
-    this.concurrency = concurrency;
-    this.currentlyProcessing = 0;
-    this.maxPending = maxPending;
-  }
-
-  enqueue(task) {
-    this.queue.push(task);
-    this.processNext();
-  }
-
-  async processNext() {
-    if (
-      this.currentlyProcessing < this.concurrency &&
-      this.queue.length > 0
-    ) {
-      const task = this.queue.shift();
-      this.currentlyProcessing++;
-      task()
-        .then(() => {
-          this.currentlyProcessing--;
-          this.processNext();
-        })
-        .catch((err) => {
-          console.error('Error processing embedding:', err);
-          this.currentlyProcessing--;
-          this.processNext();
-        });
-    }
-  }
-}
 // Initialize EmbeddingQueue with concurrency 1 and max 10 pending
-const embeddingQueue = new EmbeddingQueue(1, 5);
+const embeddingQueue = new Queue(1);
 
 
 // Simulate fetching an image and converting it to raw data

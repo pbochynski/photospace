@@ -10,11 +10,11 @@ const embeddingQueue = []
 let processed = 0
 const embeddingWorkers = []
 
-function startVisionWorkers() {
+function startVisionWorker() {
   console.log("Starting vision worker, queue length", embeddingQueue.length)
-  let consoleDiv = document.getElementById('consoleDiv') 
+  let consoleDiv = document.getElementById('consoleDiv')
   embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length))
-  
+
   consoleDiv.appendChild(document.createTextNode(`Embedding worker no ${embeddingWorkers.length} started`))
   consoleDiv.appendChild(document.createElement('br'))
 
@@ -126,7 +126,7 @@ async function embeddingWorker(queue, number) {
     if (event.data.status == 'initialized') {
       initialized = true
       return
-    }  
+    }
     const { id, embeddings } = event.data;
     processed++
     const f = pendingRequests.get(id);
@@ -146,18 +146,19 @@ async function embeddingWorker(queue, number) {
   };
   while (true) {
     if (queue.length == 0 || !initialized || pendingRequests.size > 100) {
-      console.log("Worker %s waiting, queue length %s, pending %s", number, queue.length, pendingRequests.size)
       await wait(500)
       continue
     }
     if (!token) {
       token = await getTokenRedirect().then(response => response.accessToken)
+      console.log(`Worker ${number} token`, token)
+      setTimeout(() => { token = null }, 60000) // renew token every minute
     }
     let f = queue.shift()
     let thumbnailUrl = graphFilesEndpoint + `/items/${f.id}/thumbnails/0/large/content`
 
     pendingRequests.set(f.id, f);
-    visionWorker.postMessage({ id:f.id, url:thumbnailUrl, token });
+    visionWorker.postMessage({ id: f.id, url: thumbnailUrl, token });
 
   }
 }
@@ -286,23 +287,25 @@ async function wait(ms) {
 }
 
 async function queueMissingEmbeddings() {
+
   let filesDB = await getFilesDB()
   let db = await getEmbeddingsDB()
-  let count = await filesDB.files.count()
-  console.log("Number of files", count)
-  let offset = 0
-  while (offset < count) {
-    let records = await filesDB.files.offset(offset).limit(1000).toArray()
-    let ids = records.map(r => r.id)
-    let embeddings = await db.embeddings.bulkGet(ids)
-    let missing = records.filter((r, i) => { return !embeddings[i] })
-    console.log("Missing embeddings", missing.length)
-    for (let f of missing) {
-      embeddingQueue.push(f)
+  let keys = await db.embeddings.toCollection().primaryKeys()
+  let existing = {}
+  for (let key of keys) {
+    existing[key] = true
+  } 
+  console.log("Number of existing embeddings", keys.length)
+  let missing = {}
+  await filesDB.files.each(async record => {
+    if (!existing[record.id]) {
+      missing[record.id] = record
     }
-    offset += 1000
+  })
+  console.log("Number of missing embeddings", Object.keys(missing).length)
+  for (let record of Object.values(missing)) {
+    embeddingQueue.push(record)
   }
-
 
 }
 
@@ -345,5 +348,5 @@ export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
   findDuplicates, deleteItems, deleteFromCache,
   parentFolders, processingStatus, serverEmbedding,
-  queueMissingEmbeddings, startVisionWorkers
+  queueMissingEmbeddings, startVisionWorker
 }

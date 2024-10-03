@@ -4,7 +4,6 @@ import { search } from "./search.js";
 import { getAllAlbums, getAlbum, indexAlbums, getFileAlbums, getAlbumName } from "./album.js";
 
 addEventListener("popstate", (event) => {
-    console.log("Popstate event")
     podStateHandler(event)
 });
 
@@ -95,7 +94,7 @@ function addToolsButtons() {
         { label: "Import from OneDrive", fn: importFromOneDriveHandler },
         { label: "Index albums", fn: indexAlbums },
         { label: "GPU test", fn: testGPU },
-        { label: "Start workers", fn: app.startVisionWorkers },
+        { label: "Start workers", fn: app.startVisionWorker },
     ]
     const toolsDiv = document.getElementById("toolsDiv")
     toolsDiv.innerHTML = ""
@@ -259,7 +258,6 @@ async function exportHandler(e) {
 
 }
 async function podStateHandler(e) {
-    console.log("Popstate", e)
     let url = new URL(window.location)
     let folder = url.searchParams.get("folder")
     let album = url.searchParams.get("album")
