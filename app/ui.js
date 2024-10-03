@@ -1,5 +1,6 @@
 import * as app from "./app.js";
-import { importDatabase, exportDatabase, cleanEmbeddings, clearDB, exportToOneDrive, importFromOneDrive } from "./impex.js";
+import { importDatabase, exportDatabase, clearDB, exportToOneDrive, importFromOneDrive } from "./impex.js";
+import { dbInfo } from "./db.js";
 import { search } from "./search.js";
 import { getAllAlbums, getAlbum, indexAlbums, getFileAlbums, getAlbumName } from "./album.js";
 
@@ -84,9 +85,10 @@ function testGPU() {
 }
 function addToolsButtons() {
     const tools = [
+        { label: "DB info", fn: dbInfoHandler },
         { label: "Scan All Files", fn: scanAllFiles },
-        { label: "Fix Embeddings", fn: cleanEmbeddings },
-        { label: "Clear DB", fn: clearDbHandler },
+        { label: "Purge embeddings", fn: app.purgeEmbeddings },
+        { label: "Clear files", fn: clearDbHandler },
         { label: "Missing Embeddings", fn: app.queueMissingEmbeddings },
         { label: "Export", fn: exportHandler },
         { label: "Import", fn: importHandler },
@@ -107,7 +109,10 @@ function addToolsButtons() {
     }
 }
 
-
+async function dbInfoHandler(e) {
+    let info = await dbInfo()
+    console.log("DB info", info)
+}
 async function clearDbHandler(e) {
     let btn = e.target
     btn.disabled = true

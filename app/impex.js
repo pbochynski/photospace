@@ -19,39 +19,7 @@ async function importDatabase(file) {
 }
 
 
-async function cleanEmbeddings() {
-  const db = await getEmbeddingsDB();
-  const filesDB = await getFilesDB();
-  let count = await db.embeddings.count()
-  console.log("Number of embeddings", count)
-  let offset = 0
-  let toDelete = []
-  while (offset < count) {
-    let records = await db.embeddings.offset(offset).limit(1000).toArray()
-    let ids = records.map(r => r.id)
-    let files = await filesDB.files.bulkGet(ids)
-    records.forEach((r, i) => {
-
-      if (files[i] == undefined || records[i].embeddings == undefined) {
-        toDelete.push(r.id)
-      }
-      if (r.embeddings && r.embeddings.embeddings) {
-        r.embeddings = r.embeddings.embeddings
-      }
-      delete r.predictions
-      Object.assign(r, payload(files[i]))
-    })
-    // db.embeddings.bulkPut(records)
-    offset += records.length
-    console.log("Offset", offset)
-  }
-  console.log("Deleting", toDelete.length)
-  db.embeddings.bulkDelete(toDelete)
-}
-
 async function clearDB() {
-  const db = await getEmbeddingsDB();
-  await db.embeddings.clear()
   const filesDB = await getFilesDB();
   await filesDB.files.clear()
   return true
@@ -115,4 +83,4 @@ async function importFromOneDrive(name, progress_callback) {
   return count
 }
 
-export { exportDatabase, importDatabase, cleanEmbeddings, clearDB, importFromOneDrive, exportToOneDrive };
+export { exportDatabase, importDatabase, clearDB, importFromOneDrive, exportToOneDrive };

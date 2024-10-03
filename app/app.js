@@ -309,6 +309,23 @@ async function queueMissingEmbeddings() {
 
 }
 
+async function purgeEmbeddings() {
+  let filesDB = await getFilesDB()
+  let db = await getEmbeddingsDB()
+  let keys = await db.embeddings.toCollection().primaryKeys()
+  let toDelete = {}
+  for (let key of keys) {
+    toDelete[key] = true
+  } 
+  console.log("Number of existing embeddings", keys.length)
+  let fKeys = await filesDB.files.toCollection().primaryKeys()
+  for (let key of fKeys) {
+    delete toDelete[key]
+  }
+  await db.embeddings.bulkDelete(Object.keys(toDelete))
+  console.log("Deleted embeddings", Object.keys(toDelete).length) 
+}
+
 
 async function calculateEmbeddings(token, data) {
   let db = await getEmbeddingsDB()
@@ -348,5 +365,5 @@ export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
   findDuplicates, deleteItems, deleteFromCache,
   parentFolders, processingStatus, serverEmbedding,
-  queueMissingEmbeddings, startVisionWorker
+  queueMissingEmbeddings, purgeEmbeddings, startVisionWorker
 }

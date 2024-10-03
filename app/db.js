@@ -54,4 +54,11 @@ function payload(file) {
     image: file.image
   }
 }
-export {getFilesDB, getEmbeddingsDB, saveEmbedding, getEmbedding, getQuickEmbeddingsDB, payload, getAlbumsDB};
+async function dbInfo() {
+  let db = await getEmbeddingsDB()
+  let embCount = await db.embeddings.count()  
+  let filesDB = await getFilesDB()
+  let filesCount = await filesDB.files.count()
+  return {files: filesCount, embeddings: embCount}  
+}
+export {getFilesDB, getEmbeddingsDB, saveEmbedding, getEmbedding, getQuickEmbeddingsDB, payload, getAlbumsDB, dbInfo};
