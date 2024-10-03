@@ -15,11 +15,8 @@ function distance(embedding1, embedding2) {
 
 const tokenizer = await AutoTokenizer.from_pretrained(textModelId);
 const text_model = await CLIPTextModelWithProjection.from_pretrained(textModelId);
-// See `model.logit_scale` parameter of original model
-const exp_logit_scale = Math.exp(4.6052);
 
 console.log('Text model loaded');
-
 function parseQuery(query) {
   if (!query) {
     return {}
@@ -126,3 +123,5 @@ self.onmessage = async function (event) {
   const files = await findSimilarImages(queryParams);
   self.postMessage({ status: 'ok', files });
 }
+
+self.postMessage({ status: 'ready', log: 'Search worker ready' });

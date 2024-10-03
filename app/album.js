@@ -36,7 +36,6 @@ async function getAllAlbums() {
 async function getAlbum(albumId) {
   let response = await fetchWithToken(`https://graph.microsoft.com/v1.0/drive/items/${albumId}/children?expand=thumbnails`, {});
   let album =  await response.json();
-  console.log("Get album children", album)
   let items = album.value;
   while (album['@odata.nextLink']) {
     response = await fetchWithToken(album['@odata.nextLink'], {});
@@ -48,7 +47,6 @@ async function getAlbum(albumId) {
     let t2 = new Date(b.photo.takenDateTime);
     // console.log("Album items", t1, t2)
     return t1.getTime() - t2.getTime(); });   
-  console.log("Album items", items)
   return items
 }
 
@@ -83,6 +81,7 @@ async function indexAlbums(){
     let files = await getAlbum(album.id);    
     await db.albums.bulkAdd(files.map(f => ({ fileId: f.id, albumId: album.id, albumName: album.name })));  
   }  
+  console.log(`Indexed ${albums.length} albums`);
 }
 
 async function getFileAlbums(fileId) {

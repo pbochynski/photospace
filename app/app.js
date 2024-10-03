@@ -10,13 +10,9 @@ const embeddingQueue = []
 let processed = 0
 const embeddingWorkers = []
 
-function startVisionWorker() {
-  console.log("Starting vision worker, queue length", embeddingQueue.length)
-  let consoleDiv = document.getElementById('consoleDiv')
-  embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length))
+function startEmbeddingWorker() {
+  embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length+1))
 
-  consoleDiv.appendChild(document.createTextNode(`Embedding worker no ${embeddingWorkers.length} started`))
-  consoleDiv.appendChild(document.createElement('br'))
 
 }
 for (let i = 0; i < 4; ++i) {
@@ -45,7 +41,6 @@ async function parentFolders(id) {
     folders.push({ id, name: data.name })
     id = (data.parentReference && data.parentReference.id) ? data.parentReference.id : null
   }
-  console.log("Folders: ", folders)
   return folders
 }
 
@@ -125,6 +120,7 @@ async function embeddingWorker(queue, number) {
   visionWorker.onmessage = function (event) {
     if (event.data.status == 'initialized') {
       initialized = true
+      console.log(`Worker ${number} initialized`) // Worker is ready to process requests
       return
     }
     const { id, embeddings } = event.data;
@@ -365,5 +361,5 @@ export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
   findDuplicates, deleteItems, deleteFromCache,
   parentFolders, processingStatus, serverEmbedding,
-  queueMissingEmbeddings, purgeEmbeddings, startVisionWorker
+  queueMissingEmbeddings, purgeEmbeddings, startEmbeddingWorker
 }

@@ -69,4 +69,4 @@ self.onmessage = async function (event) {
   const rawImage = await fetchImage(id, url, token);
   embeddingQueue.enqueue(() => calculateEmbedding(id, rawImage));
 };
-self.postMessage({ status: 'initialized' });
+self.postMessage({ status: 'initialized', log: 'Worker initialized' });

@@ -78,9 +78,13 @@ document.addEventListener('DOMContentLoaded', () => {
     //     userSection.innerHTML = '<img src="user-icon.png" alt="User Icon" class="user-icon">';
     // });
 });
-function testGPU() {
-    if (!navigator.gpu) {
-        throw new Error("WebGPU not supported on this browser.");
+async function testGPU() {
+    if (navigator.gpu) {
+        const adapter = await navigator.gpu.requestAdapter();
+        let dType = (adapter.features.has('shader-f16')) ? 'fp16' : 'fp32';
+        console.log('Using WebGPU', dType);
+    } else {
+        console.log('WebGPU not supported, using CPU');
     }
 }
 function addToolsButtons() {
@@ -96,7 +100,7 @@ function addToolsButtons() {
         { label: "Import from OneDrive", fn: importFromOneDriveHandler },
         { label: "Index albums", fn: indexAlbums },
         { label: "GPU test", fn: testGPU },
-        { label: "Start workers", fn: app.startVisionWorker },
+        { label: "Start worker", fn: app.startEmbeddingWorker },
     ]
     const toolsDiv = document.getElementById("toolsDiv")
     toolsDiv.innerHTML = ""
@@ -178,7 +182,7 @@ async function openAlbum(id) {
         allAlbumsLink.innerText = "All albums"
         allAlbumsLink.onclick = () => openAlbum()
         header.appendChild(allAlbumsLink)
-        
+
         let separator = document.createElement("span");
         separator.className = "separator";
         separator.innerText = ">";
@@ -190,12 +194,12 @@ async function openAlbum(id) {
         albumName.onclick = () => openAlbum(id)
         header.appendChild(albumName)
 
-        getAlbumName(id).then((name) => {albumName.innerText = name})   
+        getAlbumName(id).then((name) => { albumName.innerText = name })
 
         let files = await getAlbum(id)
         for (let f of files) {
             div.appendChild(fileCard(f))
-        }    
+        }
     } else {
         const albums = await getAllAlbums()
 
@@ -267,7 +271,7 @@ async function podStateHandler(e) {
     let folder = url.searchParams.get("folder")
     let album = url.searchParams.get("album")
     let search = url.searchParams.get("search")
-    let view = url.searchParams.get("view") 
+    let view = url.searchParams.get("view")
     if (folder || view == "drive") {
         openFolder(folder)
     }
