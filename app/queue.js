@@ -1,7 +1,6 @@
 class Queue {
-  constructor(concurrency = 1, useCallback = false) {
+  constructor(concurrency = 1) {
     this.queue = [];
-    this.useCallback = useCallback; // Use callback instead of promises
     this.concurrency = concurrency;
     this.currentlyProcessing = 0;
   }
@@ -28,11 +27,6 @@ class Queue {
     ) {
       const task = this.queue.shift();
       this.currentlyProcessing++;
-      if (this.useCallback) {
-        task(this.onComplete);
-        setImmediate(() => this.processNext());
-        return
-      }
       task()
         .then(() => {
           this.currentlyProcessing--;

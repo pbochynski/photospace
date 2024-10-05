@@ -311,13 +311,22 @@ async function render() {
     })
     app.parentFolders(currentFolder).then(renderParents)
 }
+// return hours, minutes, seconds, padded with zeros    
+function etaString(s) {
+    let hours = Math.floor(s / 3600);
+    let minutes = Math.floor(s / 60) % 60;
+    let seconds = s % 60;
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}` 
+}
+
 async function logProcessingStatus(prevStatus) {
     const interval = 5000
     const currentStatus = app.processingStatus()
     let { pending, processed, cacheQueue } = currentStatus
     if (pending != prevStatus.pending || processed != prevStatus.processed) {
         let rate = (processed - prevStatus.processed) * 1000 / interval
-        console.log(`Processing (${processed}/${pending + processed}), rate: ${rate} files/s`)
+        let eta = etaString( rate ? Math.round(pending / rate) : 0)
+        console.log(`Processing (${processed}/${pending + processed}), rate: ${rate} files/s, ETA: ${eta}`)
     }
     if (cacheQueue != prevStatus.cacheQueue) {
         console.log(`Cache queue: ${cacheQueue}`)
@@ -490,7 +499,6 @@ function fileCard(d) {
         trashBtn.setAttribute("class", "trash-btn");
         trashBtn.onclick = () => {
             app.deleteItems([f])
-            app.deleteFromCache([f])
             card.remove()
         }
         card.appendChild(trashBtn);
@@ -583,7 +591,6 @@ function duplicateCard(key, d) {
     }))
     div.appendChild(button("delete", () => {
         app.deleteItems(d[0].items)
-        app.deleteFromCache(d[0].items)
         div.remove()
     }))
     div.appendChild(container1)
@@ -598,7 +605,6 @@ function duplicateCard(key, d) {
     }))
     div.appendChild(button("delete", () => {
         app.deleteItems(d[1].items)
-        app.deleteFromCache(d[1].items)
         div.remove()
     }))
     div.appendChild(container2)

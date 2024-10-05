@@ -1,22 +1,20 @@
 import { getTokenRedirect } from './auth.js';
 import { getEmbeddingsDB, getFilesDB, saveEmbedding, payload } from './db.js';
+import { Queue } from './queue.js';
 
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"
 
 const cacheWorkers = []
-const cacheQueue = []
+const cacheQueue = new Queue(8)
 let cacheProcessed = 0
 const embeddingQueue = []
 let processed = 0
 const embeddingWorkers = []
 
 function startEmbeddingWorker() {
-  embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length+1))
+  embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length + 1))
 }
 
-for (let i = 0; i < 4; ++i) {
-  cacheWorkers.push(worker(cacheQueue, i))
-}
 
 function fetchWithToken(url, token) {
   const headers = new Headers();
@@ -67,37 +65,31 @@ async function readFolder(id, callback) {
 
 async function deleteFromCache(items) {
   let db = await getFilesDB()
-  db.files.bulkDelete(items.map(i => i.id))
+  await db.files.bulkDelete(items.map(i => i.id))
+  let emb = await getEmbeddingsDB()
+  await emb.embeddings.bulkDelete(items.map(i => i.id))
+
 }
 
 async function deleteItems(items) {
-  return new Promise(async (resolve, reject) => {
-    getTokenRedirect()
-      .then(async (response) => {
-        const headers = new Headers();
-        const bearer = `Bearer ${response.accessToken}`;
-
-        headers.append("Authorization", bearer);
-
-        const options = {
-          method: "DELETE",
-          headers: headers
-        };
-
-        try {
-          for (let i of items) {
-            console.log("Deleting file:", i.name, i.id)
-            await fetch(graphFilesEndpoint + `/items/${i.id}`, options)
-          }
-          console.log("Items deleted:", items.length)
-          resolve("items deleted: " + items.length)
-        } catch (error) {
-          reject(error)
+  let token = await getTokenRedirect().then(response => response.accessToken)
+  const options = {
+    method: "DELETE",
+    headers: { "Authorization": `Bearer ${token}` }
+  };
+  let deleted = []
+  let tasks = items.map(i => fetch(graphFilesEndpoint + `/items/${i.id}`, options))
+  await Promise.allSettled(tasks).then(results => {
+    results.forEach((res, i) => {
+      if (res.status == 'fulfilled') {
+        if (res.value.ok) {
+          deleted.push(items[i])
         }
-
-      })
-  }
-  )
+      }
+    })
+  })
+  await deleteFromCache(deleted)
+  return deleted.length
 }
 
 async function embeddingWorker(queue, number) {
@@ -151,6 +143,7 @@ async function embeddingWorker(queue, number) {
   }
 }
 
+
 async function worker(urls, number) {
   console.log("Cache worker %s started", number)
   let token
@@ -182,13 +175,28 @@ async function worker(urls, number) {
   }
 }
 
-async function cacheAllFiles(id) {
-  cacheQueue.length = 0
-  if (id) {
-    cacheQueue.push({ url: graphFilesEndpoint + `/items/${id}/children?$expand=thumbnails`, path: `/items/${id}` })
-  } else {
-    cacheQueue.push({ url: graphFilesEndpoint + "/root/children?$expand=thumbnails", path: "/root" })
+async function cacheUrl(url, token) {
+  // console.log("Caching", url)
+  let data = await fetchWithToken(url, token).then(response => response.json())
+  if (!data || !data.value) {
+    console.log("PROBLEM:", data)
   }
+  for (let f of data.value) {
+    if (f.folder) {
+      cacheQueue.enqueue(() => cacheUrl(`${graphFilesEndpoint}/items/${f.id}/children?$expand=thumbnails`, token))
+    }
+  }
+  if (data["@odata.nextLink"]) {
+    cacheQueue.enqueue(() => cacheUrl(data["@odata.nextLink"], token))
+  }
+  return cacheFiles(data)
+}
+
+async function cacheAllFiles(id) {
+  const token = await getTokenRedirect().then(response => response.accessToken) 
+  const url = graphFilesEndpoint + ((id) ? `/items/${id}/children?$expand=thumbnails` :`/root/children?$expand=thumbnails`)
+  cacheQueue.enqueue(()=>cacheUrl(url, token))
+  
 }
 
 async function cacheFiles(data) {
@@ -227,20 +235,15 @@ async function findDuplicates() {
   let duplicates = {}
   await db.files.each(value => {
     n++
-    if (value.photo) {
-      p++
-    }
-    if (value.hash && value.size > 100000) {
-      if (h[value.hash]) {
-        h[value.hash].push(value)
-        duplicates[value.hash] = true
-      } else {
-        h[value.hash] = [value]
-      }
+    if (h[value.hash]) {
+      h[value.hash].push(value)
+      duplicates[value.hash] = true
+    } else {
+      h[value.hash] = [value]
     }
 
   })
-  console.log("Total files: %s, photos: %s, duplicates", n, p, Object.keys(duplicates).length)
+  console.log("Total files: %s, duplicates", n, Object.keys(duplicates).length)
   let pairs = {}
   for (let key of Object.keys(duplicates)) {
 
@@ -275,7 +278,7 @@ async function queueMissingEmbeddings() {
   let existing = {}
   for (let key of keys) {
     existing[key] = true
-  } 
+  }
   console.log("Number of existing embeddings", keys.length)
   let missing = {}
   await filesDB.files.each(async record => {
@@ -296,14 +299,14 @@ async function purgeEmbeddings() {
   let toDelete = {}
   for (let key of keys) {
     toDelete[key] = true
-  } 
+  }
   console.log("Number of existing embeddings", keys.length)
   let fKeys = await filesDB.files.toCollection().primaryKeys()
   for (let key of fKeys) {
     delete toDelete[key]
   }
   await db.embeddings.bulkDelete(Object.keys(toDelete))
-  console.log("Deleted embeddings", Object.keys(toDelete).length) 
+  console.log("Deleted embeddings", Object.keys(toDelete).length)
 }
 
 async function calculateEmbeddings(data) {
@@ -322,12 +325,12 @@ async function calculateEmbeddings(data) {
 }
 
 function processingStatus() {
-  return { pending: embeddingQueue.length, processed, cacheProcessed, cacheQueue: cacheQueue.length }
+  return { pending: embeddingQueue.length, processed, cacheProcessed, cacheQueue: cacheQueue.length() }
 }
 
 export {
   readFolder, cacheFiles, cacheAllFiles, largeFiles,
-  findDuplicates, deleteItems, deleteFromCache,
+  findDuplicates, deleteItems,
   parentFolders, processingStatus,
   queueMissingEmbeddings, purgeEmbeddings, startEmbeddingWorker
 }

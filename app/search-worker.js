@@ -66,7 +66,7 @@ async function findSimilarImages(queryParams) {
   let collection = db.embeddings;
   if (queryParams.date) {
     let dates = queryParams.date.split('..');
-    collection = collection.where('photo.takenDateTime').between(dates[0], dates[1], true, true);
+    collection = collection.where('takenDateTime').between(dates[0], dates[1], true, true);
   }
 
   if (queryParams.path) {

@@ -71,7 +71,7 @@ async function dbInfo() {
     }
 
   })
-  duplicates = duplicates.map(h => uniqueHashes[h])
-  return {files: filesCount, embeddings: embCount, duplicates: duplicates, uniqueHashes: Object.keys(uniqueHashes).length}    
+  
+  return {files: filesCount, embeddings: embCount, duplicates: duplicates.length, uniqueHashes: Object.keys(uniqueHashes).length}    
 }
 export {getFilesDB, getEmbeddingsDB, saveEmbedding, getEmbedding, payload, getAlbumsDB, dbInfo};
