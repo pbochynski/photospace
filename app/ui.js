@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sideMenu.style.display = sideMenu.style.display === 'block' ? 'none' : 'block';
     });
     addToolsButtons()
-    setTimeout(()=>logProcessingStatus(app.processingStatus()), 1000)
+    setTimeout(() => logProcessingStatus(app.processingStatus()), 1000)
     // register callback for search text input field that triggers search when enter is pressed
     document.getElementById("searchText").addEventListener("keyup", function (event) {
         if (event.key === "Enter") {
@@ -96,7 +96,7 @@ function addToolsButtons() {
         { label: "Purge embeddings", fn: app.purgeEmbeddings },
         { label: "Clear files", fn: clearDbHandler },
         { label: "Missing Embeddings", fn: app.queueMissingEmbeddings },
-        { label: "Duplicates", fn: showDuplicates},
+        { label: "Duplicates", fn: showDuplicates },
         { label: "Large Files", fn: showLargeFiles },
         { label: "Export", fn: exportHandler },
         { label: "Import", fn: importHandler },
@@ -280,7 +280,7 @@ async function podStateHandler(e) {
     }
     if (album || view == "album") {
         openAlbum(album)
-    } 
+    }
     if (search) {
         search({ query: search }, searchCallback)
     }
@@ -312,17 +312,17 @@ async function render() {
     app.parentFolders(currentFolder).then(renderParents)
 }
 async function logProcessingStatus(prevStatus) {
-    const interval = 5000   
-    const currentStatus = app.processingStatus()    
+    const interval = 5000
+    const currentStatus = app.processingStatus()
     let { pending, processed, cacheQueue } = currentStatus
-    if (pending!=prevStatus.pending || processed!=prevStatus.processed) {
-        let rate = (processed - prevStatus.processed)*1000/interval
-        console.log(`Processing (${processed}/${pending + processed}), rate: ${rate} files/s`)  
+    if (pending != prevStatus.pending || processed != prevStatus.processed) {
+        let rate = (processed - prevStatus.processed) * 1000 / interval
+        console.log(`Processing (${processed}/${pending + processed}), rate: ${rate} files/s`)
     }
     if (cacheQueue != prevStatus.cacheQueue) {
         console.log(`Cache queue: ${cacheQueue}`)
     }
-    setTimeout(()=>logProcessingStatus(currentStatus), interval)
+    setTimeout(() => logProcessingStatus(currentStatus), interval)
 }
 
 function renderParents(folders) {
@@ -483,9 +483,24 @@ function fileCard(d) {
         btn.onclick = () => searchSimilarHandler(d.id)
         btn.enabled = (d.embeddings) ? true : false
         card.appendChild(btn)
+
+        // Add Trash Button
+        let trashBtn = document.createElement("button");
+        trashBtn.innerText = "🗑️"; // You can use an SVG icon here instead
+        trashBtn.setAttribute("class", "trash-btn");
+        trashBtn.onclick = () => {
+            app.deleteItems([f])
+            app.deleteFromCache([f])
+            card.remove()
+        }
+        card.appendChild(trashBtn);
     }
     card.appendChild(body)
     return card
+}
+
+function deleteFile(f) {
+
 }
 
 function toggleAlbum(d) {
@@ -560,7 +575,7 @@ function duplicateCard(key, d) {
     div.appendChild(text)
     div.appendChild(small(prettyPath(d[0].path)));
     div.appendChild(document.createElement("br"))
-    
+
     div.appendChild(button("show", () => {
         for (let f of d[0].items) {
             container1.appendChild(fileCard(f))

@@ -278,6 +278,26 @@ small {
     opacity: 1;
     /* Visible on hover */
 }
+.trash-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    opacity: 0;
+    /* Initially hidden */
+    transition: opacity 0.3s ease;
+    /* Smooth transition */
+    position: absolute;
+    top: 3px;
+    right: 40px; /* Adjust as necessary to position */
+    z-index: 1;
+}
+
+.card:hover .trash-btn {
+    opacity: 1;
+    /* Visible on hover */
+}
+
 
 #searchText {
     width: 100%;

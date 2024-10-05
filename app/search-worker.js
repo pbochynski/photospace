@@ -75,12 +75,8 @@ async function findSimilarImages(queryParams) {
   
   console.time('findSimilarImages');
   await collection.each(record => {
-    let n1 = calculateNorm(record.embeddings);
-    let n2 = calculateNorm(emb); 
     const dist = 1-dot(emb, record.embeddings);
-    // const dist = dot(emb, record.embeddings)
-    if (dist < maxDistance
-      && (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance)) {
+    if (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance) {
       record.distance = dist;
       similarImages.push(record);
       similarImages.sort((a, b) => a.distance - b.distance);
@@ -90,6 +86,7 @@ async function findSimilarImages(queryParams) {
     }
   })
   console.timeEnd('findSimilarImages');
+  console.log('Found similar images:', similarImages.length);
   const filesDb = await getFilesDB();
   const files = await filesDb.files.bulkGet(similarImages.map(f => f.id));
   //filter out files that are not found
@@ -155,6 +152,7 @@ self.onmessage = async function (event) {
     const { text_embeds } = await text_model(text_inputs);
     queryParams.embeddings = text_embeds.normalize().tolist()[0];
   }
+  console.log('Query params:', queryParams)
   const files = await findSimilarImages(queryParams);
   self.postMessage({ status: 'ok', files });
 }
