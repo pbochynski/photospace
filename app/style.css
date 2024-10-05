@@ -7,18 +7,22 @@
 }
 
 .breadcrumb a {
-    color: #333; /* Change to your desired color */
-    text-decoration: none; /* Remove underline */
+    color: #333;
+    /* Change to your desired color */
+    text-decoration: none;
+    /* Remove underline */
     padding: 0 5px;
     transition: color 0.3s;
 }
 
 .breadcrumb a:hover {
-    color: #007BFF; /* Change to your desired hover color */
+    color: #007BFF;
+    /* Change to your desired hover color */
 }
 
 .breadcrumb .separator {
-    color: #999; /* Change to your desired separator color */
+    color: #999;
+    /* Change to your desired separator color */
     padding: 0 5px;
 }
 
@@ -30,9 +34,11 @@
     font-weight: bold;
     padding: 5px;
 }
+
 img {
     object-fit: contain;
 }
+
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -112,11 +118,13 @@ small {
     font-size: smaller;
     margin-top: 0;
 }
+
 .album-card {
     position: relative;
     display: inline-block;
     height: 240px;
 }
+
 .img-wrapper {
     position: relative;
 }
@@ -133,10 +141,12 @@ small {
     bottom: 0;
     left: 50%;
     transform: translateX(-50%);
-    background-color: rgba(0, 0, 0, 0.5); /* Transparent background */
+    background-color: rgba(0, 0, 0, 0.5);
+    /* Transparent background */
     color: white;
     font-weight: bold;
-    text-decoration: none; /* Remove underline */
+    text-decoration: none;
+    /* Remove underline */
     padding: 5px 10px;
     text-align: center;
     width: 100%;
@@ -147,13 +157,14 @@ small {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 2px; /* Adjust the gap between cards as needed */
+    gap: 2px;
+    /* Adjust the gap between cards as needed */
 }
 
-.card, .folder-card {
+.card,
+.folder-card {
     position: relative;
     display: inline-block;
-    height: 240px;
     text-align: center;
 }
 
@@ -166,7 +177,7 @@ small {
 .folder-card img {
     position: relative;
     width: 100%;
-    height: 120px;
+    height: 80px;
 }
 
 
@@ -175,15 +186,20 @@ small {
     bottom: 0;
     left: 0;
     width: 100%;
-    background: rgba(0, 0, 0, 0.5); /* Semi-transparent background */
+    background: rgba(0, 0, 0, 0.5);
+    /* Semi-transparent background */
     color: white;
     text-align: center;
     padding: 0px;
-    opacity: 0; /* Initially hidden */
-    transition: opacity 0.3s ease; /* Smooth transition */
+    opacity: 0;
+    /* Initially hidden */
+    transition: opacity 0.3s ease;
+    /* Smooth transition */
 }
+
 .card:hover .card-body {
-    opacity: 1; /* Visible on hover */
+    opacity: 1;
+    /* Visible on hover */
 }
 
 
@@ -193,36 +209,49 @@ small {
     align-items: center;
     margin: 5px;
 }
+
 .btn {
     margin: 5px;
 }
-.similar-btn, .scan-btn {
+
+.similar-btn,
+.scan-btn {
     background: none;
     border: none;
     font-size: 20px;
     cursor: pointer;
-    opacity: 0; /* Initially hidden */
-    transition: opacity 0.3s ease; /* Smooth transition */
+    opacity: 0;
+    /* Initially hidden */
+    transition: opacity 0.3s ease;
+    /* Smooth transition */
     position: absolute;
     top: 3px;
     right: 3px;
     z-index: 1;
 }
+
 .card:hover .similar-btn {
-    opacity: 1; /* Visible on hover */
+    opacity: 1;
+    /* Visible on hover */
 }
 
 .folder-card:hover .scan-btn {
-    opacity: 1; /* Visible on hover */
+    opacity: 1;
+    /* Visible on hover */
 }
 
-.star-enabled, .star-disabled {
+.star-enabled,
+.star-disabled {
     background: none;
     border: none;
-    color: gold; /* Color of the star */
-    font-size: 24px; /* Adjust the size of the star */
-    -webkit-text-stroke: 1px black; /* For WebKit browsers */
-    text-stroke: 1px black; /* For other browsers */
+    color: gold;
+    /* Color of the star */
+    font-size: 24px;
+    /* Adjust the size of the star */
+    -webkit-text-stroke: 1px black;
+    /* For WebKit browsers */
+    text-stroke: 1px black;
+    /* For other browsers */
     cursor: pointer;
     position: absolute;
     bottom: 3px;
@@ -231,20 +260,28 @@ small {
 }
 
 .star-enabled {
-    opacity: 1; /* Fully visible */
+    opacity: 1;
+    /* Fully visible */
 }
 
 .star-disabled {
     color: transparent;
-    -webkit-text-stroke: 1px white; /* For WebKit browsers */
-    text-stroke: 1px white; /* For other browsers */
-    opacity: 0; /* Hidden */
-}
-.card:hover .star-disabled {
-    opacity: 1; /* Visible on hover */
+    -webkit-text-stroke: 1px white;
+    /* For WebKit browsers */
+    text-stroke: 1px white;
+    /* For other browsers */
+    opacity: 0;
+    /* Hidden */
 }
 
-#searchText { width: 100%; } 
+.card:hover .star-disabled {
+    opacity: 1;
+    /* Visible on hover */
+}
+
+#searchText {
+    width: 100%;
+}
 
 body {
     margin: 0;
@@ -253,7 +290,8 @@ body {
 }
 
 .content {
-    padding-bottom: 60px; /* Space for bottom navigation */
+    padding-bottom: 60px;
+    /* Space for bottom navigation */
 }
 
 .bottom-nav {
@@ -282,8 +320,10 @@ body {
     background-color: #555;
 }
 
-.nav-button.active, .side-menu .nav-button.active {
-    background-color: #666; /* Change to your desired active color */
+.nav-button.active,
+.side-menu .nav-button.active {
+    background-color: #666;
+    /* Change to your desired active color */
     color: white;
     font-weight: bold;
 }
@@ -300,7 +340,138 @@ body {
     height: 300px;
     border: 1px solid #000;
     overflow-y: scroll;
-    white-space: pre-wrap; /* Allows multi-line logs */
+    white-space: pre-wrap;
+    /* Allows multi-line logs */
     font-family: monospace;
     padding: 10px;
+}
+
+/* Gallery */
+#chart-container {
+    width: 100%;
+    height: 100px;
+    border-bottom: 1px solid #ccc;
+    position: relative;
+    padding-bottom: 40px;
+}
+
+/* Make the canvas fill the container */
+#time-scale-chart {
+    width: 95%;
+    height: 95%;
+    display: block;
+    /* Removes inline spacing */
+    margin: auto;
+}
+
+/* Slider Container */
+#slider-container {
+    width: 100%;
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column; /* Stack label above the slider */
+    align-items: center; /* Center align both label and slider */
+}
+
+#slider-label {
+    margin-bottom: 10px; /* Space between label and slider */
+    font-weight: bold;
+    text-align: center; /* Align label text to center */
+}
+
+#date-slider {
+    width: 80%; /* Fixed width, independent of label length */
+    max-width: 600px; /* Limit maximum slider width */
+}
+
+#gallery {
+    padding: 20px;
+}
+
+.photos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.photo-tile {
+    width: 150px;
+    height: 150px;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    cursor: pointer;
+}
+
+.photo-tile:hover::after {
+    content: attr(data-name);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 5px;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+/* Tooltip for selected date */
+#selected-date {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 5px 10px;
+    border-radius: 5px;
+    display: none;
+}
+
+.tooltip {
+    position: absolute;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 5px;
+    font-size: 0.9em;
+    pointer-events: none;
+    display: none; /* Hidden by default */
+    z-index: 1000;
+}
+
+/* Style for the toggle button in day headers */
+.toggle-button {
+    background-color: transparent;
+    border: none;
+    font-size: 1.2em;
+    cursor: pointer;
+    margin-right: 10px;
+    outline: none;
+    transition: transform 0.2s ease;
+}
+
+.toggle-button:hover {
+    transform: scale(1.2);
+}
+
+/* Style for collapsed photos */
+.collapsed {
+    display: none;
+}
+
+/* Optional: Adjust day-header layout */
+.day-header {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-top: 20px;
+    margin-bottom: 10px;
+    font-size: 1.2em;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+}
+
+/* Ensure the date text doesn't wrap under the toggle button */
+.day-header span {
+    white-space: nowrap;
 }

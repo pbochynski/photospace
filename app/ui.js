@@ -3,6 +3,7 @@ import { importDatabase, exportDatabase, clearDB, exportToOneDrive, importFromOn
 import { dbInfo } from "./db.js";
 import { search } from "./search.js";
 import { getAllAlbums, getAlbum, indexAlbums, getFileAlbums, getAlbumName } from "./album.js";
+import { initPhotoGallery } from "./photos.js"
 
 addEventListener("popstate", (event) => {
     podStateHandler(event)
@@ -41,7 +42,7 @@ function addListenerToAll(selector, event, handler) {
 
 document.addEventListener('DOMContentLoaded', () => {
 
-    const buttons = ['home', 'drive', 'search', 'tools', 'album']
+    const buttons = ['home', 'drive', 'photos', 'search', 'tools', 'album']
     const menuButton = document.getElementById('menu-button');
     const sideMenu = document.getElementById('side-menu');
     // const signInButton = document.getElementById('sign-in-button');
@@ -54,12 +55,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     addListenerToAll('.album-button', 'click', openAlbum());
     addListenerToAll('.drive-button', 'click', () => openFolder());
+    addListenerToAll('.photos-button', 'click', () => initPhotoGallery());
 
     menuButton.addEventListener('click', () => {
         sideMenu.style.display = sideMenu.style.display === 'block' ? 'none' : 'block';
     });
     addToolsButtons()
-    setInterval(processingStatus, 1000)
+    setTimeout(()=>logProcessingStatus(app.processingStatus()), 1000)
     // register callback for search text input field that triggers search when enter is pressed
     document.getElementById("searchText").addEventListener("keyup", function (event) {
         if (event.key === "Enter") {
@@ -94,6 +96,8 @@ function addToolsButtons() {
         { label: "Purge embeddings", fn: app.purgeEmbeddings },
         { label: "Clear files", fn: clearDbHandler },
         { label: "Missing Embeddings", fn: app.queueMissingEmbeddings },
+        { label: "Duplicates", fn: showDuplicates},
+        { label: "Large Files", fn: showLargeFiles },
         { label: "Export", fn: exportHandler },
         { label: "Import", fn: importHandler },
         { label: "Export to OneDrive", fn: exportToOneDriveHandler },
@@ -213,7 +217,6 @@ async function openAlbum(id) {
     }
 }
 
-
 function searchCallback(data) {
     let div = document.getElementById("searchDiv")
     div.innerHTML = ""
@@ -277,8 +280,12 @@ async function podStateHandler(e) {
     }
     if (album || view == "album") {
         openAlbum(album)
-    } else if (search) {
+    } 
+    if (search) {
         search({ query: search }, searchCallback)
+    }
+    if (view == "photos") {
+        initPhotoGallery()
     }
     if (view) {
         activateContent(view)
@@ -304,18 +311,18 @@ async function render() {
     })
     app.parentFolders(currentFolder).then(renderParents)
 }
-async function processingStatus() {
-    const processingDiv = document.getElementById("processingDiv");
-    let { pending, processed, cacheProcessed, cacheQueue } = await app.processingStatus()
-    if (pending > 0 || cacheQueue > 0) {
-        processingDiv.innerText = `Processing (${processed}/${pending + processed}), cacheQueue: ${cacheQueue}`
-    } else {
-        if (processingDiv.innerText.startsWith("Processing (")) {
-            processingDiv.innerText = "Processing done."
-        } else {
-            processingDiv.innerText = ""
-        }
+async function logProcessingStatus(prevStatus) {
+    const interval = 5000   
+    const currentStatus = app.processingStatus()    
+    let { pending, processed, cacheQueue } = currentStatus
+    if (pending!=prevStatus.pending || processed!=prevStatus.processed) {
+        let rate = (processed - prevStatus.processed)*1000/interval
+        console.log(`Processing (${processed}/${pending + processed}), rate: ${rate} files/s`)  
     }
+    if (cacheQueue != prevStatus.cacheQueue) {
+        console.log(`Cache queue: ${cacheQueue}`)
+    }
+    setTimeout(()=>logProcessingStatus(currentStatus), interval)
 }
 
 function renderParents(folders) {
@@ -371,11 +378,14 @@ function small(text) {
     s.innerText = text
     return s
 }
+function button(text, onclick) {
+    let btn = document.createElement("button")
+    btn.innerText = text
+    btn.onclick = onclick
+    return btn
+}
 
 function filePath(d) {
-    if (d.parentReference) {
-        return prettyPath(d.parentReference.path) + '/' + d.name
-    }
     if (d.path) {
         return prettyPath(d.path) + '/' + d.name
     }
@@ -389,7 +399,8 @@ function folderCard(d) {
     const img = document.createElement("img")
     img.setAttribute("class", "card-img")
     img.setAttribute("id", "img_" + d.id)
-    img.setAttribute("height", "160")
+    img.setAttribute("height", "80")
+    img.setAttribute("width", "80")
     img.setAttribute("src", "folder.svg")
     card.appendChild(img);
 
@@ -399,7 +410,6 @@ function folderCard(d) {
     link.setAttribute("class", "folder-link")
     link.addEventListener('click', () => openFolder(d.id));
     card.appendChild(link)
-    card.appendChild(document.createElement("br"))
     card.appendChild(small(formatFileSize(d.size, 2)))
 
     let scanBtn = document.createElement("button")
@@ -452,6 +462,10 @@ function fileCard(d) {
     }
     if (d.distance) {
         body.appendChild(small("Distance: " + d.distance.toFixed(2)))
+        body.appendChild(document.createElement("br"))
+    }
+    if (d.score) {
+        body.appendChild(small("Score: " + d.score.toFixed(2)))
         body.appendChild(document.createElement("br"))
     }
     if (d.image) {
@@ -523,7 +537,7 @@ async function showLargeFiles() {
 let pairs = {}
 async function showDuplicates() {
     pairs = await app.findDuplicates()
-
+    console.log("Duplicates", pairs)
 
     let div = document.getElementById("largeFilesDiv")
     let keys = Object.keys(pairs).sort((a, b) => pairs[b][0].items.length - pairs[a][0].items.length)
@@ -531,9 +545,6 @@ async function showDuplicates() {
     for (let k of keys) {
         div.appendChild(duplicateCard(k, pairs[k]))
     }
-    // for (let d of list) {
-    //     div.appendChild(fileCard(d))
-    // }
 }
 
 function prettyPath(path) {
@@ -541,40 +552,43 @@ function prettyPath(path) {
     return decodeURI(path.replace('/drive/root:', ''))
 }
 function duplicateCard(key, d) {
-    const col = document.createElement("div");
-    col.setAttribute("class", "col")
-    const card = document.createElement("div");
-    card.setAttribute("class", "card h-100");
-    const body = document.createElement("div")
-    body.setAttribute("class", "card-body");
-    let html = `${d[0].items.length} duplicates<br/>`
-    html += `<small>${prettyPath(d[0].path)}</small><br/>`
-    html += `<button onclick="showDetails('${key}',0)">show</button><button onclick="deleteDuplicates('${key}',0)">delete</button><br/>`
-    html += `<small>${prettyPath(d[1].path)}</small><br/>`
-    html += `<button onclick="showDetails('${key}',1)">show</button><button onclick="deleteDuplicates('${key}',1)">delete</button>`
-    body.innerHTML = html
-    card.appendChild(body)
-    col.appendChild(card)
-    return col
+    const div = document.createElement("div");
+    const text = document.createElement("div");
+    const container1 = document.createElement("div");
+    const container2 = document.createElement("div");
+    text.innerText = `${d[0].items.length} duplicates`
+    div.appendChild(text)
+    div.appendChild(small(prettyPath(d[0].path)));
+    div.appendChild(document.createElement("br"))
+    
+    div.appendChild(button("show", () => {
+        for (let f of d[0].items) {
+            container1.appendChild(fileCard(f))
+        }
+    }))
+    div.appendChild(button("delete", () => {
+        app.deleteItems(d[0].items)
+        app.deleteFromCache(d[0].items)
+        div.remove()
+    }))
+    div.appendChild(container1)
+
+    div.appendChild(document.createElement("br"))
+    div.appendChild(small(prettyPath(d[1].path)));
+    div.appendChild(document.createElement("br"))
+    div.appendChild(button("show", () => {
+        for (let f of d[1].items) {
+            container2.appendChild(fileCard(f))
+        }
+    }))
+    div.appendChild(button("delete", () => {
+        app.deleteItems(d[1].items)
+        app.deleteFromCache(d[1].items)
+        div.remove()
+    }))
+    div.appendChild(container2)
+    return div
 }
-function showDetails(key, index) {
-    document.getElementById("detail-tab").click()
-    let div = document.getElementById("detailDiv")
-    div.innerHTML = ""
-    console.log("Details for:", pairs[key][index].items.length)
-    for (let f of pairs[key][index].items) {
-
-        div.appendChild(fileCard(f))
-    }
-
-}
-
-async function deleteDuplicates(key, index) {
-    deleteItems(pairs[key][index].items).then((res) => {
-        deleteFromCache(pairs[key][index].items)
-        console.log(res)
-    })
-}
 
 
-export { openFolder }
+export { fileCard }

@@ -1,5 +1,5 @@
-import { importDB, exportDB, importInto, peakImportFile } from 'https://cdn.jsdelivr.net/npm/dexie-export-import@4.1.2/+esm'
-import { getFilesDB, getEmbeddingsDB, getQuickEmbeddingsDB, payload } from './db.js'
+import { importDB, exportDB } from 'https://cdn.jsdelivr.net/npm/dexie-export-import@4.1.2/+esm'
+import { getFilesDB, getEmbeddingsDB  } from './db.js'
 import { getTokenRedirect } from './auth.js'
 
 const graphFilesEndpoint = "https://graph.microsoft.com/v1.0/me/drive"

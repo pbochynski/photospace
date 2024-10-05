@@ -29,6 +29,7 @@
         <ul>
             <li><button class="nav-button home-button">Home</button></li>
             <li><button class="nav-button drive-button">Drive</button></li>
+            <li><button class="nav-button photos-button">Photos</button></li>
             <li><button class="nav-button album-button">Album</button></li>
             <li><button class="nav-button tools-button">Tools</button></li>
             <li><button class="nav-button search-button">Search</button></li>
@@ -61,6 +62,18 @@
 
         <div class="card-container" id="albumDiv"></div>
     </div>
+    <div id="photos" class="content">
+        <div id="chart-container">
+            <canvas id="time-scale-chart"></canvas>
+            <div id="chart-tooltip" class="tooltip"></div>
+            <div id="selected-date"></div>
+            <div id="slider-container">
+                <span id="slider-label"></span> <!-- Moved label above the slider -->
+                <input type="range" id="date-slider" min="0" max="100" step="1">
+            </div>
+        </div>
+        <div id="gallery"></div>
+    </div>
 
     <div id="tools" class="content">
         <div class="row row-cols-1 g-2">
@@ -69,10 +82,10 @@
         </div>
 
         <div class="card-container" id="largeFilesDiv">
-        <div id="processingDiv"></div>
-        <br />
-        <div id="consoleDiv"></div>
-        <div id="logContainer"></div>
+            <div id="processingDiv"></div>
+            <br />
+            <div id="consoleDiv"></div>
+            <div id="logContainer"></div>
         </div>
     </div>
     <div id="search" class="content">
@@ -93,6 +106,7 @@
     <div class="bottom-nav">
         <button class="nav-button drive-button">Drive</button>
         <button class="nav-button album-button">Album</button>
+        <button class="nav-button photos-button">Photos</button>
         <button class="nav-button tools-button">Tools</button>
         <button class="nav-button search-button">Search</button>
     </div>

@@ -12,9 +12,8 @@ const embeddingWorkers = []
 
 function startEmbeddingWorker() {
   embeddingWorkers.push(embeddingWorker(embeddingQueue, embeddingWorkers.length+1))
-
-
 }
+
 for (let i = 0; i < 4; ++i) {
   cacheWorkers.push(worker(cacheQueue, i))
 }
@@ -49,14 +48,14 @@ async function readFolder(id, callback) {
   const path = (id) ? `/items/${id}` : `/root`
   let data = await fetchWithToken(graphFilesEndpoint + path + '/children?$expand=thumbnails', token).then(response => response.json())
   cacheFiles(data)
-  calculateEmbeddings(token, data)
+  calculateEmbeddings(data)
   if (callback) {
     callback(data)
   }
   while (data["@odata.nextLink"]) {
     let next = await fetchWithToken(data["@odata.nextLink"], token).then(response => response.json())
     cacheFiles(next)
-    calculateEmbeddings(token, next)
+    calculateEmbeddings(next)
     data.value = data.value.concat(next.value)
     data["@odata.nextLink"] = next["@odata.nextLink"]
     if (callback) {
@@ -65,18 +64,11 @@ async function readFolder(id, callback) {
   }
   return data.value
 }
-async function readThumbnail(token, id, size) {
-  return fetchWithToken(graphFilesEndpoint + `/items/${id}/thumbnails/0/${size}/content`, token)
-}
 
 async function deleteFromCache(items) {
   let db = await getFilesDB()
-  for (let i of items) {
-    console.log("Deleting from cache:", i.name, i.id)
-    await db.files.delete(i.id)
-  }
+  db.files.bulkDelete(items.map(i => i.id))
 }
-
 
 async function deleteItems(items) {
   return new Promise(async (resolve, reject) => {
@@ -127,7 +119,7 @@ async function embeddingWorker(queue, number) {
     processed++
     const f = pendingRequests.get(id);
     if (embeddings) {
-      saveEmbedding({ id, embeddings, ...payload(f) });
+      saveEmbedding({ id, embeddings, ...f });
     }
     pendingRequests.delete(id);
   };
@@ -148,7 +140,7 @@ async function embeddingWorker(queue, number) {
     if (!token) {
       token = await getTokenRedirect().then(response => response.accessToken)
       console.log(`Worker ${number} token`, token)
-      setTimeout(() => { token = null }, 60000) // renew token every minute
+      setTimeout(() => { token = null }, 900000) // renew token every 15 minutes
     }
     let f = queue.shift()
     let thumbnailUrl = graphFilesEndpoint + `/items/${f.id}/thumbnails/0/large/content`
@@ -158,7 +150,6 @@ async function embeddingWorker(queue, number) {
 
   }
 }
-
 
 async function worker(urls, number) {
   console.log("Cache worker %s started", number)
@@ -191,7 +182,6 @@ async function worker(urls, number) {
   }
 }
 
-
 async function cacheAllFiles(id) {
   cacheQueue.length = 0
   if (id) {
@@ -201,16 +191,11 @@ async function cacheAllFiles(id) {
   }
 }
 
-
-
-
 async function cacheFiles(data) {
   let db = await getFilesDB()
-  db.files.bulkPut(data.value.filter(f => f.image))
+  let files = data.value.filter(f => f.image).map(f => payload(f))
+  db.files.bulkPut(files)
 }
-
-
-
 
 async function largeFiles() {
   let db = await getFilesDB()
@@ -227,8 +212,8 @@ async function largeFiles() {
   return top
 }
 function compareParentId(a, b) {
-  if (a.parentReference.id > b.parentReference.id) return 1
-  if (a.parentReference.id < b.parentReference.id) return -1
+  if (a.folderId > b.folderId) return 1
+  if (a.folderId < b.folderId) return -1
   if (a.name > b.name) return 1
   if (a.name < b.name) return -1
   return 0
@@ -245,12 +230,12 @@ async function findDuplicates() {
     if (value.photo) {
       p++
     }
-    if (value.file && value.file.hashes && value.file.hashes.quickXorHash && value.size > 100000) {
-      if (h[value.file.hashes.quickXorHash]) {
-        h[value.file.hashes.quickXorHash].push(value)
-        duplicates[value.file.hashes.quickXorHash] = true
+    if (value.file && value.file.hashes && value.file.hash && value.size > 100000) {
+      if (h[value.file.hash]) {
+        h[value.file.hash].push(value)
+        duplicates[value.file.hash] = true
       } else {
-        h[value.file.hashes.quickXorHash] = [value]
+        h[value.file.hash] = [value]
       }
     }
 
@@ -263,13 +248,13 @@ async function findDuplicates() {
       for (let j = i + 1; j < h[key].length; ++j) {
         let pair = [h[key][i], h[key][j]]
         pair.sort(compareParentId)
-        let id = pair[0].parentReference.id + '_' + pair[1].parentReference.id
+        let id = pair[0].folderId + '_' + pair[1].folderId
         if (pairs[id]) {
           pairs[id][0].items.push(pair[0])
           pairs[id][1].items.push(pair[1])
         } else {
-          pairs[id] = [{ parentId: pair[0].parentReference.id, path: pair[0].parentReference.path, items: [pair[0]] },
-          { parentId: pair[1].parentReference.id, path: pair[1].parentReference.path, items: [pair[1]] }]
+          pairs[id] = [{ parentId: pair[0].folderId, path: pair[0].path, items: [pair[0]] },
+          { parentId: pair[1].folderId, path: pair[1].path, items: [pair[1]] }]
         }
       }
     }
@@ -302,7 +287,6 @@ async function queueMissingEmbeddings() {
   for (let record of Object.values(missing)) {
     embeddingQueue.push(record)
   }
-
 }
 
 async function purgeEmbeddings() {
@@ -322,8 +306,7 @@ async function purgeEmbeddings() {
   console.log("Deleted embeddings", Object.keys(toDelete).length) 
 }
 
-
-async function calculateEmbeddings(token, data) {
+async function calculateEmbeddings(data) {
   let db = await getEmbeddingsDB()
   let embeddings = await db.embeddings.bulkGet(data.value.map(f => f.id))
 
@@ -338,28 +321,13 @@ async function calculateEmbeddings(token, data) {
   }
 }
 
-
-
-async function processingStatus() {
-
+function processingStatus() {
   return { pending: embeddingQueue.length, processed, cacheProcessed, cacheQueue: cacheQueue.length }
 }
 
-async function serverEmbedding(file) {
-  let url = file.thumbnails[0].large.url
-  return fetch('/classify', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ url, id: file.id })
-  }).then(response => response.json())
-}
-
-
 export {
-  readFolder, cacheFiles, cacheAllFiles, largeFiles, calculateEmbeddings,
+  readFolder, cacheFiles, cacheAllFiles, largeFiles,
   findDuplicates, deleteItems, deleteFromCache,
-  parentFolders, processingStatus, serverEmbedding,
+  parentFolders, processingStatus,
   queueMissingEmbeddings, purgeEmbeddings, startEmbeddingWorker
 }

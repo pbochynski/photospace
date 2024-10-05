@@ -5,7 +5,6 @@ import { Queue } from './queue.js';
 // const visionModelId = 'jinaai/jina-clip-v1';
 const processorModelId = 'Xenova/clip-vit-base-patch16';
 const visionModelId = 'Xenova/clip-vit-base-patch16';
-let inFlight = 0;
 
 let accelerator
 if (navigator.gpu) {
@@ -57,7 +56,7 @@ async function calculateEmbedding(fileId, rawImage) {
   let image_inputs = await processor(rawImage, { return_tensors: true });
   // Compute embeddings
   const { image_embeds } = await vision_model(image_inputs);
-  const embed_as_list = image_embeds.tolist()[0];
+  const embed_as_list = image_embeds.normalize().tolist()[0];
   self.postMessage({ id: fileId, embeddings: embed_as_list });
 
   return embed_as_list;

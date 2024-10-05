@@ -2,7 +2,6 @@ import { getTokenRedirect } from './auth.js';
 import { getAlbumsDB } from './db.js';
 
 
-// https://api.onedrive.com/v1.0/drives/816de1a42c711782/bundles?%24filter=bundle%2Falbum+ne+null&orderby=createdDateTime+desc&select=bundle%2CcreatedDateTime%2Cid%2ClastModifiedDateTime%2Cname%2CparentReference%2Cshared%2Ctags&top=100&expand=tags%2Cthumbnails&prefer=Migration%3DEnableRedirect%3BFailOnMigratedFiles&ump=1
 
 
 let token = null

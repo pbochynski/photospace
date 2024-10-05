@@ -1,22 +1,17 @@
 
-import {env, dot, AutoTokenizer,CLIPTextModelWithProjection} from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19';
+import { env, AutoTokenizer, CLIPTextModelWithProjection, dot } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0-alpha.19';
 import { getEmbeddingsDB, getFilesDB } from './db.js';
 
 env.allowLocalModels = false;
-// const textModelId = 'jinaai/jina-clip-v1';
 const textModelId = 'Xenova/clip-vit-base-patch16';
-// calculate distance between two embeddings using cosine similarity
-function distance(embedding1, embedding2) {
-  const dotProduct = embedding1.reduce((acc, val, i) => acc + val * embedding2[i], 0);
-  const norm1 = Math.sqrt(embedding1.reduce((acc, val) => acc + val * val, 0));
-  const norm2 = Math.sqrt(embedding2.reduce((acc, val) => acc + val * val, 0));
-  return 1 - dotProduct / (norm1 * norm2);
-}
 
 const tokenizer = await AutoTokenizer.from_pretrained(textModelId);
 const text_model = await CLIPTextModelWithProjection.from_pretrained(textModelId);
 
 console.log('Text model loaded');
+const {positiveEmbeds,negativeEmbeds} = await scoreEmbeddings();
+self.postMessage({log: 'Score embeddings calculated' });
+
 function parseQuery(query) {
   if (!query) {
     return {}
@@ -32,7 +27,7 @@ function parseQuery(query) {
       queryParams[param] = match[1];
     }
   }
-  return { text: query.trim(), ...queryParams };  
+  return { text: query.trim(), ...queryParams };
 }
 
 async function findImages(queryParams) {
@@ -40,12 +35,12 @@ async function findImages(queryParams) {
   let collection = db.files;
   if (queryParams.date) {
     let dates = queryParams.date.split('..');
-    collection = collection.where('photo.takenDateTime').between(dates[0],dates[1], true, true);
+    collection = collection.where('takenDateTime').between(dates[0], dates[1], true, true);
   }
-  if (queryParams.path) {    
+  if (queryParams.path) {
 
-    collection = collection.filter(f => f.parentReference && f.parentReference && f.parentReference.path.startsWith(queryParams.path))
-    
+    collection = collection.filter(f => f.path.startsWith(queryParams.path))
+
   }
   let files = await collection.limit(queryParams.limit || 500).toArray();
   const embeddingsDB = await getEmbeddingsDB();
@@ -60,7 +55,6 @@ async function findImages(queryParams) {
 
 async function findSimilarImages(queryParams) {
   const emb = queryParams.embeddings;
-  console.log('Finding similar images',emb);
   if (!emb) {
     return findImages(queryParams);
   }
@@ -72,16 +66,18 @@ async function findSimilarImages(queryParams) {
   let collection = db.embeddings;
   if (queryParams.date) {
     let dates = queryParams.date.split('..');
-    collection = collection.where('photo.takenDateTime').between(dates[0],dates[1], true, true);
+    collection = collection.where('photo.takenDateTime').between(dates[0], dates[1], true, true);
   }
-  
-  if (queryParams.path) {    
+
+  if (queryParams.path) {
     collection = collection.filter(f => f.path.startsWith(queryParams.path))
   }
   
   console.time('findSimilarImages');
   await collection.each(record => {
-    const dist = distance(emb, record.embeddings);
+    let n1 = calculateNorm(record.embeddings);
+    let n2 = calculateNorm(emb); 
+    const dist = 1-dot(emb, record.embeddings);
     // const dist = dot(emb, record.embeddings)
     if (dist < maxDistance
       && (similarImages.length < maxImages || dist < similarImages[similarImages.length - 1].distance)) {
@@ -94,20 +90,60 @@ async function findSimilarImages(queryParams) {
     }
   })
   console.timeEnd('findSimilarImages');
-  console.log('Number of similar images', similarImages.length);
   const filesDb = await getFilesDB();
   const files = await filesDb.files.bulkGet(similarImages.map(f => f.id));
   //filter out files that are not found
   similarImages = similarImages.filter((f, i) => files[i]);
+
   similarImages.forEach((f, i) => {
+    f.score = calculateScore(f.embeddings, positiveEmbeds, negativeEmbeds);
+
     Object.assign(f, files[i]);
   })
   return similarImages
 }
+function calculateScore(imageEmbedding, positiveEmbeds, negativeEmbeds) {
+  // Positive similarity
+  const exp_logit_scale = Math.exp(4.6052);
 
+  const positiveSimilarity = positiveEmbeds.map(x => dot(x, imageEmbedding)*exp_logit_scale);
+  const positiveScore = positiveSimilarity.reduce((acc, val) => acc + val, 0)/positiveEmbeds.length;
+
+  // Negative similarity
+  const negativeSimilarity = negativeEmbeds.map(x => dot(x, imageEmbedding)*exp_logit_scale);
+  const negativeScore = negativeSimilarity.reduce((acc, val) => acc + val, 0)/negativeEmbeds.length;
+  // Combined score: High positive, low negative
+  return positiveScore - negativeScore;
+}
+async function scoreEmbeddings() {
+  const positivePrompts = [ "good photo"
+    // "A sharply focused photograph with clear and crisp details.",
+    // "A good looking portrait photo with a well-exposed face.",
+    // "A well-composed image following the rule of thirds with balanced elements.",
+    // "A photograph with balanced and natural lighting.",
+    // "A clean photo without any obstructions in the foreground, such as fingers or objects."
+  ];
+
+  const negativePrompts = [ "bad photo"
+    // "A photograph with blurred or unsharp details.",
+    // "A weird looking portrait photo with an ugly face expression.",
+    // "An image cluttered with unwanted objects or obstructions in the foreground.",
+    // "A poorly lit photograph with uneven lighting.",
+    // "An image with distracting elements covering the main subject."
+  ];
+
+  // Encode prompts
+  const encodedPositive = await tokenizer(positivePrompts, { padding: true, truncation: true });
+  const {text_embeds: positiveEmbeds} = await text_model(encodedPositive)
+  
+
+  const encodedNegative = await tokenizer(negativePrompts, { padding: true, truncation: true });
+  const {text_embeds: negativeEmbeds} = await text_model(encodedNegative)
+
+  return { positiveEmbeds: positiveEmbeds.normalize().tolist(), negativeEmbeds: negativeEmbeds.normalize().tolist() };
+}
 
 self.onmessage = async function (event) {
-  console.log("event", event.data)
   const { similar, query } = event.data;
   const queryParams = parseQuery(query);
   if (similar) {
@@ -115,10 +151,9 @@ self.onmessage = async function (event) {
     const f = await db.embeddings.get(similar)
     queryParams.embeddings = f.embeddings;
   } else if (queryParams.text) {
-    const text_inputs = tokenizer(queryParams.text, { padding: true, truncation: true });
+    const text_inputs = await tokenizer([queryParams.text], { padding: true, truncation: true });
     const { text_embeds } = await text_model(text_inputs);
     queryParams.embeddings = text_embeds.normalize().tolist()[0];
-    console.log('Text embeddings', queryParams.embeddings);
   }
   const files = await findSimilarImages(queryParams);
   self.postMessage({ status: 'ok', files });
