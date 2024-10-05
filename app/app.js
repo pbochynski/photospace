@@ -230,12 +230,12 @@ async function findDuplicates() {
     if (value.photo) {
       p++
     }
-    if (value.file && value.file.hashes && value.file.hash && value.size > 100000) {
-      if (h[value.file.hash]) {
-        h[value.file.hash].push(value)
-        duplicates[value.file.hash] = true
+    if (value.hash && value.size > 100000) {
+      if (h[value.hash]) {
+        h[value.hash].push(value)
+        duplicates[value.hash] = true
       } else {
-        h[value.file.hash] = [value]
+        h[value.hash] = [value]
       }
     }
 

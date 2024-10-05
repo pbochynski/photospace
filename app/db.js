@@ -38,7 +38,7 @@ function payload(file) {
   return {
     id: file.id,
     name: file.name, 
-    hash: file.file.hash, 
+    hash: file.file.hashes.quickXorHash,
     mimeType: file.file.mimeType,
     size: file.size, 
     lastModified: file.lastModifiedDateTime, 
@@ -72,6 +72,6 @@ async function dbInfo() {
 
   })
   duplicates = duplicates.map(h => uniqueHashes[h])
-  return {files: filesCount, embeddings: embCount, duplicates: duplicates.length, uniqueHashes: Object.keys(uniqueHashes).length}    
+  return {files: filesCount, embeddings: embCount, duplicates: duplicates, uniqueHashes: Object.keys(uniqueHashes).length}    
 }
 export {getFilesDB, getEmbeddingsDB, saveEmbedding, getEmbedding, payload, getAlbumsDB, dbInfo};

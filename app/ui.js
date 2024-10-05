@@ -126,7 +126,7 @@ async function clearDbHandler(e) {
     btn.disabled = true
     btn.innerText = "Clearing ..."
     await clearDB()
-    btn.innerText = "Clear DB"
+    btn.innerText = "Clear files"
     btn.disabled = false
 }
 async function importHandler(e) {
