@@ -229,11 +229,11 @@ async function initPhotoGallery() {
 
   let debounceTimeout;
   dateSlider.addEventListener('input', async (event) => {
+    const index = parseInt(event.target.value, 10);
+    const selectedMonth = chart.data[index].month;
+    sliderLabel.textContent = formatMonth(selectedMonth);
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(async () => {
-      const index = parseInt(event.target.value, 10);
-      const selectedMonth = chart.data[index].month;
-      sliderLabel.textContent = formatMonth(selectedMonth);
       await gallery.displayPhotosByMonth(selectedMonth);
     }, 300); // Adjust the delay as needed
   });

@@ -400,8 +400,7 @@ body {
 }
 
 #date-slider {
-    width: 80%; /* Fixed width, independent of label length */
-    max-width: 600px; /* Limit maximum slider width */
+    width: 95%; /* Fixed width, independent of label length */
 }
 
 #gallery {
