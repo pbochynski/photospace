@@ -229,8 +229,7 @@ function searchCallback(data) {
 }
 
 function impexProgress({ offset, count }) {
-    let div = document.getElementById("largeFilesDiv")
-    div.innerText = `in progress... ${offset}/${count}`
+    console.log(`in progress... ${offset}/${count}`)
 }
 
 async function exportToOneDriveHandler(e) {
@@ -238,14 +237,14 @@ async function exportToOneDriveHandler(e) {
     let name = prompt("Enter model name", "clip")
 
     let count = await exportToOneDrive(name, impexProgress)
-    document.getElementById("largeFilesDiv").innerText = `Exported ${count} embeddings to OneDrive`
+    console.log(`Exported ${count} embeddings to OneDrive`)
 
 }
 async function importFromOneDriveHandler(e) {
     // ask for model name (popup)
     let name = prompt("Enter model name", "clip")
     let count = await importFromOneDrive(name, impexProgress)
-    document.getElementById("largeFilesDiv").innerText = `Imported ${count} embeddings from OneDrive`
+    console.log(`Imported ${count} embeddings from OneDrive`)
 }
 async function exportHandler(e) {
     let btn = e.target

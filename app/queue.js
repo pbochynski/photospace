@@ -4,13 +4,36 @@ class Queue {
     this.concurrency = concurrency;
     this.currentlyProcessing = 0;
   }
+  // return a promise that resolves when the queue is empty and all tasks are done
+  done() {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (this.queue.length === 0 && this.currentlyProcessing === 0) {
+          resolve();
+        } else {
+          setTimeout(check, 100);
+        }
+      };
+      check();
+    });
+  }
+  backoff(max = 10 ) {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (this.queue.length < max ) {
+          resolve();
+        } else {
+          setTimeout(check, 100);
+        }
+      }
+      check();
+    });
+  }
 
-  enqueue(task) {
+  async enqueue(task, maxQueueLength = 10) {
+    await this.backoff(maxQueueLength);
     this.queue.push(task);
     this.processNext();
-  }
-  onComplete(){
-    this.currentlyProcessing--;
   }
 
   length() {
