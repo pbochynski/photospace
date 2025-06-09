@@ -1,4 +1,4 @@
-import { msalInstance, login, logout, getAuthToken } from './lib/auth.js';
+import { msalInstance, login } from './lib/auth.js'; // Removed unused imports
 import { fetchAllPhotos } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups } from './lib/analysis.js';
@@ -25,6 +25,14 @@ function updateStatus(text, showProgress = false, progressValue = 0, progressMax
     } else {
         progressBar.style.display = 'none';
     }
+}
+
+function displayLoggedIn(account) {
+    loginButton.style.display = 'none';
+    userInfo.textContent = `Welcome, ${account.name}`;
+    userInfo.style.display = 'block';
+    mainContent.style.display = 'block';
+    updateStatus('Ready. Click "Scan OneDrive Photos" to begin.');
 }
 
 function displayResults(groups) {
@@ -54,16 +62,12 @@ function displayResults(groups) {
 
 // --- Core Logic ---
 
-async function handleLogin() {
+async function handleLoginClick() {
     try {
         const account = await login();
         if (account) {
-            loginButton.style.display = 'none';
-            userInfo.textContent = `Welcome, ${account.name}`;
-            userInfo.style.display = 'block';
-            mainContent.style.display = 'block';
+            displayLoggedIn(account);
             await db.init();
-            updateStatus('Ready. Click "Scan OneDrive Photos" to begin.');
         }
     } catch (error) {
         console.error(error);
@@ -75,12 +79,6 @@ async function runPhotoScan() {
     startScanButton.disabled = true;
     updateStatus('Starting scan... Authenticating...', true, 0, 100);
     try {
-        const token = await getAuthToken();
-        if (!token) {
-            updateStatus('Authentication failed. Please log in again.', false);
-            return;
-        }
-
         await fetchAllPhotos((progress) => {
             updateStatus(`Found ${progress.count} photos...`, true, 0, 100);
         });
@@ -119,7 +117,6 @@ async function generateEmbeddings() {
             const { file_id, embedding, status, error } = event.data;
 
             if (status === 'ready') {
-                // Worker is ready, start sending photos
                 photosToProcess.forEach(photo => {
                     embeddingWorker.postMessage({
                         file_id: photo.file_id,
@@ -138,7 +135,7 @@ async function generateEmbeddings() {
                 }
             } else if (status === 'error') {
                 console.error(`Worker error for file ${file_id}:`, error);
-                processedCount++; // Skip this one
+                processedCount++;
                  if (processedCount === totalToProcess) {
                     embeddingWorker.terminate();
                     updateStatus('Processing finished with some errors.', false);
@@ -156,7 +153,6 @@ async function generateEmbeddings() {
     });
 }
 
-
 async function runAnalysis() {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
@@ -170,17 +166,13 @@ async function runAnalysis() {
 
         updateStatus(`Analyzing ${allPhotos.length} photos...`, true, 25, 100);
         
-        // This can be slow, so we can run it in a non-blocking way if needed,
-        // but for V1 we'll do it directly.
         setTimeout(async () => {
             const similarGroups = await findSimilarGroups(allPhotos, (progress) => {
                  updateStatus(`Analyzing... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.75), 100);
             });
             displayResults(similarGroups);
             updateStatus('Analysis complete!', false);
-            startAnalysisButton.disabled = false;
         }, 100);
-
 
     } catch (error) {
         console.error('Analysis failed:', error);
@@ -189,23 +181,35 @@ async function runAnalysis() {
     }
 }
 
+// --- Main Application Startup ---
+// NEW: We wrap the startup logic in an async function to use await.
+async function main() {
+    // STEP 1: Initialize MSAL
+    await msalInstance.initialize();
 
-// --- Event Listeners ---
-loginButton.addEventListener('click', handleLogin);
-startScanButton.addEventListener('click', runPhotoScan);
-startAnalysisButton.addEventListener('click', runAnalysis);
-
-// --- Initial State Check ---
-msalInstance.handleRedirectPromise().then((response) => {
-    if (response && response.account) {
-        msalInstance.setActiveAccount(response.account);
-        handleLogin();
+    // STEP 2: Handle the redirect promise. This should be done after initialization.
+    try {
+        const response = await msalInstance.handleRedirectPromise();
+        if (response && response.account) {
+            msalInstance.setActiveAccount(response.account);
+        }
+    } catch (error) {
+        console.error("Error handling redirect promise:", error);
     }
-});
+    
+    // STEP 3: Check for an active account
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+        msalInstance.setActiveAccount(accounts[0]);
+        displayLoggedIn(accounts[0]);
+        await db.init();
+    }
 
-// Check if user is already logged in
-const accounts = msalInstance.getAllAccounts();
-if (accounts.length > 0) {
-    msalInstance.setActiveAccount(accounts[0]);
-    handleLogin();
+    // STEP 4: Add event listeners now that MSAL is ready
+    loginButton.addEventListener('click', handleLoginClick);
+    startScanButton.addEventListener('click', runPhotoScan);
+    startAnalysisButton.addEventListener('click', runAnalysis);
 }
+
+// Start the application
+main();

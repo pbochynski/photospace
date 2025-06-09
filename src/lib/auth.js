@@ -1,3 +1,5 @@
+console.log("Vite Env Variables:", import.meta.env); 
+
 import { PublicClientApplication, LogLevel } from '@azure/msal-browser';
 
 const msalConfig = {
