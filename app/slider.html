@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Date Range Slider</title>
+  <link rel="stylesheet" href="slider.css">
+</head>
+<body>
+  <div class="slider-container">
+    <button id="year-btn" class="slider-button">year</button> 
+    <button id="month-btn" class="slider-button">month</button>
+    <button id="day-btn" class="slider-button">day</button>
+
+    <div id="slider-value" class="slider-value"></div>
+    <input id="date-slider" type="range" min="-15" max="15" value="0" class="slider" list="values">
+    <datalist id="values">
+      <option value="-20" label="-20"></option>
+      <option value="-15" label="-15"></option>
+      <option value="-10"></option>
+      <option value="-5"></option>
+      <option value="0"></option>
+      <option value="5"></option>
+      <option value="10"></option>
+      <option value="15" label="15"></option>
+      <option value="20" label="20"></option>
+    </datalist>
+  </div>
+  
+  <script src="slider.js"></script>
+</body>
+</html>

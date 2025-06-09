@@ -1,0 +1,42 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f4f4f4;
+}
+
+.slider-container {
+  width: 80%;
+  max-width: 600px;
+  text-align: center;
+}
+
+.slider {
+  width: 100%;
+  margin-top: 20px;
+}
+
+.slider-value {
+  margin-top: 10px;
+  font-size: 18px;
+}
+
+datalist {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  writing-mode: vertical-lr;
+  width: 100%;
+}
+
+option {
+  padding: 0;
+}

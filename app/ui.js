@@ -74,11 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     podStateHandler()
-    // signInButton.addEventListener('click', () => {
-    //     // Handle sign-in logic here
-    //     // For demonstration, we'll just replace the button with a user icon
-    //     userSection.innerHTML = '<img src="user-icon.png" alt="User Icon" class="user-icon">';
-    // });
 });
 async function testGPU() {
     if (navigator.gpu) {
@@ -497,7 +492,7 @@ function fileCard(d) {
         trashBtn.innerText = "🗑️"; // You can use an SVG icon here instead
         trashBtn.setAttribute("class", "trash-btn");
         trashBtn.onclick = () => {
-            app.deleteItems([f])
+            app.deleteItems([d])
             card.remove()
         }
         card.appendChild(trashBtn);

@@ -118,6 +118,13 @@ class PhotoGallery {
   constructor(containerId) {
     this.container = document.getElementById(containerId);
   }
+  // get oldest and newest date of photos
+  async dateRange() {
+    const db = await getFilesDB()
+    const oldest = await db.files.orderBy('takenDateTime').first();
+    const newest = await db.files.orderBy('takenDateTime').last();
+    return [new Date(oldest.takenDateTime), new Date(newest.takenDateTime)];
+  }
 
   async displayPhotosByMonth(month) {
     this.container.innerHTML = ''; // Clear previous photos
@@ -188,49 +195,46 @@ class PhotoGallery {
 
 async function initPhotoGallery() {
   console.log('Initializing Photo Gallery...');
-  // Initialize chart
-  const chart = new TimeScaleChart('time-scale-chart', async (selectedMonth ) => {
-    const tooltip = document.getElementById('selected-date');
-    tooltip.textContent = `Selected Month: ${selectedMonth}`;
-    tooltip.style.display = 'block';
-    setTimeout(() => {
-        tooltip.style.display = 'none';
-    }, 2000);
-
-    // Update slider to the selected month
-    const monthIndex = chart.data.findIndex(d => d.month === selectedMonth);
-    if (monthIndex !== -1) {
-        dateSlider.value = monthIndex;
-        sliderLabel.textContent = formatMonth(selectedMonth);
-    }
-
     // Load photos for the selected month
-    await gallery.displayPhotosByMonth(selectedMonth);
-  });
 
   // Initialize gallery
   const gallery = new PhotoGallery('gallery');
+  const [oldestDate, newestDate] = await gallery.dateRange();
+  console.log('Date Range:', oldestDate, newestDate); // Debugging
+  
+
 
   // Render the chart
-  await chart.render();
   // Initialize slider
   const dateSlider = document.getElementById('date-slider');
   const sliderLabel = document.getElementById('slider-label');
+  const sliderVals = [];
+  let year = oldestDate.getFullYear();
+  let month = oldestDate.getMonth();
+  while (year < newestDate.getFullYear() || month <= newestDate.getMonth()) {
+    sliderVals.push(`${year}-${month.toString().padStart(2, '0')}`);
+    month++;
+    if (month > 11) {
+      year++;
+      month = 0;
+    }
+  }
 
   // Populate slider based on chart data
-  const totalMonths = chart.data.length;
+  const totalMonths = sliderVals.length;
+  console.log('Total Months:', totalMonths); // Debugging
   dateSlider.min = 0;
   dateSlider.max = totalMonths - 1;
   dateSlider.value = totalMonths - 1; // Set to latest month by default
 
   // Set initial slider label
-  const latestMonth = chart.data[totalMonths - 1].month;
+  const latestMonth = new Date(newestDate).toISOString().substring(0, 7);
   sliderLabel.textContent = formatMonth(latestMonth);
 
   let debounceTimeout;
   dateSlider.addEventListener('input', async (event) => {
     const index = parseInt(event.target.value, 10);
-    const selectedMonth = chart.data[index].month;
+    const selectedMonth = sliderVals[index];
     sliderLabel.textContent = formatMonth(selectedMonth);
     clearTimeout(debounceTimeout);
     debounceTimeout = setTimeout(async () => {
@@ -246,11 +250,7 @@ async function initPhotoGallery() {
     return date.toLocaleDateString(undefined, options);
   }
 
-  // Optionally, display photos for the latest date on load
-  if (chart.data.length > 0) {
-    const latestMonth = chart.data[chart.data.length - 1].month;
-    await gallery.displayPhotosByMonth(latestMonth);
-  }
+
 }
 
 export { initPhotoGallery };
