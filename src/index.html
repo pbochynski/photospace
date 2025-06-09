@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Photospace Analyzer</title>
+    <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Photospace Analyzer</h1>
+            <div id="auth-container">
+                <button id="login-button">Login with Microsoft</button>
+                <p id="user-info" style="display: none;"></p>
+            </div>
+        </header>
+
+        <main id="main-content" style="display: none;">
+            <div id="status-panel">
+                <p id="status-text">Ready to start.</p>
+                <progress id="progress-bar" value="0" max="100" style="display: none;"></progress>
+            </div>
+            <div id="controls">
+                <button id="start-scan-button">1. Scan OneDrive Photos</button>
+                <button id="start-analysis-button" disabled>2. Analyze & Find Similar Photos</button>
+            </div>
+
+            <div id="results-container">
+                <h2>Similar Photo Groups</h2>
+                <p class="placeholder">Analysis results will appear here. Groups with the most similar photos will be shown first.</p>
+                <!-- Results will be dynamically inserted here -->
+            </div>
+        </main>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
