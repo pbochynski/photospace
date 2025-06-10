@@ -5,7 +5,8 @@ class PhotoDB {
 
     async init() {
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open('PhotoSpaceDB', 2);
+            // Bump version to trigger onupgradeneeded
+            const request = indexedDB.open('PhotoSpaceDB', 3);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
@@ -13,6 +14,10 @@ class PhotoDB {
                     const store = db.createObjectStore('photos', { keyPath: 'file_id' });
                     store.createIndex('by_timestamp', 'photo_taken_ts');
                     store.createIndex('by_embedding_status', 'embedding_status');
+                }
+                // NEW: Add a key-value store for app settings
+                if (!db.objectStoreNames.contains('settings')) {
+                    db.createObjectStore('settings', { keyPath: 'key' });
                 }
             };
 
@@ -28,57 +33,112 @@ class PhotoDB {
             };
         });
     }
+    
+    // NEW: Functions to get/set settings like the deltaLink
+    async getSetting(key) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('settings', 'readonly');
+            const store = tx.objectStore('settings');
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result?.value);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
 
-    async addPhotos(photos) {
-        const tx = this.db.transaction('photos', 'readwrite');
-        const store = tx.objectStore('photos');
-        for (const photo of photos) {
-            // Use put to upsert - avoids errors on re-scans
-            store.put(photo);
-        }
-        return tx.done;
+    async setSetting(key, value) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('settings', 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = (event) => reject(event.target.error);
+            const store = tx.objectStore('settings');
+            store.put({ key, value });
+        });
+    }
+
+    async addOrUpdatePhotos(photos) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = (event) => reject(event.target.error);
+            const store = tx.objectStore('photos');
+            for (const photo of photos) {
+                store.put(photo);
+            }
+        });
+    }
+
+    async deletePhotos(photoIds) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = (event) => reject(event.target.error);
+            const store = tx.objectStore('photos');
+            for (const id of photoIds) {
+                store.delete(id);
+            }
+        });
     }
     
-    async updatePhotoEmbedding(file_id, embedding) {
+    // --- Unchanged functions from before ---
+    async updatePhotoEmbedding(file_id, embedding) { /* ... same as before ... */ }
+    async getPhotosWithoutEmbedding() { /* ... same as before ... */ }
+    async getAllPhotosWithEmbedding() { /* ... same as before ... */ }
+    async getPhotoCount() { /* ... same as before ... */ }
+}
+
+// Re-paste unchanged functions here to have a complete file
+PhotoDB.prototype.updatePhotoEmbedding = async function(file_id, embedding) {
+    return new Promise((resolve, reject) => {
         const tx = this.db.transaction('photos', 'readwrite');
         const store = tx.objectStore('photos');
         const request = store.get(file_id);
         
-        return new Promise((resolve, reject) => {
-           request.onsuccess = () => {
-                const photo = request.result;
-                if (photo) {
-                    photo.embedding = embedding;
-                    photo.embedding_status = 1; // 1 = done
-                    store.put(photo);
-                    resolve();
-                } else {
-                    reject(`Photo with id ${file_id} not found.`);
-                }
-           };
-           request.onerror = (event) => reject(event.target.error);
-        });
-    }
+        request.onsuccess = () => {
+             const photo = request.result;
+             if (photo) {
+                 photo.embedding = embedding;
+                 photo.embedding_status = 1;
+                 store.put(photo);
+                 resolve();
+             } else {
+                 reject(`Photo with id ${file_id} not found.`);
+             }
+        };
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
+PhotoDB.prototype.getPhotosWithoutEmbedding = async function() {
+    const tx = this.db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    const index = store.index('by_embedding_status');
+    return new Promise((resolve, reject) => {
+        const request = index.getAll(0);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
+PhotoDB.prototype.getAllPhotosWithEmbedding = async function() {
+    const tx = this.db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    const index = store.index('by_embedding_status');
+    return new Promise((resolve, reject) => {
+        const request = index.getAll(1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
+PhotoDB.prototype.getPhotoCount = async function() {
+    return new Promise((resolve, reject) => {
+        if (!this.db) return reject("Database not initialized.");
+        const tx = this.db.transaction('photos', 'readonly');
+        const store = tx.objectStore('photos');
+        const request = store.count();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
 
-    async getPhotosWithoutEmbedding() {
-        const tx = this.db.transaction('photos', 'readonly');
-        const store = tx.objectStore('photos');
-        const index = store.index('by_embedding_status');
-        return index.getAll(0); // 0 = new
-    }
-
-    async getAllPhotosWithEmbedding() {
-        const tx = this.db.transaction('photos', 'readonly');
-        const store = tx.objectStore('photos');
-        const index = store.index('by_embedding_status');
-        return index.getAll(1); // 1 = done
-    }
-    
-    async getPhotoCount() {
-        const tx = this.db.transaction('photos', 'readonly');
-        const store = tx.objectStore('photos');
-        return store.count();
-    }
-}
 
 export const db = new PhotoDB();

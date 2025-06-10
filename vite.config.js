@@ -5,6 +5,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   // Tell Vite that your source code and entry point (index.html) are in the 'src' directory.
   root: 'src', 
+  publicDir: '../public',
   envDir: '..',
   
   worker: {

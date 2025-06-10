@@ -1,20 +1,19 @@
 import { getAuthToken } from './auth.js';
 import { db } from './db.js';
 
-const GRAPH_ENDPOINT = 'https://graph.microsoft.com/v1.0/me/drive/special/photos/children?$select=id,name,photo,parentReference,thumbnails,createdDateTime&$top=200';
+// The starting point for our recursive scan.
+const STARTING_FOLDER_PATH = '/Pictures/Camera Roll/2025/01';
+// The number of parallel requests to make to the Graph API.
+const MAX_CONCURRENCY = 5;
 
-async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
+async function fetchWithRetry(url, options) {
     try {
         const response = await fetch(url, options);
-        if (response.status === 429) { // Throttled
-            if (retries > 0) {
-                const retryAfter = response.headers.get('Retry-After') || delay / 1000;
-                console.warn(`Throttled by Graph API. Retrying in ${retryAfter} seconds.`);
-                await new Promise(res => setTimeout(res, retryAfter * 1000));
-                return fetchWithRetry(url, options, retries - 1, delay * 2);
-            } else {
-                throw new Error('Exceeded max retries for Graph API throttling.');
-            }
+        if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After') || 2;
+            console.warn(`Throttled by Graph API. Retrying in ${retryAfter} seconds.`);
+            await new Promise(res => setTimeout(res, retryAfter * 1000));
+            return fetchWithRetry(url, options);
         }
         if (!response.ok) {
             const error = await response.json();
@@ -27,41 +26,90 @@ async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
     }
 }
 
-
 export async function fetchAllPhotos(progressCallback) {
     const token = await getAuthToken();
     if (!token) throw new Error("Authentication token not available.");
 
-    let url = GRAPH_ENDPOINT;
-    let photoCount = 0;
+    return new Promise(async (resolve, reject) => {
+        const foldersToProcess = [STARTING_FOLDER_PATH];
+        let activeWorkers = 0;
+        let totalPhotoCount = await db.getPhotoCount();
+        progressCallback({ count: totalPhotoCount });
 
-    while (url) {
-        const options = {
-            headers: {
-                Authorization: `Bearer ${token}`
+        const processFolder = async (folderPath) => {
+            try {
+                // The API endpoint for getting children of a specific folder by path
+                let url = `https://graph.microsoft.com/v1.0/me/drive/root:${encodeURIComponent(folderPath)}:/children?$expand=thumbnails`;
+
+                while (url) {
+                    const options = { headers: { Authorization: `Bearer ${token}` } };
+                    const response = await fetchWithRetry(url, options);
+                    
+                    const photosInPage = [];
+                    for (const item of response.value) {
+                        // If it's a folder, add it to the queue for later processing
+                        if (item.folder) {
+                            // Construct the full path for the new folder
+                            const newPath = `${folderPath === '/' ? '' : folderPath}/${item.name}`;
+                            foldersToProcess.push(newPath);
+                        } 
+                        // If it's a photo with a thumbnail, process it
+                        else if (item.photo && item.thumbnails && item.thumbnails.length > 0) {
+                            photosInPage.push({
+                                file_id: item.id,
+                                name: item.name,
+                                path: item.parentReference?.path,
+                                photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
+                                thumbnail_url: item.thumbnails[0]?.large?.url, 
+                                embedding_status: 0,
+                                embedding: null
+                            });
+                        }
+                    }
+
+                    // Batch-add photos to the database to improve performance
+                    if (photosInPage.length > 0) {
+                        await db.addOrUpdatePhotos(photosInPage);
+                        totalPhotoCount = await db.getPhotoCount();
+                        progressCallback({ count: totalPhotoCount });
+                    }
+                    
+                    url = response['@odata.nextLink'];
+                }
+            } catch (error) {
+                console.error(`Failed to process folder ${folderPath}:`, error);
+                // We continue processing other folders even if one fails
+            } finally {
+                // This worker is now finished
+                activeWorkers--;
             }
         };
 
-        const response = await fetchWithRetry(url, options);
-        
-        const photos = response.value
-            .filter(item => item.photo) // Ensure it's a photo
-            .map(item => ({
-                file_id: item.id,
-                name: item.name,
-                path: item.parentReference.path,
-                photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
-                thumbnail_url: item.thumbnails[0]?.large?.url, // Use large thumbnail
-                embedding_status: 0, // 0 = new, 1 = done
-                embedding: null
-            }));
-            
-        await db.addPhotos(photos);
-        photoCount += photos.length;
-        if (progressCallback) progressCallback({ count: photoCount });
+        // This is the main loop that manages the worker pool
+        const mainLoop = async () => {
+            while (true) {
+                // If there are folders to process and we have free workers, start a new one
+                if (foldersToProcess.length > 0 && activeWorkers < MAX_CONCURRENCY) {
+                    activeWorkers++;
+                    const folderPath = foldersToProcess.shift();
+                    console.log(`[Worker starting] Processing: ${folderPath}. Queue size: ${foldersToProcess.length}`);
+                    // Start the process but don't wait for it to finish here
+                    processFolder(folderPath);
+                }
+                
+                // If the queue is empty and all workers are done, the scan is complete
+                if (foldersToProcess.length === 0 && activeWorkers === 0) {
+                    console.log("Scan complete. All folders processed.");
+                    resolve(await db.getPhotoCount());
+                    return;
+                }
+                
+                // Wait a moment before checking again to avoid a busy-loop
+                await new Promise(res => setTimeout(res, 100));
+            }
+        };
 
-        url = response['@odata.nextLink'];
-    }
-    
-    return photoCount;
+        // Start the manager loop
+        mainLoop();
+    });
 }

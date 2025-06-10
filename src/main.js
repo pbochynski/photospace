@@ -1,4 +1,4 @@
-import { msalInstance, login } from './lib/auth.js'; // Removed unused imports
+import { msalInstance, login, getAuthToken } from './lib/auth.js';
 import { fetchAllPhotos } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups } from './lib/analysis.js';
@@ -17,6 +17,8 @@ let embeddingWorker = null;
 
 // --- UI Update Functions ---
 function updateStatus(text, showProgress = false, progressValue = 0, progressMax = 100) {
+    const statusText = document.getElementById('status-text');
+    const progressBar = document.getElementById('progress-bar');
     statusText.textContent = text;
     if (showProgress) {
         progressBar.style.display = 'block';
@@ -95,6 +97,27 @@ async function runPhotoScan() {
     }
 }
 
+
+async function fetchThumbnailAsBlobURL(fileId, token) {
+    const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
+    const options = {
+        headers: {
+            Authorization: `Bearer ${token}`
+        }
+    };
+    try {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+            throw new Error(`Graph API error fetching thumbnail: ${response.statusText}`);
+        }
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        console.error(`Failed to fetch thumbnail for ${fileId}:`, error);
+        return null; // Return null on failure
+    }
+}
+
 async function generateEmbeddings() {
     return new Promise(async (resolve, reject) => {
         const photosToProcess = await db.getPhotosWithoutEmbedding();
@@ -107,26 +130,37 @@ async function generateEmbeddings() {
             return;
         }
 
-        updateStatus(`Processing ${totalToProcess} new photos...`, true, 0, totalToProcess);
+        updateStatus(`Preparing to process ${totalToProcess} new photos...`);
 
         embeddingWorker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
         
         let processedCount = 0;
+        let modelIsReady = false;
+        // --- NEW: Map to track blob URLs for memory cleanup ---
+        const objectUrlMap = new Map();
 
         embeddingWorker.onmessage = async (event) => {
             const { file_id, embedding, status, error } = event.data;
+            
+            // --- NEW: Revoke the blob URL after use to prevent memory leaks ---
+            const objectUrl = objectUrlMap.get(file_id);
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+                objectUrlMap.delete(file_id);
+            }
 
-            if (status === 'ready') {
-                photosToProcess.forEach(photo => {
-                    embeddingWorker.postMessage({
-                        file_id: photo.file_id,
-                        thumbnail_url: photo.thumbnail_url
-                    });
-                });
+            if (status === 'model_loading') {
+                updateStatus('Loading AI Model... (This may take a moment)');
+            } else if (status === 'model_ready') {
+                modelIsReady = true;
+                updateStatus('Model loaded. Starting photo analysis...', true, processedCount, totalToProcess);
             } else if (status === 'complete') {
                 processedCount++;
                 await db.updatePhotoEmbedding(file_id, embedding);
-                updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
+                if (modelIsReady) {
+                    updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
+                }
+                
                 if (processedCount === totalToProcess) {
                     embeddingWorker.terminate();
                     updateStatus('All photos processed! Ready for analysis.', false);
@@ -135,7 +169,7 @@ async function generateEmbeddings() {
                 }
             } else if (status === 'error') {
                 console.error(`Worker error for file ${file_id}:`, error);
-                processedCount++;
+                processedCount++; // Skip this one
                  if (processedCount === totalToProcess) {
                     embeddingWorker.terminate();
                     updateStatus('Processing finished with some errors.', false);
@@ -149,6 +183,34 @@ async function generateEmbeddings() {
             console.error('Worker failed:', err);
             updateStatus(`A critical worker error occurred: ${err.message}`, false);
             reject(err);
+        };
+        
+        // --- NEW: Processing loop that fetches blobs ---
+        const token = await getAuthToken(); // Get token once before the loop
+        for (const photo of photosToProcess) {
+            const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, token);
+            if (blobUrl) {
+                // Store the blob URL so we can revoke it later
+                objectUrlMap.set(photo.file_id, blobUrl);
+                
+                // Send the local blob URL to the worker
+                embeddingWorker.postMessage({
+                    file_id: photo.file_id,
+                    thumbnail_url: blobUrl 
+                });
+            } else {
+                // If fetching a thumbnail fails, we still need to advance the counter
+                // so the process can complete.
+                processedCount++;
+                console.warn(`Skipping photo ${photo.file_id} due to thumbnail fetch failure.`);
+                 if (processedCount === totalToProcess) {
+                    embeddingWorker.terminate();
+                    updateStatus('Processing finished with some errors.', false);
+                    startAnalysisButton.disabled = false;
+                    resolve();
+                }
+            }
+            break; // Break here to avoid sending all photos at once
         }
     });
 }
