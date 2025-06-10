@@ -17,8 +17,6 @@ let embeddingWorker = null;
 
 // --- UI Update Functions ---
 function updateStatus(text, showProgress = false, progressValue = 0, progressMax = 100) {
-    const statusText = document.getElementById('status-text');
-    const progressBar = document.getElementById('progress-bar');
     statusText.textContent = text;
     if (showProgress) {
         progressBar.style.display = 'block';
@@ -210,7 +208,6 @@ async function generateEmbeddings() {
                     resolve();
                 }
             }
-            break; // Break here to avoid sending all photos at once
         }
     });
 }

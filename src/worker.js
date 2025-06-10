@@ -1,76 +1,78 @@
-// We still import the library from the CDN or NPM as before.
-import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2';
+// Import the correct, higher-level components for vision-language models.
+import { AutoProcessor, CLIPVisionModelWithProjection, RawImage, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2';
 
-// --- THE FIX: Configure for local model loading ---
-
-// 1. MUST allow local models.
+// --- Final Configuration ---
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
+env.useBrowserCache = true;
 
 
-// Other standard configuration
-env.useBrowserCache = false;
+// Singleton pattern to ensure the model is loaded only once.
+class CLIPSingleton {
+    static model = null;
+    static processor = null;
 
+    static async getInstance() {
+        if (this.model === null) {
+            self.postMessage({ status: 'model_loading' });
 
-// --- The rest of the pipeline implementation is adapted for local paths ---
-class PipelineSingleton {
-    static task = 'feature-extraction';
-    
-    // 3. The model path now points to our local folder in 'public'.
-    // The leading slash makes it an absolute path from the domain root.
-    static model = 'clip-vit-base-patch16';
+            // --- THE FIX: Re-introduce WebGPU detection and configuration ---
+            let accelerator;
+            if (navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    // fp16 is faster and uses less memory if the GPU supports it.
+                    const dtype = adapter.features.has('shader-f16') ? 'fp16' : 'fp32';
+                    accelerator = { device: 'webgpu', dtype };
+                    console.log(`WebGPU is available. Using device: webgpu, dtype: ${dtype}`);
+                } catch (e) {
+                    console.warn("WebGPU request failed, falling back to CPU/WASM.", e);
+                    accelerator = { device: 'cpu' }; // Explicitly fallback
+                }
+            } else {
+                console.warn("WebGPU not supported, using CPU/WASM.");
+                accelerator = { device: 'cpu' }; // Explicitly fallback
+            }
 
-    static instance = null;
+            const modelPath = '/models/clip-vit-base-patch16/';
 
-    static async getInstance(progress_callback) {
-        if (this.instance === null) {
-            this.instance = await pipeline(this.task, this.model, {
-                // 4. We tell the pipeline to look for a quantized model.
-                // Because we renamed our file to 'model_quantized.onnx', it will find it.
-                quantized: true, 
-                progress_callback,
-            });
+            // Load the model and the processor.
+            [this.model, this.processor] = await Promise.all([
+                CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator),
+                // The processor doesn't run on the GPU, so it doesn't need the config.
+                AutoProcessor.from_pretrained(modelPath, accelerator)
+            ]);
+            
+            self.postMessage({ status: 'model_ready' });
         }
-        return this.instance;
+        return { model: this.model, processor: this.processor };
     }
 }
 
-// The onmessage handler remains exactly the same as the last working version.
 self.onmessage = async (event) => {
-    const progress_callback = (data) => {
-        // Progress for local files is instant, so this may not fire, but it's good to keep.
-        self.postMessage({
-            status: 'model_progress',
-            data: data
-        });
-    };
-
+    const { file_id, thumbnail_url } = event.data;
     try {
-        console.log(`Worker started for file ${event.data.file_id}`);
-        const extractor = await PipelineSingleton.getInstance(progress_callback);
-        console.log(`Extractor loaded for file ${event.data.file_id}`);
+        const { model, processor } = await CLIPSingleton.getInstance();
+        
 
-        const { file_id, thumbnail_url } = event.data;
+        if (!thumbnail_url) throw new Error("Thumbnail URL is missing.");
 
-        if (!thumbnail_url) {
-            throw new Error("Thumbnail URL is missing.");
-        }
-
-        const embedding = await extractor(thumbnail_url, {
-            pooling: 'mean',
-            normalize: true,
-        });
+        const image = await RawImage.fromURL(thumbnail_url);
+        const image_inputs = await processor(image); 
+        const { image_embeds } = await model(image_inputs);
+        const embedding = image_embeds.normalize().tolist()[0]
 
         self.postMessage({
             status: 'complete',
             file_id: file_id,
-            embedding: Array.from(embedding.data),
+            embedding: embedding
         });
+
     } catch (error) {
-        console.error(`Worker failed for file ${event.data.file_id}:`, error);
+        console.error(`Worker failed for file ${file_id}:`, error);
         self.postMessage({
             status: 'error',
-            file_id: event.data.file_id,
+            file_id: file_id,
             error: error.message,
         });
     }
