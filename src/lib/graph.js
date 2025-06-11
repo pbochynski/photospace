@@ -2,7 +2,7 @@ import { getAuthToken } from './auth.js';
 import { db } from './db.js';
 
 // The starting point for our recursive scan.
-const STARTING_FOLDER_PATH = '/Pictures/Camera Roll/2025/01';
+const STARTING_FOLDER_PATH = '/Pictures/Camera Roll/2025';
 // The number of parallel requests to make to the Graph API.
 const MAX_CONCURRENCY = 5;
 
@@ -26,7 +26,7 @@ async function fetchWithRetry(url, options) {
     }
 }
 
-export async function fetchAllPhotos(progressCallback) {
+export async function fetchAllPhotos(scanId, progressCallback) {
     const token = await getAuthToken();
     if (!token) throw new Error("Authentication token not available.");
 
@@ -62,7 +62,8 @@ export async function fetchAllPhotos(progressCallback) {
                                 photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
                                 thumbnail_url: item.thumbnails[0]?.large?.url, 
                                 embedding_status: 0,
-                                embedding: null
+                                embedding: null,
+                                scan_id: scanId
                             });
                         }
                     }

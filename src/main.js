@@ -1,7 +1,8 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
 import { fetchAllPhotos } from './lib/graph.js';
 import { db } from './lib/db.js';
-import { findSimilarGroups } from './lib/analysis.js';
+import { findSimilarGroups, getPromptEmbeddings, scorePhotoEmbedding } from './lib/analysis.js';
+import { clipTextEncoder } from './lib/clipTextEncoder.js';
 
 // --- DOM Elements ---
 const loginButton = document.getElementById('login-button');
@@ -36,13 +37,13 @@ function displayLoggedIn(account) {
 }
 
 function displayResults(groups) {
-    resultsContainer.innerHTML = '<h2>Similar Photo Groups</h2>'; // Clear placeholder
+    resultsContainer.innerHTML = '<h2>Similar Photo Groups</h2>';
     if (groups.length === 0) {
         resultsContainer.innerHTML += '<p>No significant groups of similar photos found.</p>';
         return;
     }
 
-    groups.forEach(group => {
+    groups.forEach((group, groupIdx) => {
         const groupElement = document.createElement('div');
         groupElement.className = 'similarity-group';
 
@@ -51,12 +52,64 @@ function displayResults(groups) {
             <div class="group-header">
                 <h3>${group.photos.length} similar photos from ${groupDate}</h3>
                 <p>Similarity Score: >${(group.similarity * 100).toFixed(0)}%</p>
+                <button class="delete-selected-btn" data-group-idx="${groupIdx}">Delete Selected Photos</button>
             </div>
-            <div class="photo-grid">
-                ${group.photos.map(p => `<div class="photo-item"><img src="${p.thumbnail_url}" alt="${p.name}" loading="lazy"></div>`).join('')}
-            </div>
+            <div class="photo-grid"></div>
         `;
+        const photoGrid = groupElement.querySelector('.photo-grid');
+
+        group.photos.forEach((p, idx) => {
+            const photoItem = document.createElement('div');
+            photoItem.className = 'photo-item';
+            photoItem.innerHTML = `
+                <label class="photo-checkbox-label">
+                    <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
+                    <span class="photo-checkbox-custom"></span>
+                    <img src="${p.thumbnail_url}" alt="${p.name}" loading="lazy">
+                    <div class="photo-score">Score: ${typeof p.qualityScore === 'number' ? p.qualityScore.toFixed(2) : 'N/A'}</div>
+                </label>
+            `;
+            photoGrid.appendChild(photoItem);
+        });
+
         resultsContainer.appendChild(groupElement);
+    });
+
+    // Add event listeners for delete buttons
+    document.querySelectorAll('.delete-selected-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const groupIdx = parseInt(btn.getAttribute('data-group-idx'));
+            const group = groups[groupIdx];
+            const checkboxes = resultsContainer.querySelectorAll(`.photo-checkbox[data-group-idx="${groupIdx}"]`);
+            const selectedPhotos = [];
+            checkboxes.forEach((cb, idx) => {
+                if (cb.checked) selectedPhotos.push(group.photos[idx]);
+            });
+            if (selectedPhotos.length === 0) {
+                alert('No photos selected for deletion.');
+                return;
+            }
+            if (!confirm(`Delete ${selectedPhotos.length} selected photo(s)? This cannot be undone.`)) return;
+            // Call delete logic (OneDrive API)
+            updateStatus('Deleting selected photos...', true);
+            try {
+                const token = await getAuthToken();
+                for (const photo of selectedPhotos) {
+                    await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${photo.file_id}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    // Optionally, remove from local DB
+                    await db.deletePhoto(photo.file_id);
+                }
+                // Remove deleted photos from UI and group
+                group.photos = group.photos.filter((p, idx) => !checkboxes[idx].checked);
+                displayResults(groups);
+                updateStatus('Selected photos deleted.', false);
+            } catch (err) {
+                updateStatus('Error deleting photos: ' + err.message, false);
+            }
+        });
     });
 }
 
@@ -77,24 +130,38 @@ async function handleLoginClick() {
 
 async function runPhotoScan() {
     startScanButton.disabled = true;
-    updateStatus('Starting scan... Authenticating...', true, 0, 100);
+    startAnalysisButton.disabled = true;
+
     try {
-        await fetchAllPhotos((progress) => {
-            updateStatus(`Found ${progress.count} photos...`, true, 0, 100);
+        // --- STEP 1: Generate a new scan ID ---
+        const newScanId = Date.now();
+        console.log(`Starting new scan with ID: ${newScanId}`);
+        updateStatus('Scanning OneDrive for all photos...', true, 0, 100);
+
+        // --- STEP 2: Crawl OneDrive and "touch" all existing files with the new scan ID ---
+        await fetchAllPhotos(newScanId, (progress) => {
+            updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
         });
         
-        const totalPhotos = await db.getPhotoCount();
-        updateStatus(`Scan complete. Found ${totalPhotos} photos. Now generating embeddings...`, true, 0, totalPhotos);
+        // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
+        updateStatus('Cleaning up deleted files...', true, 0, 100);
+        await db.deletePhotosNotMatchingScanId(newScanId);
         
+        const totalPhotos = await db.getPhotoCount();
+        updateStatus(`Scan complete. Total photos: ${totalPhotos}. Now generating embeddings for new files...`, true, 0, totalPhotos);
+        
+        // --- STEP 4: Generate embeddings for only the new files ---
+        // generateEmbeddings() will automatically find files with embedding_status = 0
         await generateEmbeddings();
 
     } catch (error) {
         console.error('Scan failed:', error);
         updateStatus(`Error during scan: ${error.message}`, false);
+    } finally {
+        // Re-enable the button regardless of outcome
         startScanButton.disabled = false;
     }
 }
-
 
 async function fetchThumbnailAsBlobURL(fileId, token) {
     const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
@@ -224,13 +291,26 @@ async function runAnalysis() {
         }
 
         updateStatus(`Analyzing ${allPhotos.length} photos...`, true, 25, 100);
-        
+
+        // --- NEW: Prepare prompt embeddings for scoring ---
+        const promptEmbeddings = await getPromptEmbeddings(clipTextEncoder);
+
         setTimeout(async () => {
-            const similarGroups = await findSimilarGroups(allPhotos, (progress) => {
-                 updateStatus(`Analyzing... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.75), 100);
+            let similarGroups = await findSimilarGroups(allPhotos, (progress) => {
+                updateStatus(`Analyzing... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.75), 100);
             });
+
+            // --- NEW: Score and sort each group ---
+            for (const group of similarGroups) {
+                group.photos.forEach(photo => {
+                    photo.qualityScore = scorePhotoEmbedding(photo.embedding, promptEmbeddings);
+                });
+                group.photos.sort((a, b) => b.qualityScore - a.qualityScore);
+            }
+
             displayResults(similarGroups);
             updateStatus('Analysis complete!', false);
+            startAnalysisButton.disabled = false;
         }, 100);
 
     } catch (error) {

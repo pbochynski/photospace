@@ -10,6 +10,83 @@ function cosineSimilarity(vecA, vecB) {
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+// --- Photo Quality Ranking via Text Embeddings ---
+
+// Prompts for ranking photo quality
+const POSITIVE_PROMPTS = [
+    "professional photo",
+    "good composition",
+    "sharp focus",
+    "well exposed",
+    "vivid colors",
+    "photo art",
+    "high quality",
+    "aesthetic photo",
+    "clear subject",
+    "well lit"
+];
+const NEGATIVE_PROMPTS = [
+    "blurry photo",
+    "out of focus",
+    "bad exposure",
+    "overexposed",
+    "underexposed",
+    "poor composition",
+    "low quality",
+    "noisy photo",
+    "dark photo",
+    "unintentional photo"
+];
+
+// Cache for prompt embeddings
+let promptEmbeddingsCache = null;
+
+/**
+ * Loads and caches CLIP text embeddings for positive and negative prompts.
+ * @param {object} clipTextEncoder - An object with an encode(text) method returning a normalized embedding array.
+ * @returns {Promise<{positive: number[][], negative: number[][]}>}
+ */
+export async function getPromptEmbeddings(clipTextEncoder) {
+    if (promptEmbeddingsCache) return promptEmbeddingsCache;
+    const positive = [];
+    const negative = [];
+    for (const prompt of POSITIVE_PROMPTS) {
+        positive.push(await clipTextEncoder.encode(prompt));
+    }
+    for (const prompt of NEGATIVE_PROMPTS) {
+        negative.push(await clipTextEncoder.encode(prompt));
+    }
+    promptEmbeddingsCache = { positive, negative };
+    return promptEmbeddingsCache;
+}
+
+/**
+ * Scores a photo embedding by comparing to prompt embeddings.
+ * @param {number[]} photoEmbedding - The photo's embedding vector.
+ * @param {{positive: number[][], negative: number[][]}} promptEmbeddings
+ * @returns {number} - Higher is better.
+ */
+export function scorePhotoEmbedding(photoEmbedding, promptEmbeddings) {
+    let posScore = 0;
+    let negScore = 0;
+    for (const pos of promptEmbeddings.positive) {
+        const similarity = cosineSimilarity(photoEmbedding, pos);
+        console.debug(`Positive prompt similarity: ${similarity}`);
+        // Only consider positive prompts that are above a threshold
+        posScore += cosineSimilarity(photoEmbedding, pos);
+    }
+    for (const neg of promptEmbeddings.negative) {
+        const similarity = cosineSimilarity(photoEmbedding, neg);
+        console.debug(`Negative prompt similarity: ${similarity}`);
+        negScore += cosineSimilarity(photoEmbedding, neg);
+    }
+    // Normalize by number of prompts
+    posScore /= promptEmbeddings.positive.length;
+    negScore /= promptEmbeddings.negative.length;
+    console.debug(`Final scores - Positive: ${posScore}, Negative: ${negScore}`);
+    return posScore - negScore;
+}
+
 export async function findSimilarGroups(photos, progressCallback) {
     // 1. Temporal Clustering (Group into sessions)
     // A session is a burst of photos taken close together in time.
@@ -31,7 +108,7 @@ export async function findSimilarGroups(photos, progressCallback) {
     }
     
     // 2. Similarity Clustering (within each session)
-    const SIMILARITY_THRESHOLD = 0.97; // High threshold for near-duplicates
+    const SIMILARITY_THRESHOLD = 0.80; // High threshold for near-duplicates
     const allSimilarGroups = [];
 
     sessions.forEach((session, index) => {

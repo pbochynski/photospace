@@ -5,17 +5,25 @@ class PhotoDB {
 
     async init() {
         return new Promise((resolve, reject) => {
-            // Bump version to trigger onupgradeneeded
-            const request = indexedDB.open('PhotoSpaceDB', 3);
+            // Bump version to trigger onupgradeneeded for the new index
+            const request = indexedDB.open('PhotoSpaceDB', 4);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                let store;
                 if (!db.objectStoreNames.contains('photos')) {
-                    const store = db.createObjectStore('photos', { keyPath: 'file_id' });
+                    store = db.createObjectStore('photos', { keyPath: 'file_id' });
                     store.createIndex('by_timestamp', 'photo_taken_ts');
                     store.createIndex('by_embedding_status', 'embedding_status');
+                } else {
+                    store = event.target.transaction.objectStore('photos');
                 }
-                // NEW: Add a key-value store for app settings
+                
+                // NEW: Add an index for scan_id if it doesn't exist
+                if (!store.indexNames.contains('by_scan_id')) {
+                    store.createIndex('by_scan_id', 'scan_id');
+                }
+
                 if (!db.objectStoreNames.contains('settings')) {
                     db.createObjectStore('settings', { keyPath: 'key' });
                 }
@@ -33,7 +41,67 @@ class PhotoDB {
             };
         });
     }
-    
+
+    // --- NEW Smarter "upsert" function ---
+    async addOrUpdatePhotos(photos) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readwrite');
+            const store = tx.objectStore('photos');
+
+            let promises = photos.map(newPhoto => {
+                return new Promise((resolvePhoto, rejectPhoto) => {
+                    const request = store.get(newPhoto.file_id);
+                    request.onsuccess = () => {
+                        const existingPhoto = request.result;
+                        if (existingPhoto) {
+                            // Photo exists, update only the scan_id
+                            existingPhoto.scan_id = newPhoto.scan_id;
+                            store.put(existingPhoto);
+                        } else {
+                            // New photo, add it completely
+                            store.put(newPhoto);
+                        }
+                        resolvePhoto();
+                    };
+                    request.onerror = (e) => rejectPhoto(e.target.error);
+                });
+            });
+
+            Promise.all(promises)
+                .then(() => tx.done)
+                .then(resolve)
+                .catch(reject);
+        });
+    }
+
+    // --- NEW function to clean up old files ---
+    async deletePhotosNotMatchingScanId(currentScanId) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readwrite');
+            const store = tx.objectStore('photos');
+            const index = store.index('by_scan_id');
+            const range = IDBKeyRange.upperBound(currentScanId, true); // Everything less than currentScanId
+
+            let deletedCount = 0;
+            const cursorRequest = index.openCursor(range);
+            
+            cursorRequest.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    store.delete(cursor.primaryKey);
+                    deletedCount++;
+                    cursor.continue();
+                } else {
+                    // End of cursor
+                    console.log(`Deleted ${deletedCount} stale photos.`);
+                    resolve(deletedCount);
+                }
+            };
+            cursorRequest.onerror = (event) => reject(event.target.error);
+        });
+    }
+        
     // NEW: Functions to get/set settings like the deltaLink
     async getSetting(key) {
         return new Promise((resolve, reject) => {
@@ -52,19 +120,6 @@ class PhotoDB {
             tx.onerror = (event) => reject(event.target.error);
             const store = tx.objectStore('settings');
             store.put({ key, value });
-        });
-    }
-
-    async addOrUpdatePhotos(photos) {
-        return new Promise((resolve, reject) => {
-            if (!this.db) return reject("Database not initialized.");
-            const tx = this.db.transaction('photos', 'readwrite');
-            tx.oncomplete = () => resolve();
-            tx.onerror = (event) => reject(event.target.error);
-            const store = tx.objectStore('photos');
-            for (const photo of photos) {
-                store.put(photo);
-            }
         });
     }
 
