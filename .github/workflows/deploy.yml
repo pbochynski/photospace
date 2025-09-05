@@ -31,6 +31,8 @@ jobs:
 
       - name: Build project
         run: npm run build
+        env:
+          VITE_AZURE_CLIENT_ID: ${{ secrets.VITE_AZURE_CLIENT_ID }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
