@@ -39,7 +39,21 @@ async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
         options.headers['Authorization'] = `Bearer ${token}`;
         response = await fetch(url, options);
     }
-    return response;
+    
+    // Handle throttling
+    if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After') || 2;
+        console.warn(`Throttled by Graph API. Retrying in ${retryAfter} seconds.`);
+        await new Promise(res => setTimeout(res, retryAfter * 1000));
+        return fetchWithAutoRefresh(url, options, getAuthToken, false); // Don't retry auth again
+    }
+    
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error.message || `HTTP error! status: ${response.status}`);
+    }
+    
+    return response.json();
 }
 
 export async function fetchAllPhotos(scanId, progressCallback) {
@@ -63,8 +77,7 @@ export async function fetchAllPhotos(scanId, progressCallback) {
                 }
                 while (url) {
                     console.log(`Processing url: ${url} for folder: ${folderPath}`);
-                    const options = { headers: { Authorization: `Bearer ${token}` } };
-                    const response = await fetchWithAutoRefresh(url, options, getAuthToken);
+                    const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
                     
                     const photosInPage = [];
                     for (const item of response.value) {

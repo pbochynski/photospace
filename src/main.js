@@ -1,7 +1,7 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
 import { fetchAllPhotos } from './lib/graph.js';
 import { db } from './lib/db.js';
-import { findSimilarGroups, getPromptEmbeddings, scorePhotoEmbedding } from './lib/analysis.js';
+import { findSimilarGroups, getPromptEmbeddings, scorePhotoEmbedding, pickBestPhotoSimple } from './lib/analysis.js';
 import { clipTextEncoder } from './lib/clipTextEncoder.js';
 
 // --- DOM Elements ---
@@ -11,6 +11,7 @@ const mainContent = document.getElementById('main-content');
 const statusText = document.getElementById('status-text');
 const progressBar = document.getElementById('progress-bar');
 const startScanButton = document.getElementById('start-scan-button');
+const startEmbeddingButton = document.getElementById('start-embedding-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
 
@@ -64,11 +65,13 @@ function displayResults(groups) {
         group.photos.forEach((p, idx) => {
             const photoItem = document.createElement('div');
             photoItem.className = 'photo-item';
+            const recommendedBadge = p.isBestSimple ? '<div class="recommended-badge">⭐ RECOMMENDED</div>' : '';
             photoItem.innerHTML = `
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
                     <img src="${p.thumbnail_url}" alt="${p.name}" loading="lazy">
+                    ${recommendedBadge}
                     <div class="photo-score">Score: ${typeof p.qualityScore === 'number' ? p.qualityScore.toFixed(2) : 'N/A'}</div>
                 </label>
             `;
@@ -174,6 +177,7 @@ async function handleLoginClick() {
 
 async function runPhotoScan() {
     startScanButton.disabled = true;
+    startEmbeddingButton.disabled = true;
     startAnalysisButton.disabled = true;
 
     try {
@@ -202,16 +206,45 @@ async function runPhotoScan() {
         console.error('Scan failed:', error);
         updateStatus(`Error during scan: ${error.message}`, false);
     } finally {
-        // Re-enable the button regardless of outcome
+        // Re-enable the buttons regardless of outcome
         startScanButton.disabled = false;
+        startEmbeddingButton.disabled = false;
+    }
+}
+
+async function runEmbeddingGeneration() {
+    startEmbeddingButton.disabled = true;
+    startAnalysisButton.disabled = true;
+
+    try {
+        await generateEmbeddings();
+    } catch (error) {
+        console.error('Embedding generation failed:', error);
+        updateStatus(`Error during embedding generation: ${error.message}`, false);
+    } finally {
+        startEmbeddingButton.disabled = false;
     }
 }
 
 async function fetchThumbnailAsBlobURL(fileId, getAuthToken) {
     const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
-    const options = {};
     try {
-        const response = await fetchWithAutoRefresh(url, options, getAuthToken);
+        // For binary content, we need the Response object, not parsed JSON
+        let token = await getAuthToken();
+        let options = {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        };
+        let response = await fetch(url, options);
+        
+        // Handle token refresh for binary content
+        if ((response.status === 401 || response.status === 403)) {
+            token = await getAuthToken(true); // force refresh
+            options.headers['Authorization'] = `Bearer ${token}`;
+            response = await fetch(url, options);
+        }
+        
         if (!response.ok) {
             throw new Error(`Graph API error fetching thumbnail: ${response.statusText}`);
         }
@@ -248,13 +281,11 @@ async function generateEmbeddings() {
         const workerBusy = Array(NUM_EMBEDDING_WORKERS).fill(false);
         // Store promises for worker ready
         const workerReady = Array(NUM_EMBEDDING_WORKERS).fill(false);
-        // Get token once
-        const token = await getAuthToken();
         // Helper to assign next photo to a worker
         async function assignNext(workerIdx) {
             if (photoQueue.length === 0) return;
             const photo = photoQueue.shift();
-            const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, token);
+            const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, getAuthToken);
             if (blobUrl) {
                 objectUrlMap.set(photo.file_id, blobUrl);
                 workers[workerIdx].postMessage({
@@ -369,10 +400,26 @@ async function runAnalysis() {
 
             // --- NEW: Score and sort each group ---
             for (const group of similarGroups) {
+                // Try both scoring methods
                 group.photos.forEach(photo => {
                     photo.qualityScore = scorePhotoEmbedding(photo.embedding, promptEmbeddings);
                 });
-                group.photos.sort((a, b) => b.qualityScore - a.qualityScore);
+                
+                // Find the best photo using simple heuristics
+                const bestPhotoSimple = pickBestPhotoSimple(group.photos);
+                
+                // Mark the best photo and sort by quality score
+                group.photos.forEach(photo => {
+                    photo.isBestSimple = photo.file_id === bestPhotoSimple.file_id;
+                });
+                
+                group.photos.sort((a, b) => {
+                    // First, prioritize the simple best pick
+                    if (a.isBestSimple && !b.isBestSimple) return -1;
+                    if (!a.isBestSimple && b.isBestSimple) return 1;
+                    // Then sort by quality score
+                    return b.qualityScore - a.qualityScore;
+                });
             }
 
             displayResults(similarGroups);
@@ -414,6 +461,7 @@ async function main() {
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
     startScanButton.addEventListener('click', runPhotoScan);
+    startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
     startAnalysisButton.addEventListener('click', runAnalysis);
 }
 

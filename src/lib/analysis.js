@@ -12,30 +12,20 @@ function cosineSimilarity(vecA, vecB) {
 
 // --- Photo Quality Ranking via Text Embeddings ---
 
-// Prompts for ranking photo quality
+// Prompts for ranking photo quality - focus on technical quality
 const POSITIVE_PROMPTS = [
-    "professional photo",
-    "good composition",
-    "sharp focus",
-    "well exposed",
-    "vivid colors",
-    "photo art",
-    "high quality",
-    "aesthetic photo",
-    "clear subject",
-    "well lit"
+    "sharp and clear photo",
+    "high resolution image",
+    "well focused photograph",
+    "good lighting and exposure",
+    "professional quality photo"
 ];
 const NEGATIVE_PROMPTS = [
-    "blurry photo",
-    "out of focus",
-    "bad exposure",
-    "overexposed",
-    "underexposed",
-    "poor composition",
-    "low quality",
-    "noisy photo",
-    "dark photo",
-    "unintentional photo"
+    "blurry and out of focus",
+    "motion blur in photo",
+    "underexposed dark image",
+    "overexposed bright image",
+    "low resolution pixelated"
 ];
 
 // Cache for prompt embeddings
@@ -84,7 +74,42 @@ export function scorePhotoEmbedding(photoEmbedding, promptEmbeddings) {
     posScore /= promptEmbeddings.positive.length;
     negScore /= promptEmbeddings.negative.length;
     console.debug(`Final scores - Positive: ${posScore}, Negative: ${negScore}`);
-    return posScore - negScore;
+    
+    // Enhanced scoring: amplify the difference and add baseline
+    const difference = posScore - negScore;
+    const amplifiedScore = difference * 10; // Amplify small differences
+    const baseline = posScore; // Use positive score as baseline
+    
+    return baseline + amplifiedScore;
+}
+
+/**
+ * Alternative scoring method: Pick photo based on simple heuristics
+ * @param {Array} photoGroup - Array of similar photos
+ * @returns {Object} - The best photo from the group
+ */
+export function pickBestPhotoSimple(photoGroup) {
+    if (photoGroup.length === 1) return photoGroup[0];
+    
+    // Sort by multiple criteria:
+    // 1. Prefer photos taken later (often better exposed/composed)
+    // 2. Prefer photos with longer filenames (often indicate higher quality/resolution)
+    // 3. Use embedding magnitude as a proxy for "richness"
+    
+    return photoGroup.sort((a, b) => {
+        // Later timestamp gets higher score
+        const timeScore = (b.photo_taken_ts - a.photo_taken_ts) / 1000; // Convert to seconds
+        
+        // Longer filename often indicates higher quality
+        const nameScore = (b.name.length - a.name.length) * 0.1;
+        
+        // Embedding magnitude as richness proxy
+        const embeddingMagnitudeA = Math.sqrt(a.embedding.reduce((sum, val) => sum + val * val, 0));
+        const embeddingMagnitudeB = Math.sqrt(b.embedding.reduce((sum, val) => sum + val * val, 0));
+        const magnitudeScore = embeddingMagnitudeB - embeddingMagnitudeA;
+        
+        return timeScore + nameScore + magnitudeScore;
+    })[0];
 }
 
 export async function findSimilarGroups(photos, progressCallback) {
@@ -108,7 +133,7 @@ export async function findSimilarGroups(photos, progressCallback) {
     }
     
     // 2. Similarity Clustering (within each session)
-    const SIMILARITY_THRESHOLD = 0.90; // High threshold for near-duplicates
+    const SIMILARITY_THRESHOLD = 0.95; // High threshold for near-duplicates
     const allSimilarGroups = [];
 
     sessions.forEach((session, index) => {
