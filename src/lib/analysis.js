@@ -108,7 +108,7 @@ export async function findSimilarGroups(photos, progressCallback) {
     }
     
     // 2. Similarity Clustering (within each session)
-    const SIMILARITY_THRESHOLD = 0.80; // High threshold for near-duplicates
+    const SIMILARITY_THRESHOLD = 0.90; // High threshold for near-duplicates
     const allSimilarGroups = [];
 
     sessions.forEach((session, index) => {

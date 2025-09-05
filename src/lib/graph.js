@@ -2,7 +2,7 @@ import { getAuthToken } from './auth.js';
 import { db } from './db.js';
 
 // The starting point for our recursive scan.
-const STARTING_FOLDER_PATH = '/Pictures/Camera Roll/2025';
+const STARTING_FOLDER_PATH = '/';
 // The number of parallel requests to make to the Graph API.
 const MAX_CONCURRENCY = 5;
 
@@ -26,6 +26,22 @@ async function fetchWithRetry(url, options) {
     }
 }
 
+// Helper: fetch with auto token refresh on 401/403
+async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
+    let token = await getAuthToken();
+    options = options || {};
+    options.headers = options.headers || {};
+    options.headers['Authorization'] = `Bearer ${token}`;
+    let response = await fetch(url, options);
+    if ((response.status === 401 || response.status === 403) && retry) {
+        // Token might be expired, try to get a new one and retry once
+        token = await getAuthToken(true); // force refresh
+        options.headers['Authorization'] = `Bearer ${token}`;
+        response = await fetch(url, options);
+    }
+    return response;
+}
+
 export async function fetchAllPhotos(scanId, progressCallback) {
     const token = await getAuthToken();
     if (!token) throw new Error("Authentication token not available.");
@@ -38,12 +54,17 @@ export async function fetchAllPhotos(scanId, progressCallback) {
 
         const processFolder = async (folderPath) => {
             try {
+
                 // The API endpoint for getting children of a specific folder by path
                 let url = `https://graph.microsoft.com/v1.0/me/drive/root:${encodeURIComponent(folderPath)}:/children?$expand=thumbnails`;
-
+                if (folderPath === '/') {
+                    // Special case for root folder, use the root endpoint
+                    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children?$expand=thumbnails';
+                }
                 while (url) {
+                    console.log(`Processing url: ${url} for folder: ${folderPath}`);
                     const options = { headers: { Authorization: `Bearer ${token}` } };
-                    const response = await fetchWithRetry(url, options);
+                    const response = await fetchWithAutoRefresh(url, options, getAuthToken);
                     
                     const photosInPage = [];
                     for (const item of response.value) {

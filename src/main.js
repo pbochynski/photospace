@@ -44,6 +44,9 @@ function displayResults(groups) {
     }
 
     groups.forEach((group, groupIdx) => {
+        // Remove empty groups
+        if (!group.photos || group.photos.length === 0) return;
+
         const groupElement = document.createElement('div');
         groupElement.className = 'similarity-group';
 
@@ -95,22 +98,63 @@ function displayResults(groups) {
             try {
                 const token = await getAuthToken();
                 for (const photo of selectedPhotos) {
+                    console.log(`Deleting photo: ${photo.name} (${photo.file_id})`);
                     await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${photo.file_id}`, {
                         method: 'DELETE',
                         headers: { Authorization: `Bearer ${token}` }
                     });
+                    console.log(`Successfully deleted photo: ${photo.name} (${photo.file_id})`);
                     // Optionally, remove from local DB
-                    await db.deletePhoto(photo.file_id);
+                    await db.deletePhotos([photo.file_id]);
+                    console.log(`Deleted photo: ${photo.name} (${photo.file_id})`);
                 }
-                // Remove deleted photos from UI and group
+                // Remove deleted photos from group
                 group.photos = group.photos.filter((p, idx) => !checkboxes[idx].checked);
-                displayResults(groups);
+                // Remove empty groups
+                const filteredGroups = groups.filter(g => g.photos && g.photos.length > 0);
+                displayResults(filteredGroups);
                 updateStatus('Selected photos deleted.', false);
             } catch (err) {
                 updateStatus('Error deleting photos: ' + err.message, false);
             }
         });
     });
+
+    // Add event listeners for image click to show modal
+    document.querySelectorAll('.photo-item img').forEach(img => {
+        img.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent event bubbling
+            e.preventDefault(); // Prevent default label/checkbox toggle
+            const modal = document.getElementById('image-modal');
+            const modalImg = document.getElementById('modal-img');
+            modalImg.src = img.src;
+            modal.style.display = 'flex';
+        });
+    });
+
+    // Modal close logic (only add once)
+    if (!window._modalEventsAdded) {
+        window._modalEventsAdded = true;
+        const modal = document.getElementById('image-modal');
+        const modalImg = document.getElementById('modal-img');
+        const closeBtn = document.getElementById('modal-close');
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+            modalImg.src = '';
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                modalImg.src = '';
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                modal.style.display = 'none';
+                modalImg.src = '';
+            }
+        });
+    }
 }
 
 // --- Core Logic ---
@@ -145,7 +189,7 @@ async function runPhotoScan() {
         
         // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
         updateStatus('Cleaning up deleted files...', true, 0, 100);
-        await db.deletePhotosNotMatchingScanId(newScanId);
+        // await db.deletePhotosNotMatchingScanId(newScanId);
         
         const totalPhotos = await db.getPhotoCount();
         updateStatus(`Scan complete. Total photos: ${totalPhotos}. Now generating embeddings for new files...`, true, 0, totalPhotos);
@@ -163,15 +207,11 @@ async function runPhotoScan() {
     }
 }
 
-async function fetchThumbnailAsBlobURL(fileId, token) {
+async function fetchThumbnailAsBlobURL(fileId, getAuthToken) {
     const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
-    const options = {
-        headers: {
-            Authorization: `Bearer ${token}`
-        }
-    };
+    const options = {};
     try {
-        const response = await fetch(url, options);
+        const response = await fetchWithAutoRefresh(url, options, getAuthToken);
         if (!response.ok) {
             throw new Error(`Graph API error fetching thumbnail: ${response.statusText}`);
         }
@@ -184,97 +224,124 @@ async function fetchThumbnailAsBlobURL(fileId, token) {
 }
 
 async function generateEmbeddings() {
+    // Configurable number of parallel workers
+    const NUM_EMBEDDING_WORKERS = 4;
     return new Promise(async (resolve, reject) => {
         const photosToProcess = await db.getPhotosWithoutEmbedding();
         const totalToProcess = photosToProcess.length;
-
         if (totalToProcess === 0) {
             updateStatus('All photos are already processed.', false);
             startAnalysisButton.disabled = false;
             resolve();
             return;
         }
-
         updateStatus(`Preparing to process ${totalToProcess} new photos...`);
-
-        embeddingWorker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-        
+        // Worker pool
+        const workers = [];
         let processedCount = 0;
-        let modelIsReady = false;
-        // --- NEW: Map to track blob URLs for memory cleanup ---
+        let modelReadyCount = 0;
         const objectUrlMap = new Map();
-
-        embeddingWorker.onmessage = async (event) => {
-            const { file_id, embedding, status, error } = event.data;
-            
-            // --- NEW: Revoke the blob URL after use to prevent memory leaks ---
-            const objectUrl = objectUrlMap.get(file_id);
-            if (objectUrl) {
-                URL.revokeObjectURL(objectUrl);
-                objectUrlMap.delete(file_id);
-            }
-
-            if (status === 'model_loading') {
-                updateStatus('Loading AI Model... (This may take a moment)');
-            } else if (status === 'model_ready') {
-                modelIsReady = true;
-                updateStatus('Model loaded. Starting photo analysis...', true, processedCount, totalToProcess);
-            } else if (status === 'complete') {
-                processedCount++;
-                await db.updatePhotoEmbedding(file_id, embedding);
-                if (modelIsReady) {
-                    updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
-                }
-                
-                if (processedCount === totalToProcess) {
-                    embeddingWorker.terminate();
-                    updateStatus('All photos processed! Ready for analysis.', false);
-                    startAnalysisButton.disabled = false;
-                    resolve();
-                }
-            } else if (status === 'error') {
-                console.error(`Worker error for file ${file_id}:`, error);
-                processedCount++; // Skip this one
-                 if (processedCount === totalToProcess) {
-                    embeddingWorker.terminate();
-                    updateStatus('Processing finished with some errors.', false);
-                    startAnalysisButton.disabled = false;
-                    resolve();
-                }
-            }
-        };
-
-        embeddingWorker.onerror = (err) => {
-            console.error('Worker failed:', err);
-            updateStatus(`A critical worker error occurred: ${err.message}`, false);
-            reject(err);
-        };
-        
-        // --- NEW: Processing loop that fetches blobs ---
-        const token = await getAuthToken(); // Get token once before the loop
-        for (const photo of photosToProcess) {
+        let errorOccurred = false;
+        // Queue for photos
+        const photoQueue = [...photosToProcess];
+        // Track which workers are busy
+        const workerBusy = Array(NUM_EMBEDDING_WORKERS).fill(false);
+        // Store promises for worker ready
+        const workerReady = Array(NUM_EMBEDDING_WORKERS).fill(false);
+        // Get token once
+        const token = await getAuthToken();
+        // Helper to assign next photo to a worker
+        async function assignNext(workerIdx) {
+            if (photoQueue.length === 0) return;
+            const photo = photoQueue.shift();
             const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, token);
             if (blobUrl) {
-                // Store the blob URL so we can revoke it later
                 objectUrlMap.set(photo.file_id, blobUrl);
-                
-                // Send the local blob URL to the worker
-                embeddingWorker.postMessage({
+                workers[workerIdx].postMessage({
                     file_id: photo.file_id,
-                    thumbnail_url: blobUrl 
+                    thumbnail_url: blobUrl
                 });
+                workerBusy[workerIdx] = true;
             } else {
-                // If fetching a thumbnail fails, we still need to advance the counter
-                // so the process can complete.
                 processedCount++;
-                console.warn(`Skipping photo ${photo.file_id} due to thumbnail fetch failure.`);
-                 if (processedCount === totalToProcess) {
-                    embeddingWorker.terminate();
+                if (processedCount === totalToProcess) {
+                    workers.forEach(w => w.terminate());
                     updateStatus('Processing finished with some errors.', false);
                     startAnalysisButton.disabled = false;
                     resolve();
+                } else {
+                    assignNext(workerIdx);
                 }
             }
+        }
+        // Worker message handler
+        function makeOnMessage(workerIdx) {
+            return async (event) => {
+                const { file_id, embedding, status, error } = event.data;
+                if (status === 'model_loading') {
+                    updateStatus('Loading AI Model... (This may take a moment)');
+                } else if (status === 'model_ready') {
+                    modelReadyCount++;
+                    if (modelReadyCount === NUM_EMBEDDING_WORKERS) {
+                        updateStatus('Model loaded. Starting photo analysis...', true, processedCount, totalToProcess);
+                    }
+                    // Start first task for this worker
+                    assignNext(workerIdx);
+                } else if (status === 'complete') {
+                    processedCount++;
+                    await db.updatePhotoEmbedding(file_id, embedding);
+                    // Revoke blob URL
+                    const objectUrl = objectUrlMap.get(file_id);
+                    if (objectUrl) {
+                        URL.revokeObjectURL(objectUrl);
+                        objectUrlMap.delete(file_id);
+                    }
+                    updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
+                    if (processedCount === totalToProcess) {
+                        workers.forEach(w => w.terminate());
+                        updateStatus('All photos processed! Ready for analysis.', false);
+                        startAnalysisButton.disabled = false;
+                        resolve();
+                    } else {
+                        assignNext(workerIdx);
+                    }
+                } else if (status === 'error') {
+                    console.error(`Worker error for file ${file_id}:`, error);
+                    processedCount++;
+                    // Revoke blob URL
+                    const objectUrl = objectUrlMap.get(file_id);
+                    if (objectUrl) {
+                        URL.revokeObjectURL(objectUrl);
+                        objectUrlMap.delete(file_id);
+                    }
+                    if (processedCount === totalToProcess) {
+                        workers.forEach(w => w.terminate());
+                        updateStatus('Processing finished with some errors.', false);
+                        startAnalysisButton.disabled = false;
+                        resolve();
+                    } else {
+                        assignNext(workerIdx);
+                    }
+                }
+            };
+        }
+        // Create workers
+        for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
+            const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+            worker.onmessage = makeOnMessage(i);
+            worker.onerror = (err) => {
+                if (!errorOccurred) {
+                    errorOccurred = true;
+                    workers.forEach(w => w.terminate());
+                    updateStatus(`A critical worker error occurred: ${err.message}`, false);
+                    reject(err);
+                }
+            };
+            workers.push(worker);
+        }
+        // Start all workers (they will load the model and then call assignNext)
+        for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
+            workers[i].postMessage({ type: 'init' });
         }
     });
 }

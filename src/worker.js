@@ -50,7 +50,19 @@ class CLIPSingleton {
 }
 
 self.onmessage = async (event) => {
+    // Handle worker init message for model loading
+    if (event.data && event.data.type === 'init') {
+        try {
+            await CLIPSingleton.getInstance();
+            // Model loading status is posted inside getInstance()
+        } catch (error) {
+            self.postMessage({ status: 'error', error: error.message });
+        }
+        return;
+    }
+
     const { file_id, thumbnail_url } = event.data;
+    console.log(`Worker started: ${JSON.stringify(event.data)}`);
     try {
         const { model, processor } = await CLIPSingleton.getInstance();
         
