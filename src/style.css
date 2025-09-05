@@ -176,3 +176,115 @@ button:disabled {
 .photo-item {
   position: relative;
 }
+
+/* Folder Browser Modal Styles */
+.folder-browser {
+  background: var(--bg-color);
+  border-radius: 12px;
+  max-width: 600px;
+  width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-color);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: var(--text-color);
+}
+
+.folder-breadcrumb {
+  padding: 0.75rem 1rem;
+  background: var(--secondary-color);
+  border-bottom: 1px solid var(--border-color);
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--primary-color);
+}
+
+.folder-navigation {
+  padding: 0.75rem 1rem;
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.folder-navigation button {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+.folder-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  min-height: 300px;
+}
+
+.folder-item {
+  display: flex;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border: 1px solid transparent;
+}
+
+.folder-item:hover {
+  background-color: var(--secondary-color);
+  border-color: var(--border-color);
+}
+
+.folder-item.selected {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.folder-icon {
+  margin-right: 0.75rem;
+  font-size: 1.2rem;
+}
+
+.folder-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-color);
+  opacity: 0.7;
+}
+
+.error-message {
+  text-align: center;
+  padding: 2rem;
+  color: var(--error-color);
+}
+
+.modal-footer {
+  padding: 1rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.primary-btn {
+  background-color: var(--success-color);
+}
+
+.primary-btn:hover:not(:disabled) {
+  background-color: #3dd6b8;
+}

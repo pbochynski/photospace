@@ -6,7 +6,7 @@ class PhotoDB {
     async init() {
         return new Promise((resolve, reject) => {
             // Bump version to trigger onupgradeneeded for the new index
-            const request = indexedDB.open('PhotoSpaceDB', 4);
+            const request = indexedDB.open('PhotoSpaceDB', 5);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
@@ -144,7 +144,7 @@ class PhotoDB {
 }
 
 // Re-paste unchanged functions here to have a complete file
-PhotoDB.prototype.updatePhotoEmbedding = async function(file_id, embedding) {
+PhotoDB.prototype.updatePhotoEmbedding = async function(file_id, embedding, qualityMetrics = null) {
     return new Promise((resolve, reject) => {
         const tx = this.db.transaction('photos', 'readwrite');
         const store = tx.objectStore('photos');
@@ -155,6 +155,14 @@ PhotoDB.prototype.updatePhotoEmbedding = async function(file_id, embedding) {
              if (photo) {
                  photo.embedding = embedding;
                  photo.embedding_status = 1;
+                 
+                 // Store quality metrics if provided
+                 if (qualityMetrics) {
+                     photo.sharpness = qualityMetrics.sharpness;
+                     photo.exposure = qualityMetrics.exposure;
+                     photo.quality_score = qualityMetrics.qualityScore;
+                 }
+                 
                  store.put(photo);
                  resolve();
              } else {

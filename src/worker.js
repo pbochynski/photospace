@@ -6,6 +6,94 @@ env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.useBrowserCache = true;
 
+// --- Photo Quality Analysis Functions ---
+
+/**
+ * Estimate sharpness using Laplacian variance (higher = sharper).
+ * @param {RawImage} rawImage - RawImage from transformers library
+ * @returns {number}
+ */
+function estimateSharpness(rawImage) {
+    const { data, width, height, channels } = rawImage;
+    
+    // Convert to grayscale and calculate variance (Laplacian-like sharpness measure)
+    let sum = 0, sumSq = 0, count = 0;
+    
+    for (let i = 0; i < data.length; i += channels) {
+        // Convert RGB to grayscale
+        const gray = channels >= 3 
+            ? 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]
+            : data[i]; // If it's already grayscale
+            
+        sum += gray;
+        sumSq += gray * gray;
+        count++;
+    }
+    
+    const mean = sum / count;
+    return (sumSq / count) - (mean * mean); // variance as sharpness measure
+}
+
+/**
+ * Estimate exposure balance (0 = very dark, 1 = very bright, ~0.5 = good).
+ * @param {RawImage} rawImage - RawImage from transformers library
+ * @returns {number}
+ */
+function estimateExposure(rawImage) {
+    const { data, width, height, channels } = rawImage;
+    
+    let brightnessSum = 0;
+    let count = 0;
+    
+    for (let i = 0; i < data.length; i += channels) {
+        // Convert RGB to grayscale for brightness calculation
+        const gray = channels >= 3 
+            ? 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]
+            : data[i]; // If it's already grayscale
+            
+        brightnessSum += gray;
+        count++;
+    }
+    
+    const meanBrightness = brightnessSum / count;
+    return meanBrightness / 255; // normalize [0,1]
+}
+
+/**
+ * Calculate overall quality score based on sharpness and exposure.
+ * @param {number} sharpness - Laplacian variance
+ * @param {number} exposure - Normalized brightness [0,1]
+ * @returns {number} - Higher is better quality
+ */
+function calculateQualityScore(sharpness, exposure) {
+    // Normalize sharpness with a higher threshold and use logarithmic scaling
+    // Most photos will have sharpness between 500-5000, so we use log scaling
+    const sharpnessScore = Math.min(Math.log(sharpness + 1) / Math.log(5001), 1);
+    
+    // More nuanced exposure scoring with a bell curve
+    // Optimal exposure is around 0.4-0.6, with gradual falloff
+    let exposureScore;
+    const optimal = 0.5;
+    const distance = Math.abs(exposure - optimal);
+    
+    if (distance <= 0.1) {
+        // Perfect range: 0.4-0.6
+        exposureScore = 1.0;
+    } else if (distance <= 0.2) {
+        // Good range: 0.3-0.4 and 0.6-0.7
+        exposureScore = 1.0 - (distance - 0.1) * 2; // Linear decrease from 1.0 to 0.8
+    } else if (distance <= 0.3) {
+        // Fair range: 0.2-0.3 and 0.7-0.8
+        exposureScore = 0.8 - (distance - 0.2) * 2; // Linear decrease from 0.8 to 0.6
+    } else {
+        // Poor range: <0.2 or >0.8
+        exposureScore = Math.max(0.1, 0.6 - (distance - 0.3) * 1.5); // Linear decrease with minimum 0.1
+    }
+    
+    // Weighted combination: sharpness is more important than exposure
+    return (sharpnessScore * 0.7) + (exposureScore * 0.3);
+}
+
 
 // Singleton pattern to ensure the model is loaded only once.
 class CLIPSingleton {
@@ -70,6 +158,13 @@ self.onmessage = async (event) => {
         if (!thumbnail_url) throw new Error("Thumbnail URL is missing.");
 
         const image = await RawImage.fromURL(thumbnail_url);
+        
+        // Calculate quality metrics using the RawImage data
+        const sharpness = estimateSharpness(image);
+        const exposure = estimateExposure(image);
+        const qualityScore = calculateQualityScore(sharpness, exposure);
+        
+        // Generate embedding
         const image_inputs = await processor(image); 
         const { image_embeds } = await model(image_inputs);
         const embedding = image_embeds.normalize().tolist()[0]
@@ -77,7 +172,12 @@ self.onmessage = async (event) => {
         self.postMessage({
             status: 'complete',
             file_id: file_id,
-            embedding: embedding
+            embedding: embedding,
+            qualityMetrics: {
+                sharpness: sharpness,
+                exposure: exposure,
+                qualityScore: qualityScore
+            }
         });
 
     } catch (error) {

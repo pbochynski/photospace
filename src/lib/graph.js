@@ -56,36 +56,30 @@ async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
     return response.json();
 }
 
-export async function fetchAllPhotos(scanId, progressCallback) {
+export async function fetchAllPhotos(scanId, progressCallback, startingFolderId = 'root') {
     const token = await getAuthToken();
     if (!token) throw new Error("Authentication token not available.");
 
     return new Promise(async (resolve, reject) => {
-        const foldersToProcess = [STARTING_FOLDER_PATH];
+        const foldersToProcess = [startingFolderId];
         let activeWorkers = 0;
         let totalPhotoCount = await db.getPhotoCount();
         progressCallback({ count: totalPhotoCount });
 
-        const processFolder = async (folderPath) => {
+        const processFolder = async (folderId) => {
             try {
-
-                // The API endpoint for getting children of a specific folder by path
-                let url = `https://graph.microsoft.com/v1.0/me/drive/root:${encodeURIComponent(folderPath)}:/children?$expand=thumbnails`;
-                if (folderPath === '/') {
-                    // Special case for root folder, use the root endpoint
-                    url = 'https://graph.microsoft.com/v1.0/me/drive/root/children?$expand=thumbnails';
-                }
+                // Use folder ID instead of path for more reliable access
+                let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+                
                 while (url) {
-                    console.log(`Processing url: ${url} for folder: ${folderPath}`);
+                    console.log(`Processing folder ID: ${folderId}`);
                     const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
                     
                     const photosInPage = [];
                     for (const item of response.value) {
                         // If it's a folder, add it to the queue for later processing
                         if (item.folder) {
-                            // Construct the full path for the new folder
-                            const newPath = `${folderPath === '/' ? '' : folderPath}/${item.name}`;
-                            foldersToProcess.push(newPath);
+                            foldersToProcess.push(item.id);
                         } 
                         // If it's a photo with a thumbnail, process it
                         else if (item.photo && item.thumbnails && item.thumbnails.length > 0) {
@@ -112,7 +106,7 @@ export async function fetchAllPhotos(scanId, progressCallback) {
                     url = response['@odata.nextLink'];
                 }
             } catch (error) {
-                console.error(`Failed to process folder ${folderPath}:`, error);
+                console.error(`Failed to process folder ${folderId}:`, error);
                 // We continue processing other folders even if one fails
             } finally {
                 // This worker is now finished
@@ -147,4 +141,55 @@ export async function fetchAllPhotos(scanId, progressCallback) {
         // Start the manager loop
         mainLoop();
     });
+}
+
+/**
+ * Fetch folders from OneDrive for the folder browser
+ * @param {string} folderId - The folder ID to browse (or 'root' for OneDrive root)
+ * @returns {Promise<Array>} - Array of folder objects
+ */
+export async function fetchFolders(folderId = 'root') {
+    try {
+        const token = await getAuthToken();
+        const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$filter=folder ne null&$select=id,name,folder,parentReference&$orderby=name`;
+        
+        const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
+        
+        const folders = response.value.map(item => ({
+            id: item.id,
+            name: item.name,
+            isFolder: true,
+            parentId: item.parentReference?.id || null,
+            path: item.parentReference?.path || ''
+        }));
+
+        return folders;
+    } catch (error) {
+        console.error('Error fetching folders:', error);
+        throw error;
+    }
+}
+
+/**
+ * Get folder information by ID
+ * @param {string} folderId - The folder ID
+ * @returns {Promise<Object>} - Folder information
+ */
+export async function getFolderInfo(folderId = 'root') {
+    try {
+        const token = await getAuthToken();
+        const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}`;
+        
+        const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
+        
+        return {
+            id: response.id,
+            name: response.name,
+            path: response.parentReference?.path || '/drive/root:',
+            parentId: response.parentReference?.id || null
+        };
+    } catch (error) {
+        console.error('Error fetching folder info:', error);
+        throw error;
+    }
 }

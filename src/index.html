@@ -23,7 +23,7 @@
                 <progress id="progress-bar" value="0" max="100" style="display: none;"></progress>
             </div>
             <div id="controls">
-                <button id="start-scan-button">1. Scan OneDrive Photos</button>
+                <button id="start-scan-button">1. Select Folder & Scan Photos</button>
                 <button id="start-embedding-button">2. Generate Embeddings</button>
                 <button id="start-analysis-button">3. Analyze & Find Similar Photos</button>
             </div>
@@ -39,6 +39,31 @@
         <span class="modal-close" id="modal-close">&times;</span>
         <img class="modal-content" id="modal-img" src="" alt="Full Size Photo" />
     </div>
+    
+    <!-- Folder Browser Modal -->
+    <div id="folder-modal" class="modal" style="display:none;">
+        <div class="modal-content folder-browser">
+            <div class="modal-header">
+                <h3>Select Folder to Scan</h3>
+                <span class="modal-close" id="folder-modal-close">&times;</span>
+            </div>
+            <div class="folder-breadcrumb">
+                <span id="current-path">OneDrive</span>
+            </div>
+            <div class="folder-navigation">
+                <button id="folder-up-btn" disabled>📁 Up</button>
+                <button id="folder-refresh-btn">🔄 Refresh</button>
+            </div>
+            <div id="folder-list" class="folder-list">
+                <div class="loading">Loading folders...</div>
+            </div>
+            <div class="modal-footer">
+                <button id="select-folder-btn" class="primary-btn">Select This Folder</button>
+                <button id="cancel-folder-btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
     <script type="module" src="/main.js"></script>
 </body>
 </html>

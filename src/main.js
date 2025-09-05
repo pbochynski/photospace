@@ -1,8 +1,7 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
-import { fetchAllPhotos } from './lib/graph.js';
+import { fetchAllPhotos, fetchFolders, getFolderInfo } from './lib/graph.js';
 import { db } from './lib/db.js';
-import { findSimilarGroups, getPromptEmbeddings, scorePhotoEmbedding, pickBestPhotoSimple } from './lib/analysis.js';
-import { clipTextEncoder } from './lib/clipTextEncoder.js';
+import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
 
 // --- DOM Elements ---
 const loginButton = document.getElementById('login-button');
@@ -15,7 +14,21 @@ const startEmbeddingButton = document.getElementById('start-embedding-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
 
+// Folder browser elements
+const folderModal = document.getElementById('folder-modal');
+const folderModalClose = document.getElementById('folder-modal-close');
+const currentPathElement = document.getElementById('current-path');
+const folderUpBtn = document.getElementById('folder-up-btn');
+const folderRefreshBtn = document.getElementById('folder-refresh-btn');
+const folderList = document.getElementById('folder-list');
+const selectFolderBtn = document.getElementById('select-folder-btn');
+const cancelFolderBtn = document.getElementById('cancel-folder-btn');
+
 let embeddingWorker = null;
+let selectedFolderId = 'root';
+let selectedFolderPath = 'OneDrive';
+let currentBrowsingFolderId = 'root';
+let folderHistory = []; // Stack for navigation
 
 // --- UI Update Functions ---
 function updateStatus(text, showProgress = false, progressValue = 0, progressMax = 100) {
@@ -65,14 +78,18 @@ function displayResults(groups) {
         group.photos.forEach((p, idx) => {
             const photoItem = document.createElement('div');
             photoItem.className = 'photo-item';
-            const recommendedBadge = p.isBestSimple ? '<div class="recommended-badge">⭐ RECOMMENDED</div>' : '';
+            const recommendedBadge = p.isBest ? '<div class="recommended-badge">⭐ RECOMMENDED</div>' : '';
             photoItem.innerHTML = `
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
                     <img src="${p.thumbnail_url}" alt="${p.name}" loading="lazy">
                     ${recommendedBadge}
-                    <div class="photo-score">Score: ${typeof p.qualityScore === 'number' ? p.qualityScore.toFixed(2) : 'N/A'}</div>
+                    <div class="photo-score">
+                        Quality: ${typeof p.quality_score === 'number' ? p.quality_score.toFixed(2) : 'N/A'}
+                        <br>Sharpness: ${typeof p.sharpness === 'number' ? p.sharpness.toFixed(0) : 'N/A'}
+                        <br>Exposure: ${typeof p.exposure === 'number' ? p.exposure.toFixed(2) : 'N/A'}
+                    </div>
                 </label>
             `;
             photoGrid.appendChild(photoItem);
@@ -160,19 +177,111 @@ function displayResults(groups) {
     }
 }
 
-// --- Core Logic ---
+// --- Folder Browser Functions ---
 
-async function handleLoginClick() {
+function showFolderBrowser() {
+    folderModal.style.display = 'flex';
+    currentBrowsingFolderId = 'root';
+    folderHistory = [];
+    loadFolders('root');
+}
+
+function hideFolderBrowser() {
+    folderModal.style.display = 'none';
+}
+
+async function loadFolders(folderId) {
+    folderList.innerHTML = '<div class="loading">Loading folders...</div>';
+    
     try {
-        const account = await login();
-        if (account) {
-            displayLoggedIn(account);
-            await db.init();
+        // Get current folder info for breadcrumb
+        const folderInfo = await getFolderInfo(folderId);
+        updateBreadcrumb(folderInfo);
+        
+        // Fetch subfolders
+        const folders = await fetchFolders(folderId);
+        
+        if (folders.length === 0) {
+            folderList.innerHTML = '<div class="loading">No subfolders found</div>';
+            return;
         }
+        
+        folderList.innerHTML = '';
+        
+        folders.forEach(folder => {
+            const folderItem = document.createElement('div');
+            folderItem.className = 'folder-item';
+            folderItem.dataset.folderId = folder.id;
+            folderItem.dataset.folderName = folder.name;
+            
+            folderItem.innerHTML = `
+                <span class="folder-icon">📁</span>
+                <span class="folder-name">${folder.name}</span>
+            `;
+            
+            folderItem.addEventListener('click', () => {
+                // Clear previous selection
+                document.querySelectorAll('.folder-item').forEach(item => {
+                    item.classList.remove('selected');
+                });
+                
+                // Select this folder
+                folderItem.classList.add('selected');
+                selectedFolderId = folder.id;
+                selectedFolderPath = `${folderInfo.name}/${folder.name}`;
+            });
+            
+            folderItem.addEventListener('dblclick', () => {
+                // Navigate into folder
+                folderHistory.push({
+                    id: currentBrowsingFolderId,
+                    name: folderInfo.name,
+                    path: folderInfo.path
+                });
+                currentBrowsingFolderId = folder.id;
+                loadFolders(folder.id);
+                updateUpButton();
+            });
+            
+            folderList.appendChild(folderItem);
+        });
+        
+        updateUpButton();
+        
     } catch (error) {
-        console.error(error);
-        updateStatus('Login failed. Please try again.', false);
+        console.error('Error loading folders:', error);
+        folderList.innerHTML = '<div class="error-message">Error loading folders. Please try again.</div>';
     }
+}
+
+function updateBreadcrumb(folderInfo) {
+    let pathText = 'OneDrive';
+    if (folderInfo.id !== 'root') {
+        // Build path from folder history and current folder
+        const pathParts = folderHistory.map(h => h.name).filter(name => name !== 'root');
+        pathParts.push(folderInfo.name);
+        pathText = 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : '');
+    }
+    currentPathElement.textContent = pathText;
+}
+
+function updateUpButton() {
+    folderUpBtn.disabled = folderHistory.length === 0;
+}
+
+function navigateUp() {
+    if (folderHistory.length > 0) {
+        const parentFolder = folderHistory.pop();
+        currentBrowsingFolderId = parentFolder.id;
+        loadFolders(parentFolder.id);
+        updateUpButton();
+    }
+}
+
+function selectCurrentFolder() {
+    // Set the selected folder for scanning
+    updateStatus(`Selected folder: ${selectedFolderPath}`, false);
+    hideFolderBrowser();
 }
 
 async function runPhotoScan() {
@@ -183,13 +292,13 @@ async function runPhotoScan() {
     try {
         // --- STEP 1: Generate a new scan ID ---
         const newScanId = Date.now();
-        console.log(`Starting new scan with ID: ${newScanId}`);
-        updateStatus('Scanning OneDrive for all photos...', true, 0, 100);
+        console.log(`Starting new scan with ID: ${newScanId} in folder: ${selectedFolderPath}`);
+        updateStatus(`Scanning ${selectedFolderPath} for photos...`, true, 0, 100);
 
-        // --- STEP 2: Crawl OneDrive and "touch" all existing files with the new scan ID ---
+        // --- STEP 2: Crawl OneDrive starting from selected folder ---
         await fetchAllPhotos(newScanId, (progress) => {
             updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
-        });
+        }, selectedFolderId);
         
         // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
         updateStatus('Cleaning up deleted files...', true, 0, 100);
@@ -210,6 +319,25 @@ async function runPhotoScan() {
         startScanButton.disabled = false;
         startEmbeddingButton.disabled = false;
     }
+}
+
+// --- Core Logic ---
+
+async function handleLoginClick() {
+    try {
+        const account = await login();
+        if (account) {
+            displayLoggedIn(account);
+            await db.init();
+        }
+    } catch (error) {
+        console.error(error);
+        updateStatus('Login failed. Please try again.', false);
+    }
+}
+
+async function handleScanClick() {
+    showFolderBrowser();
 }
 
 async function runEmbeddingGeneration() {
@@ -308,7 +436,7 @@ async function generateEmbeddings() {
         // Worker message handler
         function makeOnMessage(workerIdx) {
             return async (event) => {
-                const { file_id, embedding, status, error } = event.data;
+                const { file_id, embedding, qualityMetrics, status, error } = event.data;
                 if (status === 'model_loading') {
                     updateStatus('Loading AI Model... (This may take a moment)');
                 } else if (status === 'model_ready') {
@@ -320,7 +448,7 @@ async function generateEmbeddings() {
                     assignNext(workerIdx);
                 } else if (status === 'complete') {
                     processedCount++;
-                    await db.updatePhotoEmbedding(file_id, embedding);
+                    await db.updatePhotoEmbedding(file_id, embedding, qualityMetrics);
                     // Revoke blob URL
                     const objectUrl = objectUrlMap.get(file_id);
                     if (objectUrl) {
@@ -388,38 +516,36 @@ async function runAnalysis() {
             return;
         }
 
-        updateStatus(`Analyzing ${allPhotos.length} photos...`, true, 25, 100);
-
-        // --- NEW: Prepare prompt embeddings for scoring ---
-        const promptEmbeddings = await getPromptEmbeddings(clipTextEncoder);
+        updateStatus(`Finding similar photo groups...`, true, 25, 100);
 
         setTimeout(async () => {
             let similarGroups = await findSimilarGroups(allPhotos, (progress) => {
-                updateStatus(`Analyzing... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.75), 100);
+                updateStatus(`Finding groups... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.5), 100);
             });
 
-            // --- NEW: Score and sort each group ---
+            updateStatus(`Picking best photos...`, true, 75, 100);
+
+            // --- UPDATED: Use stored quality metrics to pick best photos ---
+            let processedGroups = 0;
             for (const group of similarGroups) {
-                // Try both scoring methods
-                group.photos.forEach(photo => {
-                    photo.qualityScore = scorePhotoEmbedding(photo.embedding, promptEmbeddings);
-                });
-                
-                // Find the best photo using simple heuristics
-                const bestPhotoSimple = pickBestPhotoSimple(group.photos);
+                // Find the best photo using stored quality metrics
+                const bestPhoto = await pickBestPhotoByQuality(group.photos);
                 
                 // Mark the best photo and sort by quality score
                 group.photos.forEach(photo => {
-                    photo.isBestSimple = photo.file_id === bestPhotoSimple.file_id;
+                    photo.isBest = photo.file_id === bestPhoto.file_id;
                 });
                 
                 group.photos.sort((a, b) => {
-                    // First, prioritize the simple best pick
-                    if (a.isBestSimple && !b.isBestSimple) return -1;
-                    if (!a.isBestSimple && b.isBestSimple) return 1;
-                    // Then sort by quality score
-                    return b.qualityScore - a.qualityScore;
+                    // First, prioritize the best photo
+                    if (a.isBest && !b.isBest) return -1;
+                    if (!a.isBest && b.isBest) return 1;
+                    // Then sort by quality score (using stored quality_score)
+                    return (b.quality_score || 0) - (a.quality_score || 0);
                 });
+                
+                processedGroups++;
+                updateStatus(`Picking best photos... ${Math.round((processedGroups / similarGroups.length) * 100)}% complete.`, true, 75 + ((processedGroups / similarGroups.length) * 25), 100);
             }
 
             displayResults(similarGroups);
@@ -460,9 +586,33 @@ async function main() {
 
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
-    startScanButton.addEventListener('click', runPhotoScan);
+    startScanButton.addEventListener('click', handleScanClick);
     startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
     startAnalysisButton.addEventListener('click', runAnalysis);
+    
+    // Folder browser event listeners
+    folderModalClose.addEventListener('click', hideFolderBrowser);
+    cancelFolderBtn.addEventListener('click', hideFolderBrowser);
+    selectFolderBtn.addEventListener('click', () => {
+        selectCurrentFolder();
+        runPhotoScan();
+    });
+    folderUpBtn.addEventListener('click', navigateUp);
+    folderRefreshBtn.addEventListener('click', () => loadFolders(currentBrowsingFolderId));
+    
+    // Close folder modal on outside click
+    folderModal.addEventListener('click', (e) => {
+        if (e.target === folderModal) {
+            hideFolderBrowser();
+        }
+    });
+    
+    // Close folder modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && folderModal.style.display === 'flex') {
+            hideFolderBrowser();
+        }
+    });
 }
 
 // Start the application
