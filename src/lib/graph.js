@@ -193,3 +193,24 @@ export async function getFolderInfo(folderId = 'root') {
         throw error;
     }
 }
+
+/**
+ * Get the full path for a folder ID (including the folder name)
+ * @param {string} folderId - The folder ID
+ * @returns {Promise<string>} - Full folder path
+ */
+export async function getFolderPath(folderId = 'root') {
+    if (folderId === 'root') {
+        return '/drive/root:';
+    }
+    
+    try {
+        const folderInfo = await getFolderInfo(folderId);
+        // Combine parent path with folder name
+        const parentPath = folderInfo.path === '/drive/root:' ? '/drive/root:' : folderInfo.path;
+        return `${parentPath}/${folderInfo.name}`;
+    } catch (error) {
+        console.error('Error getting folder path:', error);
+        return '/drive/root:';
+    }
+}

@@ -22,8 +22,17 @@
                 <p id="status-text">Ready to start.</p>
                 <progress id="progress-bar" value="0" max="100" style="display: none;"></progress>
             </div>
+            
+            <div id="folder-selector-panel">
+                <label for="selected-folder">Selected Folder:</label>
+                <div class="folder-input-group">
+                    <input type="text" id="selected-folder" readonly value="OneDrive (Root)" placeholder="No folder selected">
+                    <button id="browse-folder-btn" type="button">📁 Browse</button>
+                </div>
+            </div>
+            
             <div id="controls">
-                <button id="start-scan-button">1. Select Folder & Scan Photos</button>
+                <button id="start-scan-button">1. Scan Photos</button>
                 <button id="start-embedding-button">2. Generate Embeddings</button>
                 <button id="start-analysis-button">3. Analyze & Find Similar Photos</button>
             </div>

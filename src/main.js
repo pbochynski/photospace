@@ -1,5 +1,5 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
-import { fetchAllPhotos, fetchFolders, getFolderInfo } from './lib/graph.js';
+import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
 
@@ -14,6 +14,10 @@ const startEmbeddingButton = document.getElementById('start-embedding-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
 
+// Folder selector elements
+const selectedFolderInput = document.getElementById('selected-folder');
+const browseFolderBtn = document.getElementById('browse-folder-btn');
+
 // Folder browser elements
 const folderModal = document.getElementById('folder-modal');
 const folderModalClose = document.getElementById('folder-modal-close');
@@ -26,9 +30,99 @@ const cancelFolderBtn = document.getElementById('cancel-folder-btn');
 
 let embeddingWorker = null;
 let selectedFolderId = 'root';
-let selectedFolderPath = 'OneDrive';
+let selectedFolderPath = '/drive/root:'; // This will be the actual path for filtering
+let selectedFolderDisplayName = 'OneDrive (Root)'; // This is for display purposes
 let currentBrowsingFolderId = 'root';
 let folderHistory = []; // Stack for navigation
+
+// --- URL Parameter Functions ---
+function updateURLWithPath(folderPath) {
+    const url = new URL(window.location);
+    if (folderPath === '/drive/root:') {
+        url.searchParams.delete('path');
+    } else {
+        url.searchParams.set('path', folderPath);
+    }
+    window.history.pushState({}, '', url);
+}
+
+function getPathFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('path') || '/drive/root:';
+}
+
+async function restoreFolderFromURL() {
+    const pathFromURL = getPathFromURL();
+    if (pathFromURL !== '/drive/root:') {
+        try {
+            // Try to find the folder by path
+            const folderId = await findFolderIdByPath(pathFromURL);
+            if (folderId) {
+                selectedFolderId = folderId;
+                selectedFolderPath = pathFromURL;
+                selectedFolderDisplayName = pathToDisplayName(pathFromURL);
+                selectedFolderInput.value = selectedFolderDisplayName;
+                updateStatus(`Restored folder: ${selectedFolderDisplayName}`, false);
+            } else {
+                console.warn('Could not find folder for path:', pathFromURL);
+                // Reset to root if folder not found
+                resetToRoot();
+            }
+        } catch (error) {
+            console.error('Error restoring folder from URL:', error);
+            resetToRoot();
+        }
+    } else {
+        resetToRoot();
+    }
+}
+
+function resetToRoot() {
+    selectedFolderId = 'root';
+    selectedFolderPath = '/drive/root:';
+    selectedFolderDisplayName = 'OneDrive (Root)';
+    selectedFolderInput.value = selectedFolderDisplayName;
+    updateURLWithPath(selectedFolderPath);
+}
+
+function pathToDisplayName(path) {
+    if (path === '/drive/root:') {
+        return 'OneDrive (Root)';
+    }
+    // Convert path like "/drive/root:/Pictures/Camera Roll" to "OneDrive / Pictures / Camera Roll"
+    const pathParts = path.replace('/drive/root:', '').split('/').filter(part => part.length > 0);
+    return 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : ' (Root)');
+}
+
+async function findFolderIdByPath(targetPath) {
+    // This is a simplified approach - in a real implementation you might want to cache folder mappings
+    // For now, we'll try to navigate through the folder structure to find the ID
+    if (targetPath === '/drive/root:') {
+        return 'root';
+    }
+    
+    try {
+        // Extract path parts
+        const pathParts = targetPath.replace('/drive/root:', '').split('/').filter(part => part.length > 0);
+        let currentId = 'root';
+        
+        // Navigate through each path part
+        for (const partName of pathParts) {
+            const folders = await fetchFolders(currentId);
+            const foundFolder = folders.find(folder => folder.name === partName);
+            if (foundFolder) {
+                currentId = foundFolder.id;
+            } else {
+                return null; // Path not found
+            }
+        }
+        
+        return currentId;
+    } catch (error) {
+        console.error('Error finding folder by path:', error);
+        return null;
+    }
+}
 
 // --- UI Update Functions ---
 function updateStatus(text, showProgress = false, progressValue = 0, progressMax = 100) {
@@ -208,6 +302,50 @@ async function loadFolders(folderId) {
         
         folderList.innerHTML = '';
         
+        // Add option to select the current folder (including root)
+        const currentFolderItem = document.createElement('div');
+        currentFolderItem.className = 'folder-item current-folder';
+        currentFolderItem.innerHTML = `
+            <span class="folder-icon">📂</span>
+            <span class="folder-name">• Select this folder (${folderInfo.name === 'root' ? 'OneDrive Root' : folderInfo.name})</span>
+        `;
+        currentFolderItem.addEventListener('click', async () => {
+            // Clear previous selection
+            document.querySelectorAll('.folder-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            
+            // Select current folder
+            currentFolderItem.classList.add('selected');
+            selectedFolderId = folderId;
+            
+            // Get the full path for current folder
+            try {
+                selectedFolderPath = await getFolderPath(folderId);
+                updateURLWithPath(selectedFolderPath);
+            } catch (error) {
+                console.error('Error getting folder path:', error);
+                selectedFolderPath = '/drive/root:';
+                updateURLWithPath(selectedFolderPath);
+            }
+            
+            // Build display path for current folder
+            const pathParts = folderHistory.map(h => h.name).filter(name => name !== 'root');
+            if (folderInfo.name !== 'root') {
+                pathParts.push(folderInfo.name);
+            }
+            selectedFolderDisplayName = 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : ' (Root)');
+        });
+        folderList.appendChild(currentFolderItem);
+        
+        // Add separator if there are subfolders
+        if (folders.length > 0) {
+            const separator = document.createElement('div');
+            separator.style.borderTop = '1px solid var(--border-color)';
+            separator.style.margin = '0.5rem 0';
+            folderList.appendChild(separator);
+        }
+        
         folders.forEach(folder => {
             const folderItem = document.createElement('div');
             folderItem.className = 'folder-item';
@@ -219,7 +357,7 @@ async function loadFolders(folderId) {
                 <span class="folder-name">${folder.name}</span>
             `;
             
-            folderItem.addEventListener('click', () => {
+            folderItem.addEventListener('click', async () => {
                 // Clear previous selection
                 document.querySelectorAll('.folder-item').forEach(item => {
                     item.classList.remove('selected');
@@ -228,7 +366,24 @@ async function loadFolders(folderId) {
                 // Select this folder
                 folderItem.classList.add('selected');
                 selectedFolderId = folder.id;
-                selectedFolderPath = `${folderInfo.name}/${folder.name}`;
+                
+                // Get the full path for this folder
+                try {
+                    selectedFolderPath = await getFolderPath(folder.id);
+                    updateURLWithPath(selectedFolderPath);
+                } catch (error) {
+                    console.error('Error getting folder path:', error);
+                    selectedFolderPath = '/drive/root:';
+                    updateURLWithPath(selectedFolderPath);
+                }
+                
+                // Build display path for the selected folder
+                const pathParts = folderHistory.map(h => h.name).filter(name => name !== 'root');
+                if (folderInfo.name !== 'root') {
+                    pathParts.push(folderInfo.name);
+                }
+                pathParts.push(folder.name);
+                selectedFolderDisplayName = 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : '');
             });
             
             folderItem.addEventListener('dblclick', () => {
@@ -279,8 +434,9 @@ function navigateUp() {
 }
 
 function selectCurrentFolder() {
-    // Set the selected folder for scanning
-    updateStatus(`Selected folder: ${selectedFolderPath}`, false);
+    // Update the input field and internal state
+    selectedFolderInput.value = selectedFolderDisplayName;
+    updateStatus(`Selected folder: ${selectedFolderDisplayName}`, false);
     hideFolderBrowser();
 }
 
@@ -292,8 +448,8 @@ async function runPhotoScan() {
     try {
         // --- STEP 1: Generate a new scan ID ---
         const newScanId = Date.now();
-        console.log(`Starting new scan with ID: ${newScanId} in folder: ${selectedFolderPath}`);
-        updateStatus(`Scanning ${selectedFolderPath} for photos...`, true, 0, 100);
+        console.log(`Starting new scan with ID: ${newScanId} in folder: ${selectedFolderDisplayName}`);
+        updateStatus(`Scanning ${selectedFolderDisplayName} for photos...`, true, 0, 100);
 
         // --- STEP 2: Crawl OneDrive starting from selected folder ---
         await fetchAllPhotos(newScanId, (progress) => {
@@ -309,7 +465,7 @@ async function runPhotoScan() {
         
         // --- STEP 4: Generate embeddings for only the new files ---
         // generateEmbeddings() will automatically find files with embedding_status = 0
-        await generateEmbeddings();
+        await generateEmbeddings(selectedFolderPath);
 
     } catch (error) {
         console.error('Scan failed:', error);
@@ -337,7 +493,8 @@ async function handleLoginClick() {
 }
 
 async function handleScanClick() {
-    showFolderBrowser();
+    // Directly run the scan with the currently selected folder
+    runPhotoScan();
 }
 
 async function runEmbeddingGeneration() {
@@ -345,7 +502,7 @@ async function runEmbeddingGeneration() {
     startAnalysisButton.disabled = true;
 
     try {
-        await generateEmbeddings();
+        await generateEmbeddings(selectedFolderPath);
     } catch (error) {
         console.error('Embedding generation failed:', error);
         updateStatus(`Error during embedding generation: ${error.message}`, false);
@@ -384,19 +541,19 @@ async function fetchThumbnailAsBlobURL(fileId, getAuthToken) {
     }
 }
 
-async function generateEmbeddings() {
+async function generateEmbeddings(folderPath = '/drive/root:') {
     // Configurable number of parallel workers
     const NUM_EMBEDDING_WORKERS = 4;
     return new Promise(async (resolve, reject) => {
-        const photosToProcess = await db.getPhotosWithoutEmbedding();
+        const photosToProcess = await db.getPhotosWithoutEmbeddingFromFolder(folderPath);
         const totalToProcess = photosToProcess.length;
         if (totalToProcess === 0) {
-            updateStatus('All photos are already processed.', false);
+            updateStatus('All photos in selected folder are already processed.', false);
             startAnalysisButton.disabled = false;
             resolve();
             return;
         }
-        updateStatus(`Preparing to process ${totalToProcess} new photos...`);
+        updateStatus(`Preparing to process ${totalToProcess} new photos from selected folder...`);
         // Worker pool
         const workers = [];
         let processedCount = 0;
@@ -509,14 +666,14 @@ async function runAnalysis() {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
     try {
-        const allPhotos = await db.getAllPhotosWithEmbedding();
+        const allPhotos = await db.getAllPhotosWithEmbeddingFromFolder(selectedFolderPath);
         if(allPhotos.length === 0) {
-            updateStatus('No photos with embeddings found to analyze.', false);
+            updateStatus('No photos with embeddings found in selected folder to analyze.', false);
             startAnalysisButton.disabled = false;
             return;
         }
 
-        updateStatus(`Finding similar photo groups...`, true, 25, 100);
+        updateStatus(`Finding similar photo groups from ${allPhotos.length} photos...`, true, 25, 100);
 
         setTimeout(async () => {
             let similarGroups = await findSimilarGroups(allPhotos, (progress) => {
@@ -582,21 +739,25 @@ async function main() {
         msalInstance.setActiveAccount(accounts[0]);
         displayLoggedIn(accounts[0]);
         await db.init();
+        
+        // Restore folder selection from URL if present
+        await restoreFolderFromURL();
     }
 
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
+    browseFolderBtn.addEventListener('click', showFolderBrowser);
     startScanButton.addEventListener('click', handleScanClick);
     startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
     startAnalysisButton.addEventListener('click', runAnalysis);
     
+    // Folder selector event listeners
+    browseFolderBtn.addEventListener('click', showFolderBrowser);
+    
     // Folder browser event listeners
     folderModalClose.addEventListener('click', hideFolderBrowser);
     cancelFolderBtn.addEventListener('click', hideFolderBrowser);
-    selectFolderBtn.addEventListener('click', () => {
-        selectCurrentFolder();
-        runPhotoScan();
-    });
+    selectFolderBtn.addEventListener('click', selectCurrentFolder);
     folderUpBtn.addEventListener('click', navigateUp);
     folderRefreshBtn.addEventListener('click', () => loadFolders(currentBrowsingFolderId));
     

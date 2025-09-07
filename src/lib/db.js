@@ -182,6 +182,27 @@ PhotoDB.prototype.getPhotosWithoutEmbedding = async function() {
         request.onerror = (event) => reject(event.target.error);
     });
 };
+
+PhotoDB.prototype.getPhotosWithoutEmbeddingFromFolder = async function(folderPath) {
+    const tx = this.db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    const index = store.index('by_embedding_status');
+    return new Promise((resolve, reject) => {
+        const request = index.getAll(0);
+        request.onsuccess = () => {
+            const allPhotos = request.result;
+            // Filter photos based on folder path
+            const folderPhotos = folderPath === '/drive/root:' 
+                ? allPhotos // If root, include all photos
+                : allPhotos.filter(photo => {
+                    // Check if photo path starts with the selected folder path
+                    return photo.path && photo.path.startsWith(folderPath);
+                });
+            resolve(folderPhotos);
+        };
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
 PhotoDB.prototype.getAllPhotosWithEmbedding = async function() {
     const tx = this.db.transaction('photos', 'readonly');
     const store = tx.objectStore('photos');
@@ -189,6 +210,27 @@ PhotoDB.prototype.getAllPhotosWithEmbedding = async function() {
     return new Promise((resolve, reject) => {
         const request = index.getAll(1);
         request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
+
+PhotoDB.prototype.getAllPhotosWithEmbeddingFromFolder = async function(folderPath) {
+    const tx = this.db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    const index = store.index('by_embedding_status');
+    return new Promise((resolve, reject) => {
+        const request = index.getAll(1);
+        request.onsuccess = () => {
+            const allPhotos = request.result;
+            // Filter photos based on folder path
+            const folderPhotos = folderPath === '/drive/root:' 
+                ? allPhotos // If root, include all photos
+                : allPhotos.filter(photo => {
+                    // Check if photo path starts with the selected folder path
+                    return photo.path && photo.path.startsWith(folderPath);
+                });
+            resolve(folderPhotos);
+        };
         request.onerror = (event) => reject(event.target.error);
     });
 };
