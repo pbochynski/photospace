@@ -24,10 +24,21 @@
             </div>
             
             <div id="folder-selector-panel">
-                <label for="selected-folder">Selected Folder:</label>
+                <label for="selected-folder">Folder Filter (optional):</label>
                 <div class="folder-input-group">
-                    <input type="text" id="selected-folder" readonly value="OneDrive (Root)" placeholder="No folder selected">
+                    <input type="text" id="selected-folder" readonly value="All folders" placeholder="All folders">
                     <button id="browse-folder-btn" type="button">📁 Browse</button>
+                    <button id="clear-folder-btn" type="button">✕ Clear</button>
+                </div>
+            </div>
+            
+            <div id="date-filter-panel">
+                <label>Date Range Filter (optional):</label>
+                <div class="date-range-group">
+                    <input type="date" id="date-from" placeholder="From date">
+                    <span>to</span>
+                    <input type="date" id="date-to" placeholder="To date">
+                    <button id="clear-date-btn" type="button">✕ Clear</button>
                 </div>
             </div>
             

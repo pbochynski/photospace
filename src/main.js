@@ -17,6 +17,12 @@ const resultsContainer = document.getElementById('results-container');
 // Folder selector elements
 const selectedFolderInput = document.getElementById('selected-folder');
 const browseFolderBtn = document.getElementById('browse-folder-btn');
+const clearFolderBtn = document.getElementById('clear-folder-btn');
+
+// Date filter elements
+const dateFromInput = document.getElementById('date-from');
+const dateToInput = document.getElementById('date-to');
+const clearDateBtn = document.getElementById('clear-date-btn');
 
 // Folder browser elements
 const folderModal = document.getElementById('folder-modal');
@@ -29,16 +35,16 @@ const selectFolderBtn = document.getElementById('select-folder-btn');
 const cancelFolderBtn = document.getElementById('cancel-folder-btn');
 
 let embeddingWorker = null;
-let selectedFolderId = 'root';
-let selectedFolderPath = '/drive/root:'; // This will be the actual path for filtering
-let selectedFolderDisplayName = 'OneDrive (Root)'; // This is for display purposes
+let selectedFolderId = null; // null means no folder filter (all folders)
+let selectedFolderPath = null; // null means no folder filter
+let selectedFolderDisplayName = 'All folders'; // Display for no filter
 let currentBrowsingFolderId = 'root';
 let folderHistory = []; // Stack for navigation
 
 // --- URL Parameter Functions ---
 function updateURLWithPath(folderPath) {
     const url = new URL(window.location);
-    if (folderPath === '/drive/root:') {
+    if (!folderPath) {
         url.searchParams.delete('path');
     } else {
         url.searchParams.set('path', folderPath);
@@ -48,12 +54,12 @@ function updateURLWithPath(folderPath) {
 
 function getPathFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('path') || '/drive/root:';
+    return urlParams.get('path') || null; // null means no folder filter
 }
 
 async function restoreFolderFromURL() {
     const pathFromURL = getPathFromURL();
-    if (pathFromURL !== '/drive/root:') {
+    if (pathFromURL) {
         try {
             // Try to find the folder by path
             const folderId = await findFolderIdByPath(pathFromURL);
@@ -62,31 +68,31 @@ async function restoreFolderFromURL() {
                 selectedFolderPath = pathFromURL;
                 selectedFolderDisplayName = pathToDisplayName(pathFromURL);
                 selectedFolderInput.value = selectedFolderDisplayName;
-                updateStatus(`Restored folder: ${selectedFolderDisplayName}`, false);
+                updateStatus(`Restored folder filter: ${selectedFolderDisplayName}`, false);
             } else {
                 console.warn('Could not find folder for path:', pathFromURL);
-                // Reset to root if folder not found
-                resetToRoot();
+                // Reset to no filter if folder not found
+                resetToNoFilter();
             }
         } catch (error) {
             console.error('Error restoring folder from URL:', error);
-            resetToRoot();
+            resetToNoFilter();
         }
     } else {
-        resetToRoot();
+        resetToNoFilter();
     }
 }
 
-function resetToRoot() {
-    selectedFolderId = 'root';
-    selectedFolderPath = '/drive/root:';
-    selectedFolderDisplayName = 'OneDrive (Root)';
+function resetToNoFilter() {
+    selectedFolderId = null;
+    selectedFolderPath = null;
+    selectedFolderDisplayName = 'All folders';
     selectedFolderInput.value = selectedFolderDisplayName;
-    updateURLWithPath(selectedFolderPath);
+    updateURLWithPath(null);
 }
 
 function pathToDisplayName(path) {
-    if (path === '/drive/root:') {
+    if (!path || path === '/drive/root:') {
         return 'OneDrive (Root)';
     }
     // Convert path like "/drive/root:/Pictures/Camera Roll" to "OneDrive / Pictures / Camera Roll"
@@ -97,7 +103,7 @@ function pathToDisplayName(path) {
 async function findFolderIdByPath(targetPath) {
     // This is a simplified approach - in a real implementation you might want to cache folder mappings
     // For now, we'll try to navigate through the folder structure to find the ID
-    if (targetPath === '/drive/root:') {
+    if (!targetPath || targetPath === '/drive/root:') {
         return 'root';
     }
     
@@ -122,6 +128,61 @@ async function findFolderIdByPath(targetPath) {
         console.error('Error finding folder by path:', error);
         return null;
     }
+}
+
+// --- Filter Functions ---
+function clearFolderFilter() {
+    resetToNoFilter();
+    updateStatus('Folder filter cleared - will analyze all folders', false);
+}
+
+function clearDateFilter() {
+    dateFromInput.value = '';
+    dateToInput.value = '';
+    updateStatus('Date filter cleared', false);
+}
+
+function getDateFilter() {
+    const fromDate = dateFromInput.value;
+    const toDate = dateToInput.value;
+    
+    if (!fromDate && !toDate) {
+        return null; // No date filter
+    }
+    
+    return {
+        from: fromDate ? new Date(fromDate + 'T00:00:00').getTime() : null,
+        to: toDate ? new Date(toDate + 'T23:59:59').getTime() : null
+    };
+}
+
+function applyFilters(photos) {
+    let filteredPhotos = [...photos];
+    
+    // Apply folder filter
+    if (selectedFolderPath) {
+        filteredPhotos = filteredPhotos.filter(photo => 
+            photo.path && photo.path.startsWith(selectedFolderPath)
+        );
+    }
+    
+    // Apply date filter
+    const dateFilter = getDateFilter();
+    if (dateFilter) {
+        filteredPhotos = filteredPhotos.filter(photo => {
+            const photoDate = photo.photo_taken_ts || photo.last_modified;
+            if (!photoDate) return false;
+            
+            const photoTime = new Date(photoDate).getTime();
+            
+            if (dateFilter.from && photoTime < dateFilter.from) return false;
+            if (dateFilter.to && photoTime > dateFilter.to) return false;
+            
+            return true;
+        });
+    }
+    
+    return filteredPhotos;
 }
 
 // --- UI Update Functions ---
@@ -177,12 +238,10 @@ function displayResults(groups) {
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
-                    <img src="${p.thumbnail_url}" alt="${p.name}" loading="lazy">
+                    <img src="${p.thumbnail_url}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
                     ${recommendedBadge}
                     <div class="photo-score">
-                        Quality: ${typeof p.quality_score === 'number' ? p.quality_score.toFixed(2) : 'N/A'}
-                        <br>Sharpness: ${typeof p.sharpness === 'number' ? p.sharpness.toFixed(0) : 'N/A'}
-                        <br>Exposure: ${typeof p.exposure === 'number' ? p.exposure.toFixed(2) : 'N/A'}
+                        ${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}
                     </div>
                 </label>
             `;
@@ -236,13 +295,38 @@ function displayResults(groups) {
 
     // Add event listeners for image click to show modal
     document.querySelectorAll('.photo-item img').forEach(img => {
-        img.addEventListener('click', (e) => {
+        img.addEventListener('click', async (e) => {
             e.stopPropagation(); // Prevent event bubbling
             e.preventDefault(); // Prevent default label/checkbox toggle
             const modal = document.getElementById('image-modal');
             const modalImg = document.getElementById('modal-img');
-            modalImg.src = img.src;
-            modal.style.display = 'flex';
+            
+            // Get the file ID
+            const fileId = img.getAttribute('data-file-id');
+            
+            if (fileId) {
+                // Step 1: Show modal immediately with thumbnail (already loaded)
+                modalImg.src = img.src; // Use existing thumbnail
+                modal.style.display = 'flex';
+                
+                // Step 2: Load full-size image in background
+                const blobUrl = await loadFullSizeImage(fileId, modalImg, img.src);
+                
+                // Step 3: Set up cleanup for blob URLs if needed
+                if (blobUrl) {
+                    const cleanup = () => {
+                        // Note: We don't revoke immediately as it might be in our cache
+                        // The cache will handle cleanup when it reaches capacity
+                        modal.removeEventListener('hide', cleanup);
+                    };
+                    
+                    modal.addEventListener('hide', cleanup);
+                }
+            } else {
+                // Fallback to thumbnail if no file ID
+                modalImg.src = img.src;
+                modal.style.display = 'flex';
+            }
         });
     });
 
@@ -252,20 +336,23 @@ function displayResults(groups) {
         const modal = document.getElementById('image-modal');
         const modalImg = document.getElementById('modal-img');
         const closeBtn = document.getElementById('modal-close');
-        closeBtn.addEventListener('click', () => {
+        
+        const closeModal = () => {
+            // Trigger custom 'hide' event for cleanup
+            modal.dispatchEvent(new Event('hide'));
             modal.style.display = 'none';
             modalImg.src = '';
-        });
+        };
+        
+        closeBtn.addEventListener('click', closeModal);
         modal.addEventListener('click', (e) => {
             if (e.target === modal) {
-                modal.style.display = 'none';
-                modalImg.src = '';
+                closeModal();
             }
         });
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                modal.style.display = 'none';
-                modalImg.src = '';
+                closeModal();
             }
         });
     }
@@ -441,6 +528,12 @@ function selectCurrentFolder() {
 }
 
 async function runPhotoScan() {
+    // For scanning, a folder must be selected
+    if (!selectedFolderId) {
+        alert('Please select a folder to scan first.');
+        return;
+    }
+    
     startScanButton.disabled = true;
     startEmbeddingButton.disabled = true;
     startAnalysisButton.disabled = true;
@@ -538,6 +631,58 @@ async function fetchThumbnailAsBlobURL(fileId, getAuthToken) {
     } catch (error) {
         console.error(`Failed to fetch thumbnail for ${fileId}:`, error);
         return null; // Return null on failure
+    }
+}
+
+// Load full-size image using service worker for persistent caching
+async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
+    try {
+        const token = await getAuthToken();
+        
+        // Check if service worker is available and active
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            // Send token to service worker
+            navigator.serviceWorker.controller.postMessage({
+                type: 'SET_TOKEN',
+                token: token
+            });
+            
+            // Use our stable, cacheable URL that the service worker will handle
+            const stableImageUrl = `/api/image/${fileId}`;
+            
+            try {
+                const response = await fetch(stableImageUrl);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    modalImg.src = blobUrl;
+                    return blobUrl; // Return for cleanup
+                }
+            } catch (swError) {
+                console.warn('Service worker fetch failed, falling back to direct fetch:', swError);
+            }
+        }
+        
+        // Fallback: Direct fetch if service worker not available
+        const fullSizeUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`;
+        const response = await fetch(fullSizeUrl, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            modalImg.src = blobUrl;
+            return blobUrl; // Return for cleanup
+        } else {
+            console.warn('Failed to load full-size image, keeping thumbnail');
+            return null;
+        }
+    } catch (error) {
+        console.error('Error loading full-size image:', error);
+        return null;
     }
 }
 
@@ -666,17 +811,42 @@ async function runAnalysis() {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
     try {
-        const allPhotos = await db.getAllPhotosWithEmbeddingFromFolder(selectedFolderPath);
+        // Get all photos from database (no folder filter here)
+        const allPhotos = await db.getAllPhotosWithEmbedding();
+        
         if(allPhotos.length === 0) {
-            updateStatus('No photos with embeddings found in selected folder to analyze.', false);
+            updateStatus('No photos with embeddings found to analyze.', false);
             startAnalysisButton.disabled = false;
             return;
         }
 
-        updateStatus(`Finding similar photo groups from ${allPhotos.length} photos...`, true, 25, 100);
+        // Apply filters (folder and date range)
+        const filteredPhotos = applyFilters(allPhotos);
+        
+        if(filteredPhotos.length === 0) {
+            updateStatus('No photos match the current filters.', false);
+            startAnalysisButton.disabled = false;
+            return;
+        }
+
+        // Show filter summary
+        const dateFilter = getDateFilter();
+        let filterSummary = `Analyzing ${filteredPhotos.length} photos`;
+        if (selectedFolderPath || dateFilter) {
+            filterSummary += ' (filtered';
+            if (selectedFolderPath) filterSummary += ` by folder: ${selectedFolderDisplayName}`;
+            if (dateFilter) {
+                const fromStr = dateFilter.from ? new Date(dateFilter.from).toLocaleDateString() : 'start';
+                const toStr = dateFilter.to ? new Date(dateFilter.to).toLocaleDateString() : 'end';
+                filterSummary += ` by date: ${fromStr} to ${toStr}`;
+            }
+            filterSummary += ')';
+        }
+        
+        updateStatus(filterSummary, true, 25, 100);
 
         setTimeout(async () => {
-            let similarGroups = await findSimilarGroups(allPhotos, (progress) => {
+            let similarGroups = await findSimilarGroups(filteredPhotos, (progress) => {
                 updateStatus(`Finding groups... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.5), 100);
             });
 
@@ -720,6 +890,16 @@ async function runAnalysis() {
 // --- Main Application Startup ---
 // NEW: We wrap the startup logic in an async function to use await.
 async function main() {
+    // STEP 0: Register service worker for image caching
+    if ('serviceWorker' in navigator) {
+        try {
+            const registration = await navigator.serviceWorker.register('/sw.js');
+            console.log('Service Worker registered:', registration);
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
+        }
+    }
+
     // STEP 1: Initialize MSAL
     await msalInstance.initialize();
 
@@ -750,6 +930,10 @@ async function main() {
     startScanButton.addEventListener('click', handleScanClick);
     startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
     startAnalysisButton.addEventListener('click', runAnalysis);
+    
+    // Filter control event listeners
+    clearFolderBtn.addEventListener('click', clearFolderFilter);
+    clearDateBtn.addEventListener('click', clearDateFilter);
     
     // Folder selector event listeners
     browseFolderBtn.addEventListener('click', showFolderBrowser);

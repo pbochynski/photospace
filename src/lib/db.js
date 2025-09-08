@@ -55,8 +55,9 @@ class PhotoDB {
                     request.onsuccess = () => {
                         const existingPhoto = request.result;
                         if (existingPhoto) {
-                            // Photo exists, update only the scan_id
+                            // Photo exists, update scan_id and thumbnail_url (thumbnail URLs expire)
                             existingPhoto.scan_id = newPhoto.scan_id;
+                            existingPhoto.thumbnail_url = newPhoto.thumbnail_url;
                             store.put(existingPhoto);
                         } else {
                             // New photo, add it completely

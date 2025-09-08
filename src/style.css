@@ -119,6 +119,49 @@ button:disabled {
   cursor: default;
 }
 
+/* Date filter panel */
+#date-filter-panel {
+  margin: 1rem 0;
+}
+
+#date-filter-panel label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.date-range-group {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.date-range-group input[type="date"] {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.date-range-group span {
+  color: var(--text-color);
+  font-weight: 500;
+}
+
+#clear-folder-btn, #clear-date-btn {
+  background-color: var(--error-color);
+  padding: 0.75rem;
+  font-size: 0.8rem;
+}
+
+#clear-folder-btn:hover, #clear-date-btn:hover {
+  background-color: #ff6b6b;
+}
+
 #selected-folder:focus {
   outline: 2px solid var(--primary-color);
   outline-offset: 2px;

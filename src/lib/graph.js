@@ -88,7 +88,7 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                                 name: item.name,
                                 path: item.parentReference?.path,
                                 photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
-                                thumbnail_url: item.thumbnails[0]?.large?.url, 
+                                thumbnail_url: item.thumbnails[0]?.large?.url,
                                 embedding_status: 0,
                                 embedding: null,
                                 scan_id: scanId
