@@ -528,11 +528,10 @@ function selectCurrentFolder() {
 }
 
 async function runPhotoScan() {
-    // For scanning, a folder must be selected
-    if (!selectedFolderId) {
-        alert('Please select a folder to scan first.');
-        return;
-    }
+    // For scanning, use selected folder or default to root
+    const scanFolderId = selectedFolderId || 'root';
+    const scanFolderPath = selectedFolderPath || '/drive/root:';
+    const scanFolderDisplayName = selectedFolderDisplayName || 'OneDrive (Root)';
     
     startScanButton.disabled = true;
     startEmbeddingButton.disabled = true;
@@ -541,13 +540,13 @@ async function runPhotoScan() {
     try {
         // --- STEP 1: Generate a new scan ID ---
         const newScanId = Date.now();
-        console.log(`Starting new scan with ID: ${newScanId} in folder: ${selectedFolderDisplayName}`);
-        updateStatus(`Scanning ${selectedFolderDisplayName} for photos...`, true, 0, 100);
+        console.log(`Starting new scan with ID: ${newScanId} in folder: ${scanFolderDisplayName}`);
+        updateStatus(`Scanning ${scanFolderDisplayName} for photos...`, true, 0, 100);
 
         // --- STEP 2: Crawl OneDrive starting from selected folder ---
         await fetchAllPhotos(newScanId, (progress) => {
             updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
-        }, selectedFolderId);
+        }, scanFolderId);
         
         // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
         updateStatus('Cleaning up deleted files...', true, 0, 100);
@@ -558,7 +557,7 @@ async function runPhotoScan() {
         
         // --- STEP 4: Generate embeddings for only the new files ---
         // generateEmbeddings() will automatically find files with embedding_status = 0
-        await generateEmbeddings(selectedFolderPath);
+        await generateEmbeddings(scanFolderPath);
 
     } catch (error) {
         console.error('Scan failed:', error);
@@ -595,7 +594,40 @@ async function runEmbeddingGeneration() {
     startAnalysisButton.disabled = true;
 
     try {
-        await generateEmbeddings(selectedFolderPath);
+        // Get all photos that need embeddings (no folder filter applied here yet)
+        const photosToProcess = await db.getPhotosWithoutEmbedding();
+        
+        if (photosToProcess.length === 0) {
+            updateStatus('All photos already have embeddings.', false);
+            startEmbeddingButton.disabled = false;
+            return;
+        }
+        
+        // Apply filters to determine which photos actually need processing
+        const filteredPhotos = applyFilters(photosToProcess);
+        
+        if (filteredPhotos.length === 0) {
+            updateStatus('No photos match the current filters for embedding generation.', false);
+            startEmbeddingButton.disabled = false;
+            return;
+        }
+        
+        // Show filter summary
+        const dateFilter = getDateFilter();
+        let filterSummary = `Generating embeddings for ${filteredPhotos.length} photos`;
+        if (selectedFolderPath || dateFilter) {
+            filterSummary += ' (filtered';
+            if (selectedFolderPath) filterSummary += ` by folder: ${selectedFolderDisplayName}`;
+            if (dateFilter) {
+                const fromStr = dateFilter.from ? new Date(dateFilter.from).toLocaleDateString() : 'start';
+                const toStr = dateFilter.to ? new Date(dateFilter.to).toLocaleDateString() : 'end';
+                filterSummary += ` by date: ${fromStr} to ${toStr}`;
+            }
+            filterSummary += ')';
+        }
+        updateStatus(filterSummary, false);
+        
+        await generateEmbeddingsForPhotos(filteredPhotos);
     } catch (error) {
         console.error('Embedding generation failed:', error);
         updateStatus(`Error during embedding generation: ${error.message}`, false);
@@ -684,6 +716,126 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
         console.error('Error loading full-size image:', error);
         return null;
     }
+}
+
+async function generateEmbeddingsForPhotos(photosToProcess) {
+    // Configurable number of parallel workers
+    const NUM_EMBEDDING_WORKERS = 4;
+    return new Promise(async (resolve, reject) => {
+        const totalToProcess = photosToProcess.length;
+        if (totalToProcess === 0) {
+            updateStatus('No photos to process.', false);
+            startAnalysisButton.disabled = false;
+            resolve();
+            return;
+        }
+        updateStatus(`Preparing to process ${totalToProcess} photos...`);
+        // Worker pool
+        const workers = [];
+        let processedCount = 0;
+        let modelReadyCount = 0;
+        const objectUrlMap = new Map();
+        let errorOccurred = false;
+        // Queue for photos
+        const photoQueue = [...photosToProcess];
+        // Track which workers are busy
+        const workerBusy = Array(NUM_EMBEDDING_WORKERS).fill(false);
+        // Store promises for worker ready
+        const workerReady = Array(NUM_EMBEDDING_WORKERS).fill(false);
+        // Helper to assign next photo to a worker
+        async function assignNext(workerIdx) {
+            if (photoQueue.length === 0) return;
+            const photo = photoQueue.shift();
+            const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, getAuthToken);
+            if (blobUrl) {
+                objectUrlMap.set(photo.file_id, blobUrl);
+                workers[workerIdx].postMessage({
+                    file_id: photo.file_id,
+                    thumbnail_url: blobUrl
+                });
+                workerBusy[workerIdx] = true;
+            } else {
+                processedCount++;
+                if (processedCount === totalToProcess) {
+                    workers.forEach(w => w.terminate());
+                    updateStatus('Processing finished with some errors.', false);
+                    startAnalysisButton.disabled = false;
+                    resolve();
+                } else {
+                    assignNext(workerIdx);
+                }
+            }
+        }
+        // Worker message handler
+        function makeOnMessage(workerIdx) {
+            return async (event) => {
+                const { file_id, embedding, qualityMetrics, status, error } = event.data;
+                if (status === 'model_loading') {
+                    updateStatus('Loading AI Model... (This may take a moment)');
+                } else if (status === 'model_ready') {
+                    modelReadyCount++;
+                    if (modelReadyCount === NUM_EMBEDDING_WORKERS) {
+                        updateStatus('Model loaded. Starting photo analysis...', true, processedCount, totalToProcess);
+                    }
+                    // Start first task for this worker
+                    assignNext(workerIdx);
+                } else if (status === 'complete') {
+                    processedCount++;
+                    await db.updatePhotoEmbedding(file_id, embedding, qualityMetrics);
+                    // Revoke blob URL
+                    const objectUrl = objectUrlMap.get(file_id);
+                    if (objectUrl) {
+                        URL.revokeObjectURL(objectUrl);
+                        objectUrlMap.delete(file_id);
+                    }
+                    updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
+                    if (processedCount === totalToProcess) {
+                        workers.forEach(w => w.terminate());
+                        updateStatus('All photos processed! Ready for analysis.', false);
+                        startAnalysisButton.disabled = false;
+                        resolve();
+                    } else {
+                        assignNext(workerIdx);
+                    }
+                } else if (status === 'error') {
+                    console.error(`Worker error for file ${file_id}:`, error);
+                    processedCount++;
+                    // Revoke blob URL
+                    const objectUrl = objectUrlMap.get(file_id);
+                    if (objectUrl) {
+                        URL.revokeObjectURL(objectUrl);
+                        objectUrlMap.delete(file_id);
+                    }
+                    if (processedCount === totalToProcess) {
+                        workers.forEach(w => w.terminate());
+                        updateStatus('Processing finished with some errors.', false);
+                        startAnalysisButton.disabled = false;
+                        resolve();
+                    } else {
+                        assignNext(workerIdx);
+                    }
+                }
+            };
+        }
+        // Create workers
+        for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
+            const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+            worker.onmessage = makeOnMessage(i);
+            worker.onerror = (err) => {
+                if (!errorOccurred) {
+                    errorOccurred = true;
+                    workers.forEach(w => w.terminate());
+                    updateStatus(`A critical worker error occurred: ${err.message}`, false);
+                    reject(err);
+                }
+            };
+            workers.push(worker);
+        }
+        // Start all workers (they will load the model and then call assignNext)
+        for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
+            workers[i].postMessage({ type: 'init' });
+        }
+    });
 }
 
 async function generateEmbeddings(folderPath = '/drive/root:') {
