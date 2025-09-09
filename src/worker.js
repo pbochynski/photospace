@@ -9,6 +9,12 @@ env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.useBrowserCache = true;
 
+// Debug: Log the base URL for model loading
+console.log('Worker environment:', {
+    location: self.location?.href || 'unknown',
+    origin: self.location?.origin || 'unknown'
+});
+
 // --- Photo Quality Analysis Functions ---
 
 /**
@@ -126,12 +132,28 @@ class ModelSingleton {
             }
 
             const modelPath = '/models/clip-vit-base-patch16/';
+            
+            console.log('Loading models from:', modelPath);
+            console.log('Full model URL would be:', self.location?.origin + modelPath);
 
-            // Load the CLIP model and processor
-            [this.clipModel, this.clipProcessor] = await Promise.all([
-                CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator),
-                AutoProcessor.from_pretrained(modelPath, accelerator)
-            ]);
+            // Load the CLIP model and processor with individual error handling
+            try {
+                console.log('Loading CLIPVisionModelWithProjection...');
+                this.clipModel = await CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator);
+                console.log('CLIPVisionModelWithProjection loaded successfully');
+                
+                console.log('Loading AutoProcessor...');
+                this.clipProcessor = await AutoProcessor.from_pretrained(modelPath, accelerator);
+                console.log('AutoProcessor loaded successfully');
+            } catch (error) {
+                console.error('Model loading error:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    modelPath: modelPath
+                });
+                throw error;
+            }
             
             self.postMessage({ status: 'model_ready' });
         }
