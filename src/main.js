@@ -988,7 +988,8 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
     }
 }
 
-async function generateEmbeddingsForPhotos(photosToProcess) {
+// Core worker management function - processes any array of photos
+async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Preparing to process') {
     // Configurable number of parallel workers
     const NUM_EMBEDDING_WORKERS = 4;
     return new Promise(async (resolve, reject) => {
@@ -999,7 +1000,7 @@ async function generateEmbeddingsForPhotos(photosToProcess) {
             resolve();
             return;
         }
-        updateStatus(`Preparing to process ${totalToProcess} photos...`);
+        updateStatus(`${statusPrefix} ${totalToProcess} photos...`);
         // Worker pool
         const workers = [];
         let processedCount = 0;
@@ -1108,136 +1109,34 @@ async function generateEmbeddingsForPhotos(photosToProcess) {
     });
 }
 
+// High-level function for processing photos that are already selected/filtered
+async function generateEmbeddingsForPhotos(photosToProcess) {
+    return await processPhotosWithWorkers(photosToProcess, 'Preparing to process');
+}
+
+// High-level function for processing photos from a specific folder
 async function generateEmbeddings(folderPath = '/drive/root:', forceReprocess = false) {
-    // Configurable number of parallel workers
-    const NUM_EMBEDDING_WORKERS = 4;
-    return new Promise(async (resolve, reject) => {
-        let photosToProcess;
-        
-        if (forceReprocess) {
-            photosToProcess = await db.getAllPhotosFromFolder(folderPath);
-        } else {
-            photosToProcess = await db.getPhotosWithoutEmbeddingFromFolder(folderPath);
-        }
-        
-        const totalToProcess = photosToProcess.length;
-        if (totalToProcess === 0) {
-            const message = forceReprocess 
-                ? 'No photos found in selected folder.' 
-                : 'All photos in selected folder are already processed.';
-            updateStatus(message, false);
-            startAnalysisButton.disabled = false;
-            resolve();
-            return;
-        }
-        const actionWord = forceReprocess ? 'reprocess' : 'process';
-        updateStatus(`Preparing to ${actionWord} ${totalToProcess} photos from selected folder...`);
-        // Worker pool
-        const workers = [];
-        let processedCount = 0;
-        let modelReadyCount = 0;
-        const objectUrlMap = new Map();
-        let errorOccurred = false;
-        // Queue for photos
-        const photoQueue = [...photosToProcess];
-        // Track which workers are busy
-        const workerBusy = Array(NUM_EMBEDDING_WORKERS).fill(false);
-        // Store promises for worker ready
-        const workerReady = Array(NUM_EMBEDDING_WORKERS).fill(false);
-        // Helper to assign next photo to a worker
-        async function assignNext(workerIdx) {
-            if (photoQueue.length === 0) return;
-            const photo = photoQueue.shift();
-            const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, getAuthToken);
-            if (blobUrl) {
-                objectUrlMap.set(photo.file_id, blobUrl);
-                workers[workerIdx].postMessage({
-                    file_id: photo.file_id,
-                    thumbnail_url: blobUrl
-                });
-                workerBusy[workerIdx] = true;
-            } else {
-                processedCount++;
-                if (processedCount === totalToProcess) {
-                    workers.forEach(w => w.terminate());
-                    updateStatus('Processing finished with some errors.', false);
-                    startAnalysisButton.disabled = false;
-                    resolve();
-                } else {
-                    assignNext(workerIdx);
-                }
-            }
-        }
-        // Worker message handler
-        function makeOnMessage(workerIdx) {
-            return async (event) => {
-                const { file_id, embedding, qualityMetrics, status, error } = event.data;
-                if (status === 'model_loading') {
-                    updateStatus('Loading AI Model... (This may take a moment)');
-                } else if (status === 'model_ready') {
-                    modelReadyCount++;
-                    if (modelReadyCount === NUM_EMBEDDING_WORKERS) {
-                        updateStatus('Model loaded. Starting photo analysis...', true, processedCount, totalToProcess);
-                    }
-                    // Start first task for this worker
-                    assignNext(workerIdx);
-                } else if (status === 'complete') {
-                    processedCount++;
-                    await db.updatePhotoEmbedding(file_id, embedding, qualityMetrics);
-                    // Revoke blob URL
-                    const objectUrl = objectUrlMap.get(file_id);
-                    if (objectUrl) {
-                        URL.revokeObjectURL(objectUrl);
-                        objectUrlMap.delete(file_id);
-                    }
-                    updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
-                    if (processedCount === totalToProcess) {
-                        workers.forEach(w => w.terminate());
-                        updateStatus('All photos processed! Ready for analysis.', false);
-                        startAnalysisButton.disabled = false;
-                        resolve();
-                    } else {
-                        assignNext(workerIdx);
-                    }
-                } else if (status === 'error') {
-                    console.error(`Worker error for file ${file_id}:`, error);
-                    processedCount++;
-                    // Revoke blob URL
-                    const objectUrl = objectUrlMap.get(file_id);
-                    if (objectUrl) {
-                        URL.revokeObjectURL(objectUrl);
-                        objectUrlMap.delete(file_id);
-                    }
-                    if (processedCount === totalToProcess) {
-                        workers.forEach(w => w.terminate());
-                        updateStatus('Processing finished with some errors.', false);
-                        startAnalysisButton.disabled = false;
-                        resolve();
-                    } else {
-                        assignNext(workerIdx);
-                    }
-                }
-            };
-        }
-        // Create workers
-        for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
-            const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-            worker.onmessage = makeOnMessage(i);
-            worker.onerror = (err) => {
-                if (!errorOccurred) {
-                    errorOccurred = true;
-                    workers.forEach(w => w.terminate());
-                    updateStatus(`A critical worker error occurred: ${err.message}`, false);
-                    reject(err);
-                }
-            };
-            workers.push(worker);
-        }
-        // Start all workers (they will load the model and then call assignNext)
-        for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
-            workers[i].postMessage({ type: 'init' });
-        }
-    });
+    let photosToProcess;
+    
+    if (forceReprocess) {
+        photosToProcess = await db.getAllPhotosFromFolder(folderPath);
+    } else {
+        photosToProcess = await db.getPhotosWithoutEmbeddingFromFolder(folderPath);
+    }
+    
+    if (photosToProcess.length === 0) {
+        const message = forceReprocess 
+            ? 'No photos found in selected folder.' 
+            : 'All photos in selected folder are already processed.';
+        updateStatus(message, false);
+        startAnalysisButton.disabled = false;
+        return;
+    }
+    
+    const actionWord = forceReprocess ? 'reprocess' : 'process';
+    const statusPrefix = `Preparing to ${actionWord}`;
+    
+    return await processPhotosWithWorkers(photosToProcess, statusPrefix);
 }
 
 async function refreshResultFolderThumbnails(similarGroups) {

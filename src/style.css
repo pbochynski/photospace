@@ -199,7 +199,11 @@ button:disabled {
 
 /* Date filter panel */
 #date-filter-panel {
-  margin: 1rem 0;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--secondary-color);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
 }
 
 #date-filter-panel label {
