@@ -1,1 +1,0 @@
-Temporary Redirect. Redirecting to /api/resolve-cache/models/openai/clip-vit-base-patch16/57c216476eefef5ab752ec549e440a49ae4ae5f3/merges.txt?%2Fopenai%2Fclip-vit-base-patch16%2Fresolve%2Fmain%2Fmerges.txt=&etag=%2276e821f1b6f0a9709293c3b6b51ed90980b3166b%22

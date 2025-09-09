@@ -9,36 +9,6 @@ env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.useBrowserCache = true;
 
-// Force ONNX backend usage and disable other backends
-env.backends = {
-    onnx: {
-        wasm: {
-            wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/',
-        }
-    }
-};
-
-// Try to completely disable PyTorch backend
-delete env.backends?.pytorch;
-
-// Intercept fetch to handle missing pytorch_model.bin
-const originalFetch = globalThis.fetch;
-globalThis.fetch = async function(url, options) {
-    // If trying to fetch pytorch_model.bin, return a 404 that won't break JSON parsing
-    if (typeof url === 'string' && url.includes('pytorch_model.bin')) {
-        console.log('Intercepted pytorch_model.bin request, returning 404');
-        return new Response('Not Found', { status: 404, statusText: 'Not Found' });
-    }
-    return originalFetch(url, options);
-};
-
-// Debug: Log the base URL for model loading
-console.log('Worker environment:', {
-    location: self.location?.href || 'unknown',
-    origin: self.location?.origin || 'unknown',
-    backends: env.backends
-});
-
 // --- Photo Quality Analysis Functions ---
 
 /**
@@ -156,39 +126,12 @@ class ModelSingleton {
             }
 
             const modelPath = '/models/clip-vit-base-patch16/';
-            
-            console.log('Loading models from:', modelPath);
-            console.log('Full model URL would be:', self.location?.origin + modelPath);
 
-            // Load the CLIP model and processor with individual error handling
-            try {
-                console.log('Loading CLIPVisionModelWithProjection...');
-                // Try to load with explicit ONNX configuration
-                const modelOptions = {
-                    ...accelerator,
-                    // Force ONNX usage by setting specific model files
-                    model_file_name: null, // Let it auto-detect ONNX files
-                    use_external_data_format: false,
-                    // Disable PyTorch model loading
-                    from_tf: false,
-                    from_flax: false,
-                };
-                
-                this.clipModel = await CLIPVisionModelWithProjection.from_pretrained(modelPath, modelOptions);
-                console.log('CLIPVisionModelWithProjection loaded successfully');
-                
-                console.log('Loading AutoProcessor...');
-                this.clipProcessor = await AutoProcessor.from_pretrained(modelPath);
-                console.log('AutoProcessor loaded successfully');
-            } catch (error) {
-                console.error('Model loading error:', error);
-                console.error('Error details:', {
-                    message: error.message,
-                    stack: error.stack,
-                    modelPath: modelPath
-                });
-                throw error;
-            }
+            // Load the CLIP model and processor
+            [this.clipModel, this.clipProcessor] = await Promise.all([
+                CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator),
+                AutoProcessor.from_pretrained(modelPath, accelerator)
+            ]);
             
             self.postMessage({ status: 'model_ready' });
         }
