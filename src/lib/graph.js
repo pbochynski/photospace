@@ -56,6 +56,61 @@ async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
     return response.json();
 }
 
+/**
+ * Fetch photos from a single folder only (non-recursive)
+ * @param {number} scanId - The scan ID to associate with photos
+ * @param {string} folderId - The folder ID to scan
+ * @returns {Promise<number>} - Number of photos processed
+ */
+export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
+    const token = await getAuthToken();
+    if (!token) throw new Error("Authentication token not available.");
+
+    let photoCount = 0;
+    let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+    
+    while (url) {
+        console.log(`Processing single folder ID: ${folderId}`);
+        const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
+        
+        const photosInPage = [];
+        for (const item of response.value) {
+            // Only process photos, skip folders completely
+            if (item.photo && item.thumbnails && item.thumbnails.length > 0) {
+                const folderPath = item.parentReference?.path || '/drive/root:';
+                const fullPath = folderPath === '/drive/root:' ? 
+                    `/drive/root:/${item.name}` : 
+                    `${folderPath}/${item.name}`;
+
+                const photoMetadata = {
+                    file_id: item.id,
+                    name: item.name,
+                    size: item.size,
+                    path: fullPath,
+                    last_modified: item.lastModifiedDateTime,
+                    thumbnail_url: item.thumbnails[0].large?.url || item.thumbnails[0].medium?.url || item.thumbnails[0].small?.url,
+                    photo_taken_ts: item.photo.takenDateTime,
+                    scan_id: scanId
+                };
+
+                photosInPage.push(photoMetadata);
+                photoCount++;
+            }
+        }
+
+        // Save photos to database
+        if (photosInPage.length > 0) {
+            await db.addOrUpdatePhotos(photosInPage);
+        }
+
+        // Check for next page
+        url = response['@odata.nextLink'] || null;
+    }
+
+    console.log(`Processed ${photoCount} photos from folder ${folderId}`);
+    return photoCount;
+}
+
 export async function fetchAllPhotos(scanId, progressCallback, startingFolderId = 'root') {
     const token = await getAuthToken();
     if (!token) throw new Error("Authentication token not available.");

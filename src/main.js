@@ -1,5 +1,5 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
-import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath } from './lib/graph.js';
+import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchPhotosFromSingleFolder } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
 
@@ -1126,6 +1126,54 @@ async function generateEmbeddings(folderPath = '/drive/root:') {
     });
 }
 
+async function refreshResultFolderThumbnails(similarGroups) {
+    try {
+        // Collect unique folder paths from all photos in the results
+        const folderPaths = new Set();
+        similarGroups.forEach(group => {
+            group.photos.forEach(photo => {
+                if (photo.path) {
+                    console.log('Raw photo path:', photo.path); // Debug: show actual photo paths
+                    
+                    // Photo.path already contains just the folder path, no filename
+                    // e.g., "/drive/root:/family/2025" or "/drive/root:/Pictures/Camera Roll/2025"
+                    folderPaths.add(photo.path);
+                    console.log('Using folder path directly:', photo.path); // Debug: show we're using it as-is
+                }
+            });
+        });
+
+        console.log(`Refreshing thumbnails for ${folderPaths.size} folders containing result photos`);
+        console.log('Folder paths to refresh:', Array.from(folderPaths));
+        
+        // Convert folder paths to folder IDs and rescan sequentially (non-recursive)
+        let refreshedCount = 0;
+        for (const folderPath of folderPaths) {
+            try {
+                const folderId = await findFolderIdByPath(folderPath);
+                if (folderId) {
+                    console.log(`Refreshing thumbnails in: ${pathToDisplayName(folderPath)}`);
+                    
+                    // Quick non-recursive scan just to refresh thumbnail URLs
+                    const refreshScanId = Date.now();
+                    const photoCount = await fetchPhotosFromSingleFolder(refreshScanId, folderId);
+                    
+                    refreshedCount++;
+                    console.log(`Refreshed ${refreshedCount}/${folderPaths.size} folders (${photoCount} photos from ${pathToDisplayName(folderPath)})`);
+                }
+            } catch (error) {
+                console.warn(`Failed to refresh folder ${folderPath}:`, error);
+            }
+        }
+        
+        console.log('Background thumbnail refresh completed');
+        updateStatus('Analysis complete! Thumbnail refresh finished.', false);
+    } catch (error) {
+        console.error('Error during background thumbnail refresh:', error);
+        updateStatus('Analysis complete! (Thumbnail refresh failed)', false);
+    }
+}
+
 async function runAnalysis() {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
@@ -1194,9 +1242,15 @@ async function runAnalysis() {
                 updateStatus(`Picking best photos... ${Math.round((processedGroups / similarGroups.length) * 100)}% complete.`, true, 75 + ((processedGroups / similarGroups.length) * 25), 100);
             }
 
+            // Display results immediately
             displayResults(similarGroups);
-            updateStatus('Analysis complete!', false);
+            updateStatus('Analysis complete! Refreshing thumbnails in background...', false);
             startAnalysisButton.disabled = false;
+
+            // Queue thumbnail refresh for result folders in background
+            if (similarGroups.length > 0) {
+                refreshResultFolderThumbnails(similarGroups);
+            }
         }, 100);
 
     } catch (error) {
