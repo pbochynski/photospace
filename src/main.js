@@ -42,19 +42,74 @@ let currentBrowsingFolderId = 'root';
 let folderHistory = []; // Stack for navigation
 
 // --- URL Parameter Functions ---
-function updateURLWithPath(folderPath) {
+function updateURLWithFilters() {
     const url = new URL(window.location);
-    if (!folderPath) {
-        url.searchParams.delete('path');
+    
+    // Update folder path
+    if (selectedFolderPath) {
+        url.searchParams.set('path', selectedFolderPath);
     } else {
-        url.searchParams.set('path', folderPath);
+        url.searchParams.delete('path');
     }
+    
+    // Update date range
+    const dateFrom = dateFromInput.value;
+    const dateTo = dateToInput.value;
+    
+    if (dateFrom) {
+        url.searchParams.set('dateFrom', dateFrom);
+    } else {
+        url.searchParams.delete('dateFrom');
+    }
+    
+    if (dateTo) {
+        url.searchParams.set('dateTo', dateTo);
+    } else {
+        url.searchParams.delete('dateTo');
+    }
+    
     window.history.pushState({}, '', url);
+}
+
+function updateURLWithPath(folderPath) {
+    // Keep existing behavior for backward compatibility
+    selectedFolderPath = folderPath;
+    updateURLWithFilters();
 }
 
 function getPathFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     return urlParams.get('path') || null; // null means no folder filter
+}
+
+function getDateFiltersFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return {
+        dateFrom: urlParams.get('dateFrom') || null,
+        dateTo: urlParams.get('dateTo') || null
+    };
+}
+
+function setDefaultDateRange() {
+    // Set default to last month
+    const today = new Date();
+    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
+    
+    dateFromInput.value = lastMonth.toISOString().split('T')[0];
+    dateToInput.value = today.toISOString().split('T')[0];
+}
+
+function restoreDateFiltersFromURL() {
+    const dateFilters = getDateFiltersFromURL();
+    
+    if (dateFilters.dateFrom || dateFilters.dateTo) {
+        // Restore from URL
+        dateFromInput.value = dateFilters.dateFrom || '';
+        dateToInput.value = dateFilters.dateTo || '';
+    } else {
+        // Set default to last month
+        setDefaultDateRange();
+    }
 }
 
 async function restoreFolderFromURL() {
@@ -67,7 +122,7 @@ async function restoreFolderFromURL() {
                 selectedFolderId = folderId;
                 selectedFolderPath = pathFromURL;
                 selectedFolderDisplayName = pathToDisplayName(pathFromURL);
-                selectedFolderInput.value = selectedFolderDisplayName;
+                selectedFolderInput.value = formatPathForUser(pathFromURL) || 'All folders';
                 updateStatus(`Restored folder filter: ${selectedFolderDisplayName}`, false);
             } else {
                 console.warn('Could not find folder for path:', pathFromURL);
@@ -81,14 +136,17 @@ async function restoreFolderFromURL() {
     } else {
         resetToNoFilter();
     }
+    
+    // Always restore date filters
+    restoreDateFiltersFromURL();
 }
 
 function resetToNoFilter() {
     selectedFolderId = null;
     selectedFolderPath = null;
     selectedFolderDisplayName = 'All folders';
-    selectedFolderInput.value = selectedFolderDisplayName;
-    updateURLWithPath(null);
+    selectedFolderInput.value = 'All folders';
+    updateURLWithFilters();
 }
 
 function pathToDisplayName(path) {
@@ -136,9 +194,70 @@ function clearFolderFilter() {
     updateStatus('Folder filter cleared - will analyze all folders', false);
 }
 
+// Parse user input folder path and convert to internal format
+function parseUserFolderPath(userInput) {
+    if (!userInput || userInput.trim() === '' || userInput === 'All folders') {
+        return null; // No filter
+    }
+    
+    // Remove leading/trailing slashes and spaces
+    const cleanPath = userInput.trim().replace(/^\/+|\/+$/g, '');
+    
+    if (cleanPath === '') {
+        return '/drive/root:'; // Root folder
+    }
+    
+    // Convert user path like "Pictures/Vacation" to "/drive/root:/Pictures/Vacation"
+    return '/drive/root:/' + cleanPath;
+}
+
+// Convert internal path to user-friendly display
+function formatPathForUser(internalPath) {
+    if (!internalPath || internalPath === '/drive/root:') {
+        return ''; // Root or no filter shows as empty
+    }
+    
+    // Convert "/drive/root:/Pictures/Vacation" to "Pictures/Vacation"
+    return internalPath.replace('/drive/root:/', '');
+}
+
+// Handle folder input changes (when user types a path)
+async function handleFolderInputChange() {
+    const userInput = selectedFolderInput.value;
+    
+    if (userInput === 'All folders' || userInput.trim() === '') {
+        clearFolderFilter();
+        return;
+    }
+    
+    try {
+        const internalPath = parseUserFolderPath(userInput);
+        const folderId = await findFolderIdByPath(internalPath);
+        
+        if (folderId) {
+            // Valid path found
+            selectedFolderId = folderId;
+            selectedFolderPath = internalPath;
+            selectedFolderDisplayName = internalPath ? pathToDisplayName(internalPath) : 'OneDrive (Root)';
+            updateURLWithFilters();
+            updateStatus(`Folder filter set: ${selectedFolderDisplayName}`, false);
+        } else {
+            // Invalid path - reset input and show error
+            updateStatus('Invalid folder path. Please check the path or use Browse button.', false);
+            setTimeout(() => {
+                selectedFolderInput.value = selectedFolderPath ? formatPathForUser(selectedFolderPath) : 'All folders';
+            }, 100);
+        }
+    } catch (error) {
+        console.error('Error validating folder path:', error);
+        updateStatus('Error validating folder path', false);
+    }
+}
+
 function clearDateFilter() {
     dateFromInput.value = '';
     dateToInput.value = '';
+    updateURLWithFilters();
     updateStatus('Date filter cleared', false);
 }
 
@@ -360,11 +479,48 @@ function displayResults(groups) {
 
 // --- Folder Browser Functions ---
 
-function showFolderBrowser() {
+async function showFolderBrowser() {
     folderModal.style.display = 'flex';
-    currentBrowsingFolderId = 'root';
+    
+    // Start from currently selected folder or root if none selected
+    const startFolderId = selectedFolderId || 'root';
+    currentBrowsingFolderId = startFolderId;
+    
+    // Build folder history to current location if not root
     folderHistory = [];
-    loadFolders('root');
+    if (selectedFolderId && selectedFolderId !== 'root' && selectedFolderPath) {
+        try {
+            // Parse the path to build history
+            const pathParts = selectedFolderPath.replace('/drive/root:', '').split('/').filter(part => part.length > 0);
+            let currentId = 'root';
+            
+            // Navigate through each path part to build history
+            for (let i = 0; i < pathParts.length - 1; i++) {
+                const partName = pathParts[i];
+                const folders = await fetchFolders(currentId);
+                const foundFolder = folders.find(folder => folder.name === partName);
+                if (foundFolder) {
+                    folderHistory.push({
+                        id: currentId,
+                        name: currentId === 'root' ? 'root' : partName,
+                        path: `/drive/root:/${pathParts.slice(0, i).join('/')}`
+                    });
+                    currentId = foundFolder.id;
+                } else {
+                    // If path is invalid, fall back to root
+                    folderHistory = [];
+                    currentBrowsingFolderId = 'root';
+                    break;
+                }
+            }
+        } catch (error) {
+            console.error('Error building folder history:', error);
+            folderHistory = [];
+            currentBrowsingFolderId = 'root';
+        }
+    }
+    
+    await loadFolders(currentBrowsingFolderId);
 }
 
 function hideFolderBrowser() {
@@ -392,6 +548,12 @@ async function loadFolders(folderId) {
         // Add option to select the current folder (including root)
         const currentFolderItem = document.createElement('div');
         currentFolderItem.className = 'folder-item current-folder';
+        
+        // Highlight if this is the currently selected folder
+        if (selectedFolderId === folderId) {
+            currentFolderItem.classList.add('selected');
+        }
+        
         currentFolderItem.innerHTML = `
             <span class="folder-icon">📂</span>
             <span class="folder-name">• Select this folder (${folderInfo.name === 'root' ? 'OneDrive Root' : folderInfo.name})</span>
@@ -438,6 +600,11 @@ async function loadFolders(folderId) {
             folderItem.className = 'folder-item';
             folderItem.dataset.folderId = folder.id;
             folderItem.dataset.folderName = folder.name;
+            
+            // Highlight if this is the currently selected folder
+            if (selectedFolderId === folder.id) {
+                folderItem.classList.add('selected');
+            }
             
             folderItem.innerHTML = `
                 <span class="folder-icon">📁</span>
@@ -522,7 +689,7 @@ function navigateUp() {
 
 function selectCurrentFolder() {
     // Update the input field and internal state
-    selectedFolderInput.value = selectedFolderDisplayName;
+    selectedFolderInput.value = formatPathForUser(selectedFolderPath) || 'All folders';
     updateStatus(`Selected folder: ${selectedFolderDisplayName}`, false);
     hideFolderBrowser();
 }
@@ -1078,7 +1245,7 @@ async function main() {
 
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
-    browseFolderBtn.addEventListener('click', showFolderBrowser);
+    browseFolderBtn.addEventListener('click', () => showFolderBrowser());
     startScanButton.addEventListener('click', handleScanClick);
     startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
     startAnalysisButton.addEventListener('click', runAnalysis);
@@ -1086,9 +1253,19 @@ async function main() {
     // Filter control event listeners
     clearFolderBtn.addEventListener('click', clearFolderFilter);
     clearDateBtn.addEventListener('click', clearDateFilter);
+    dateFromInput.addEventListener('change', updateURLWithFilters);
+    dateToInput.addEventListener('change', updateURLWithFilters);
+    
+    // Folder input event listeners
+    selectedFolderInput.addEventListener('blur', handleFolderInputChange);
+    selectedFolderInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            handleFolderInputChange();
+        }
+    });
     
     // Folder selector event listeners
-    browseFolderBtn.addEventListener('click', showFolderBrowser);
+    browseFolderBtn.addEventListener('click', () => showFolderBrowser());
     
     // Folder browser event listeners
     folderModalClose.addEventListener('click', hideFolderBrowser);

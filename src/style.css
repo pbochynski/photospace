@@ -103,7 +103,7 @@ button:disabled {
 
 .folder-input-group {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.25rem;
   align-items: center;
 }
 
@@ -112,11 +112,37 @@ button:disabled {
   padding: 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  background: var(--bg-color);
+  background: var(--secondary-color);
   color: var(--text-color);
   font-family: monospace;
   font-size: 0.9rem;
-  cursor: default;
+}
+
+#browse-folder-btn, #clear-folder-btn {
+  background-color: var(--primary-color);
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  min-width: 2.5rem;
+  height: 3rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#clear-folder-btn {
+  background-color: var(--error-color);
+}
+
+#browse-folder-btn:hover {
+  background-color: #63a4ff;
+}
+
+#clear-folder-btn:hover {
+  background-color: #ff6b6b;
 }
 
 /* Date filter panel */
@@ -142,24 +168,71 @@ button:disabled {
   padding: 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  background: var(--bg-color);
+  background: var(--secondary-color);
   color: var(--text-color);
   font-size: 0.9rem;
+  min-width: 150px;
+  color-scheme: dark;
+}
+
+.date-range-group input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  cursor: pointer;
+}
+
+.date-range-group input[type="date"]:focus {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .date-range-group span {
   color: var(--text-color);
   font-weight: 500;
+  padding: 0 0.25rem;
 }
 
-#clear-folder-btn, #clear-date-btn {
+#clear-date-btn {
   background-color: var(--error-color);
-  padding: 0.75rem;
-  font-size: 0.8rem;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  min-width: 2.5rem;
+  height: 3rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-#clear-folder-btn:hover, #clear-date-btn:hover {
+#clear-date-btn:hover {
   background-color: #ff6b6b;
+}
+
+/* Mobile responsiveness for filter panels */
+@media (max-width: 768px) {
+  .folder-input-group,
+  .date-range-group {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  #selected-folder {
+    min-width: 200px;
+    font-size: 0.8rem;
+  }
+  
+  .date-range-group input[type="date"] {
+    min-width: 120px;
+    font-size: 0.8rem;
+  }
+  
+  #browse-folder-btn, #clear-folder-btn, #clear-date-btn {
+    min-width: 2rem;
+    height: 2.5rem;
+    font-size: 0.8rem;
+  }
 }
 
 #selected-folder:focus {

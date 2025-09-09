@@ -26,14 +26,14 @@
             <div id="folder-selector-panel">
                 <label for="selected-folder">Folder Filter (optional):</label>
                 <div class="folder-input-group">
-                    <input type="text" id="selected-folder" readonly value="All folders" placeholder="All folders">
-                    <button id="browse-folder-btn" type="button">📁 Browse</button>
-                    <button id="clear-folder-btn" type="button">✕ Clear</button>
+                    <input type="text" id="selected-folder" value="All folders" placeholder="All folders or enter path like: Pictures/Vacation">
+                    <button id="browse-folder-btn" type="button" title="Browse folders">📁</button>
+                    <button id="clear-folder-btn" type="button" title="Clear filter">✕</button>
                 </div>
             </div>
             
             <div id="date-filter-panel">
-                <label>Date Range Filter (optional):</label>
+                <label for="date-range-inputs">Date Range Filter (optional):</label>
                 <div class="date-range-group">
                     <input type="date" id="date-from" placeholder="From date">
                     <span>to</span>
