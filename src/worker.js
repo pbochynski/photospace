@@ -9,6 +9,15 @@ env.allowLocalModels = true;
 env.allowRemoteModels = false;
 env.useBrowserCache = true;
 
+// Force ONNX backend usage
+env.backends = {
+    onnx: {
+        wasm: {
+            wasmPaths: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/',
+        }
+    }
+};
+
 // Debug: Log the base URL for model loading
 console.log('Worker environment:', {
     location: self.location?.href || 'unknown',
@@ -139,11 +148,19 @@ class ModelSingleton {
             // Load the CLIP model and processor with individual error handling
             try {
                 console.log('Loading CLIPVisionModelWithProjection...');
-                this.clipModel = await CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator);
+                // Explicitly configure to use ONNX models
+                const modelOptions = {
+                    ...accelerator,
+                    // Force ONNX usage
+                    dtype: accelerator.dtype || 'fp32',
+                    device: accelerator.device || 'cpu'
+                };
+                
+                this.clipModel = await CLIPVisionModelWithProjection.from_pretrained(modelPath, modelOptions);
                 console.log('CLIPVisionModelWithProjection loaded successfully');
                 
                 console.log('Loading AutoProcessor...');
-                this.clipProcessor = await AutoProcessor.from_pretrained(modelPath, accelerator);
+                this.clipProcessor = await AutoProcessor.from_pretrained(modelPath);
                 console.log('AutoProcessor loaded successfully');
             } catch (error) {
                 console.error('Model loading error:', error);
