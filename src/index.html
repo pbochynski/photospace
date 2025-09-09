@@ -44,7 +44,16 @@
             
             <div id="controls">
                 <button id="start-scan-button">1. Scan Photos</button>
-                <button id="start-embedding-button">2. Generate Embeddings</button>
+                <div class="embedding-controls">
+                    <button id="start-embedding-button">2. Generate Embeddings</button>
+                    <div class="embedding-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="force-reprocess-checkbox">
+                            <span class="checkbox-custom"></span>
+                            Force reprocess all photos
+                        </label>
+                    </div>
+                </div>
                 <button id="start-analysis-button">3. Analyze & Find Similar Photos</button>
             </div>
 
@@ -58,6 +67,26 @@
     <div id="image-modal" class="modal" style="display:none;">
         <span class="modal-close" id="modal-close">&times;</span>
         <img class="modal-content" id="modal-img" src="" alt="Full Size Photo" />
+        <div class="image-metadata-overlay" id="image-metadata">
+            <div class="metadata-header">
+                <h4 id="photo-name">Photo Details</h4>
+                <button class="metadata-toggle" id="metadata-toggle">📊</button>
+            </div>
+            <div class="metadata-content" id="metadata-content">
+                <div class="metric-row">
+                    <span class="metric-label">Sharpness:</span>
+                    <span class="metric-value" id="sharpness-value">-</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Exposure:</span>
+                    <span class="metric-value" id="exposure-value">-</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Quality Score:</span>
+                    <span class="metric-value" id="quality-score-value">-</span>
+                </div>
+            </div>
+        </div>
     </div>
     
     <!-- Folder Browser Modal -->

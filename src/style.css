@@ -85,6 +85,58 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.embedding-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.embedding-options {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.25rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-color);
+}
+
+.checkbox-label input[type="checkbox"] {
+  display: none;
+}
+
+.checkbox-custom {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-color);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkbox-custom {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkbox-custom::after {
+  content: '✓';
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.checkbox-label:hover .checkbox-custom {
+  border-color: var(--primary-color);
+}
+
 /* Folder Selector Styles */
 #folder-selector-panel {
   margin: 1.5rem 0;
@@ -349,6 +401,30 @@ button:disabled {
   display: block;
 }
 
+.photo-score {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.5rem;
+  line-height: 1.2;
+}
+
+.photo-path {
+  font-weight: normal;
+  opacity: 0.9;
+}
+
+.quality-info {
+  color: var(--success-color);
+  font-weight: bold;
+  margin-top: 0.25rem;
+}
+
+
 .modal {
   display: flex;
   position: fixed;
@@ -381,6 +457,82 @@ button:disabled {
   z-index: 10001;
   text-shadow: 0 2px 8px #000;
 }
+
+/* Image metadata overlay styles */
+.image-metadata-overlay {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 200px;
+  max-width: 300px;
+  color: white;
+  font-size: 0.9rem;
+  z-index: 10002;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metadata-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 8px;
+}
+
+.metadata-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.metadata-toggle {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background-color 0.2s;
+}
+
+.metadata-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.metadata-content {
+  transition: all 0.3s ease;
+}
+
+.metadata-content.collapsed {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.metric-label {
+  color: #ccc;
+  font-weight: 500;
+}
+
+.metric-value {
+  color: #fff;
+  font-weight: bold;
+  text-align: right;
+}
+
 
 .recommended-badge {
   position: absolute;

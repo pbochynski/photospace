@@ -82,7 +82,7 @@ export function calculateQualityScore(sharpness, exposure) {
     }
     
     // Weighted combination: sharpness is more important than exposure
-    return (sharpnessScore * 0.7) + (exposureScore * 0.3);
+        return (sharpnessScore * 0.7) + (exposureScore * 0.3);
 }
 
 /**

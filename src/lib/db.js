@@ -204,6 +204,37 @@ PhotoDB.prototype.getPhotosWithoutEmbeddingFromFolder = async function(folderPat
         request.onerror = (event) => reject(event.target.error);
     });
 };
+
+PhotoDB.prototype.getAllPhotosFromFolder = async function(folderPath) {
+    const tx = this.db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    return new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => {
+            const allPhotos = request.result;
+            // Filter photos based on folder path
+            const folderPhotos = folderPath === '/drive/root:' 
+                ? allPhotos // If root, include all photos
+                : allPhotos.filter(photo => {
+                    // Check if photo path starts with the selected folder path
+                    return photo.path && photo.path.startsWith(folderPath);
+                });
+            resolve(folderPhotos);
+        };
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
+
+PhotoDB.prototype.getAllPhotos = async function() {
+    const tx = this.db.transaction('photos', 'readonly');
+    const store = tx.objectStore('photos');
+    return new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => reject(event.target.error);
+    });
+};
+
 PhotoDB.prototype.getAllPhotosWithEmbedding = async function() {
     const tx = this.db.transaction('photos', 'readonly');
     const store = tx.objectStore('photos');

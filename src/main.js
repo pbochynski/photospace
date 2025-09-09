@@ -19,6 +19,9 @@ const selectedFolderInput = document.getElementById('selected-folder');
 const browseFolderBtn = document.getElementById('browse-folder-btn');
 const clearFolderBtn = document.getElementById('clear-folder-btn');
 
+// Embedding options
+const forceReprocessCheckbox = document.getElementById('force-reprocess-checkbox');
+
 // Date filter elements
 const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
@@ -127,25 +130,37 @@ async function restoreFolderFromURL() {
             } else {
                 console.warn('Could not find folder for path:', pathFromURL);
                 // Reset to no filter if folder not found
-                resetToNoFilter();
+                resetFolderToNoFilter();
             }
         } catch (error) {
             console.error('Error restoring folder from URL:', error);
-            resetToNoFilter();
+            resetFolderToNoFilter();
         }
     } else {
-        resetToNoFilter();
+        resetFolderToNoFilter();
     }
-    
-    // Always restore date filters
-    restoreDateFiltersFromURL();
 }
 
-function resetToNoFilter() {
+function resetFolderToNoFilter() {
     selectedFolderId = null;
     selectedFolderPath = null;
     selectedFolderDisplayName = 'All folders';
     selectedFolderInput.value = 'All folders';
+}
+
+async function restoreFiltersFromURL() {
+    // Restore folder filter
+    await restoreFolderFromURL();
+    
+    // Restore date filters
+    restoreDateFiltersFromURL();
+    
+    // Update URL to ensure consistency
+    updateURLWithFilters();
+}
+
+function resetToNoFilter() {
+    resetFolderToNoFilter();
     updateURLWithFilters();
 }
 
@@ -360,7 +375,8 @@ function displayResults(groups) {
                     <img src="${p.thumbnail_url}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
                     ${recommendedBadge}
                     <div class="photo-score">
-                        ${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}
+                        <div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}</div>
+                        ${p.quality_score ? `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>` : ''}
                     </div>
                 </label>
             `;
@@ -420,8 +436,14 @@ function displayResults(groups) {
             const modal = document.getElementById('image-modal');
             const modalImg = document.getElementById('modal-img');
             
-            // Get the file ID
+            // Get the file ID and photo data
             const fileId = img.getAttribute('data-file-id');
+            const groupIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-group-idx'));
+            const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
+            const photo = groups[groupIdx].photos[photoIdx];
+            
+            // Populate metadata overlay
+            populateImageMetadata(photo);
             
             if (fileId) {
                 // Step 1: Show modal immediately with thumbnail (already loaded)
@@ -455,12 +477,24 @@ function displayResults(groups) {
         const modal = document.getElementById('image-modal');
         const modalImg = document.getElementById('modal-img');
         const closeBtn = document.getElementById('modal-close');
+        const metadataToggle = document.getElementById('metadata-toggle');
+        const metadataContent = document.getElementById('metadata-content');
+        
+        // Metadata toggle functionality
+        metadataToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            metadataContent.classList.toggle('collapsed');
+            metadataToggle.textContent = metadataContent.classList.contains('collapsed') ? '📊' : '📈';
+        });
         
         const closeModal = () => {
             // Trigger custom 'hide' event for cleanup
             modal.dispatchEvent(new Event('hide'));
             modal.style.display = 'none';
             modalImg.src = '';
+            // Reset metadata overlay
+            metadataContent.classList.remove('collapsed');
+            metadataToggle.textContent = '📊';
         };
         
         closeBtn.addEventListener('click', closeModal);
@@ -475,6 +509,60 @@ function displayResults(groups) {
             }
         });
     }
+}
+
+// Function to populate image metadata overlay
+function populateImageMetadata(photo) {
+    const photoName = document.getElementById('photo-name');
+    const sharpnessValue = document.getElementById('sharpness-value');
+    const exposureValue = document.getElementById('exposure-value');
+    const qualityScoreValue = document.getElementById('quality-score-value');
+    
+    // Set photo name
+    photoName.textContent = photo.name || 'Unknown Photo';
+    
+    // Display quality metrics
+    if (photo.sharpness !== undefined) {
+        sharpnessValue.textContent = `${Math.round(photo.sharpness)}`;
+    } else {
+        sharpnessValue.textContent = 'N/A';
+    }
+    
+    if (photo.exposure !== undefined) {
+        const exposurePercent = Math.round(photo.exposure * 100);
+        exposureValue.textContent = `${exposurePercent}%`;
+        
+        // Color code exposure (green for good, yellow for ok, red for poor)
+        if (exposurePercent >= 40 && exposurePercent <= 60) {
+            exposureValue.style.color = '#4caf50'; // Good exposure
+        } else if (exposurePercent >= 25 && exposurePercent <= 75) {
+            exposureValue.style.color = '#ffeb3b'; // OK exposure
+        } else {
+            exposureValue.style.color = '#f44336'; // Poor exposure
+        }
+    } else {
+        exposureValue.textContent = 'N/A';
+        exposureValue.style.color = '#fff';
+    }
+    
+    if (photo.quality_score !== undefined) {
+        const qualityPercent = Math.round(photo.quality_score * 100);
+        qualityScoreValue.textContent = `${qualityPercent}%`;
+        
+        // Color code quality score
+        if (qualityPercent >= 70) {
+            qualityScoreValue.style.color = '#4caf50'; // High quality
+        } else if (qualityPercent >= 40) {
+            qualityScoreValue.style.color = '#ffeb3b'; // Medium quality
+        } else {
+            qualityScoreValue.style.color = '#f44336'; // Low quality
+        }
+    } else {
+        qualityScoreValue.textContent = 'N/A';
+        qualityScoreValue.style.color = '#fff';
+    }
+    
+    
 }
 
 // --- Folder Browser Functions ---
@@ -724,7 +812,7 @@ async function runPhotoScan() {
         
         // --- STEP 4: Generate embeddings for only the new files ---
         // generateEmbeddings() will automatically find files with embedding_status = 0
-        await generateEmbeddings(scanFolderPath);
+        await generateEmbeddings(scanFolderPath, false); // Never force reprocess during scan
 
     } catch (error) {
         console.error('Scan failed:', error);
@@ -761,11 +849,23 @@ async function runEmbeddingGeneration() {
     startAnalysisButton.disabled = true;
 
     try {
-        // Get all photos that need embeddings (no folder filter applied here yet)
-        const photosToProcess = await db.getPhotosWithoutEmbedding();
+        const forceReprocess = forceReprocessCheckbox.checked;
+        let photosToProcess;
+        
+        if (forceReprocess) {
+            // Get all photos (regardless of embedding status)
+            photosToProcess = await db.getAllPhotos();
+            updateStatus('Force reprocessing enabled - will regenerate embeddings for all photos.', false);
+        } else {
+            // Get only photos that need embeddings (existing behavior)
+            photosToProcess = await db.getPhotosWithoutEmbedding();
+        }
         
         if (photosToProcess.length === 0) {
-            updateStatus('All photos already have embeddings.', false);
+            const message = forceReprocess 
+                ? 'No photos found to process.' 
+                : 'All photos already have embeddings.';
+            updateStatus(message, false);
             startEmbeddingButton.disabled = false;
             return;
         }
@@ -781,7 +881,7 @@ async function runEmbeddingGeneration() {
         
         // Show filter summary
         const dateFilter = getDateFilter();
-        let filterSummary = `Generating embeddings for ${filteredPhotos.length} photos`;
+        let filterSummary = `${forceReprocess ? 'Regenerating' : 'Generating'} embeddings for ${filteredPhotos.length} photos`;
         if (selectedFolderPath || dateFilter) {
             filterSummary += ' (filtered';
             if (selectedFolderPath) filterSummary += ` by folder: ${selectedFolderDisplayName}`;
@@ -791,6 +891,9 @@ async function runEmbeddingGeneration() {
                 filterSummary += ` by date: ${fromStr} to ${toStr}`;
             }
             filterSummary += ')';
+        }
+        if (forceReprocess) {
+            filterSummary += ' [FORCE REPROCESS]';
         }
         updateStatus(filterSummary, false);
         
@@ -1005,19 +1108,30 @@ async function generateEmbeddingsForPhotos(photosToProcess) {
     });
 }
 
-async function generateEmbeddings(folderPath = '/drive/root:') {
+async function generateEmbeddings(folderPath = '/drive/root:', forceReprocess = false) {
     // Configurable number of parallel workers
     const NUM_EMBEDDING_WORKERS = 4;
     return new Promise(async (resolve, reject) => {
-        const photosToProcess = await db.getPhotosWithoutEmbeddingFromFolder(folderPath);
+        let photosToProcess;
+        
+        if (forceReprocess) {
+            photosToProcess = await db.getAllPhotosFromFolder(folderPath);
+        } else {
+            photosToProcess = await db.getPhotosWithoutEmbeddingFromFolder(folderPath);
+        }
+        
         const totalToProcess = photosToProcess.length;
         if (totalToProcess === 0) {
-            updateStatus('All photos in selected folder are already processed.', false);
+            const message = forceReprocess 
+                ? 'No photos found in selected folder.' 
+                : 'All photos in selected folder are already processed.';
+            updateStatus(message, false);
             startAnalysisButton.disabled = false;
             resolve();
             return;
         }
-        updateStatus(`Preparing to process ${totalToProcess} new photos from selected folder...`);
+        const actionWord = forceReprocess ? 'reprocess' : 'process';
+        updateStatus(`Preparing to ${actionWord} ${totalToProcess} photos from selected folder...`);
         // Worker pool
         const workers = [];
         let processedCount = 0;
@@ -1294,7 +1408,7 @@ async function main() {
         await db.init();
         
         // Restore folder selection from URL if present
-        await restoreFolderFromURL();
+        await restoreFiltersFromURL();
     }
 
     // STEP 4: Add event listeners now that MSAL is ready

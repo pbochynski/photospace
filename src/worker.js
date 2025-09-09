@@ -1,6 +1,9 @@
 // Import the correct, higher-level components for vision-language models.
 import { AutoProcessor, CLIPVisionModelWithProjection, RawImage, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2';
 
+// Face detection will be done using simple image analysis
+// MediaPipe requires DOM access which is not available in web workers
+
 // --- Final Configuration ---
 env.allowLocalModels = true;
 env.allowRemoteModels = false;
@@ -89,22 +92,22 @@ function calculateQualityScore(sharpness, exposure) {
         // Poor range: <0.2 or >0.8
         exposureScore = Math.max(0.1, 0.6 - (distance - 0.3) * 1.5); // Linear decrease with minimum 0.1
     }
-    
-    // Weighted combination: sharpness is more important than exposure
-    return (sharpnessScore * 0.7) + (exposureScore * 0.3);
+        return (sharpnessScore * 0.7) + (exposureScore * 0.3);
 }
 
 
-// Singleton pattern to ensure the model is loaded only once.
-class CLIPSingleton {
-    static model = null;
-    static processor = null;
+
+// Singleton pattern to ensure the models are loaded only once.
+class ModelSingleton {
+    static clipModel = null;
+    static clipProcessor = null;
 
     static async getInstance() {
-        if (this.model === null) {
+        if (this.clipModel === null) {
             self.postMessage({ status: 'model_loading' });
 
-            // --- THE FIX: Re-introduce WebGPU detection and configuration ---
+            // --- Load CLIP Model ---
+            // Re-introduce WebGPU detection and configuration
             let accelerator;
             if (navigator.gpu) {
                 try {
@@ -124,16 +127,18 @@ class CLIPSingleton {
 
             const modelPath = '/models/clip-vit-base-patch16/';
 
-            // Load the model and the processor.
-            [this.model, this.processor] = await Promise.all([
+            // Load the CLIP model and processor
+            [this.clipModel, this.clipProcessor] = await Promise.all([
                 CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator),
-                // The processor doesn't run on the GPU, so it doesn't need the config.
                 AutoProcessor.from_pretrained(modelPath, accelerator)
             ]);
             
             self.postMessage({ status: 'model_ready' });
         }
-        return { model: this.model, processor: this.processor };
+        return { 
+            clipModel: this.clipModel, 
+            clipProcessor: this.clipProcessor
+        };
     }
 }
 
@@ -141,7 +146,7 @@ self.onmessage = async (event) => {
     // Handle worker init message for model loading
     if (event.data && event.data.type === 'init') {
         try {
-            await CLIPSingleton.getInstance();
+            await ModelSingleton.getInstance();
             // Model loading status is posted inside getInstance()
         } catch (error) {
             self.postMessage({ status: 'error', error: error.message });
@@ -152,22 +157,24 @@ self.onmessage = async (event) => {
     const { file_id, thumbnail_url } = event.data;
     console.log(`Worker started: ${JSON.stringify(event.data)}`);
     try {
-        const { model, processor } = await CLIPSingleton.getInstance();
+        const { clipModel, clipProcessor } = await ModelSingleton.getInstance();
         
-
         if (!thumbnail_url) throw new Error("Thumbnail URL is missing.");
 
         const image = await RawImage.fromURL(thumbnail_url);
         
-        // Calculate quality metrics using the RawImage data
+        // Calculate basic quality metrics using the RawImage data
         const sharpness = estimateSharpness(image);
         const exposure = estimateExposure(image);
-        const qualityScore = calculateQualityScore(sharpness, exposure);
         
+        
+        // Calculate final quality score including face metrics
+        const qualityScore = calculateQualityScore(sharpness, exposure);
+
         // Generate embedding
-        const image_inputs = await processor(image); 
-        const { image_embeds } = await model(image_inputs);
-        const embedding = image_embeds.normalize().tolist()[0]
+        const image_inputs = await clipProcessor(image); 
+        const { image_embeds } = await clipModel(image_inputs);
+        const embedding = image_embeds.normalize().tolist()[0];
 
         self.postMessage({
             status: 'complete',
