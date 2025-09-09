@@ -73,7 +73,7 @@ web_modules
 
 # Gatsby files
 .cache/
-public
+# public - commented out to allow model files with Git LFS
 
 # Next.js files
 .next/
