@@ -171,6 +171,104 @@ class PhotoDB {
             }
         });
     }
+
+    // Get all photos with embeddings for export
+    async getEmbeddingExportData() {
+        const tx = this.db.transaction('photos', 'readonly');
+        const store = tx.objectStore('photos');
+        const index = store.index('by_embedding_status');
+        return new Promise((resolve, reject) => {
+            const request = index.getAll(1);
+            request.onsuccess = () => {
+                const photos = request.result;
+                // Return only necessary data for export
+                const exportData = photos.map(photo => ({
+                    file_id: photo.file_id,
+                    embedding: photo.embedding,
+                    sharpness: photo.sharpness,
+                    exposure: photo.exposure,
+                    quality_score: photo.quality_score,
+                    photo_taken_ts: photo.photo_taken_ts,
+                    name: photo.name,
+                    path: photo.path
+                }));
+                resolve(exportData);
+            };
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
+
+    // Import embedding data with conflict resolution
+    async importEmbeddingData(embeddingArray, conflictStrategy = 'skip') {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readwrite');
+            const store = tx.objectStore('photos');
+            
+            let imported = 0, skipped = 0, updated = 0;
+            let processed = 0;
+            const total = embeddingArray.length;
+            
+            if (total === 0) {
+                resolve({ imported, skipped, updated });
+                return;
+            }
+            
+            embeddingArray.forEach(embeddingData => {
+                const getRequest = store.get(embeddingData.file_id);
+                
+                getRequest.onsuccess = () => {
+                    const existingPhoto = getRequest.result;
+                    
+                    if (existingPhoto) {
+                        if (existingPhoto.embedding && conflictStrategy === 'skip') {
+                            skipped++;
+                        } else {
+                            // Update photo with embedding data
+                            existingPhoto.embedding = embeddingData.embedding;
+                            existingPhoto.embedding_status = 1;
+                            existingPhoto.sharpness = embeddingData.sharpness;
+                            existingPhoto.exposure = embeddingData.exposure;
+                            existingPhoto.quality_score = embeddingData.quality_score;
+                            
+                            store.put(existingPhoto);
+                            if (existingPhoto.embedding) {
+                                updated++;
+                            } else {
+                                imported++;
+                            }
+                        }
+                    }
+                    // If photo doesn't exist, skip it (not in current scan)
+                    
+                    processed++;
+                    if (processed === total) {
+                        resolve({ imported, skipped, updated });
+                    }
+                };
+                
+                getRequest.onerror = () => {
+                    processed++;
+                    if (processed === total) {
+                        resolve({ imported, skipped, updated });
+                    }
+                };
+            });
+        });
+    }
+
+    // Get photo by ID
+    async getPhotoById(fileId) {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readonly');
+            const store = tx.objectStore('photos');
+            const request = store.get(fileId);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
     
     // --- Unchanged functions from before ---
     async updatePhotoEmbedding(file_id, embedding) { /* ... same as before ... */ }

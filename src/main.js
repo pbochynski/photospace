@@ -2,6 +2,8 @@ import { msalInstance, login, getAuthToken } from './lib/auth.js';
 import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchPhotosFromSingleFolder } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
+import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } from './lib/embeddingExport.js';
+import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, validateEmbeddingFile } from './lib/embeddingImport.js';
 
 // --- DOM Elements ---
 const loginButton = document.getElementById('login-button');
@@ -33,6 +35,31 @@ const sortMethodSelect = document.getElementById('sort-method');
 const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
 const clearDateBtn = document.getElementById('clear-date-btn');
+
+// Embedding backup elements
+const exportEmbeddingsBtn = document.getElementById('export-embeddings-btn');
+const importEmbeddingsBtn = document.getElementById('import-embeddings-btn');
+const exportInfo = document.getElementById('export-info');
+const importInfo = document.getElementById('import-info');
+const embeddingFilesList = document.getElementById('embedding-files-list');
+const fileListContainer = document.getElementById('file-list-container');
+
+// Import modal elements
+const importModal = document.getElementById('import-modal');
+const importModalClose = document.getElementById('import-modal-close');
+const importLoading = document.getElementById('import-loading');
+const importFileSelection = document.getElementById('import-file-selection');
+const importFileList = document.getElementById('import-file-list');
+const importOptions = document.querySelector('.import-options');
+const conflictStrategySelect = document.getElementById('conflict-strategy');
+const confirmImportBtn = document.getElementById('confirm-import-btn');
+const cancelImportBtn = document.getElementById('cancel-import-btn');
+const importProgress = document.getElementById('import-progress');
+const importProgressBar = document.getElementById('import-progress-bar');
+const importStatus = document.getElementById('import-status');
+const importResults = document.getElementById('import-results');
+const importSummary = document.getElementById('import-summary');
+const closeImportBtn = document.getElementById('close-import-btn');
 
 // Folder browser elements
 const folderModal = document.getElementById('folder-modal');
@@ -907,6 +934,9 @@ async function runEmbeddingGeneration() {
         updateStatus(filterSummary, false);
         
         await generateEmbeddingsForPhotos(filteredPhotos);
+        
+        // Refresh backup panel to enable export button if embeddings were generated
+        await initializeBackupPanel();
     } catch (error) {
         console.error('Embedding generation failed:', error);
         updateStatus(`Error during embedding generation: ${error.message}`, false);
@@ -1469,7 +1499,268 @@ async function main() {
             hideFolderBrowser();
         }
     });
+    
+    // Backup functionality event listeners
+    exportEmbeddingsBtn.addEventListener('click', handleExportEmbeddings);
+    importEmbeddingsBtn.addEventListener('click', handleImportEmbeddings);
+    
+    // Import modal event listeners
+    importModalClose.addEventListener('click', closeImportModal);
+    cancelImportBtn.addEventListener('click', closeImportModal);
+    confirmImportBtn.addEventListener('click', performImport);
+    closeImportBtn.addEventListener('click', closeImportModal);
+    
+    // Close import modal on outside click
+    importModal.addEventListener('click', (e) => {
+        if (e.target === importModal) {
+            closeImportModal();
+        }
+    });
+    
+    // Close import modal on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && importModal.style.display === 'flex') {
+            closeImportModal();
+        }
+    });
+    
+    // Initialize backup panel
+    await initializeBackupPanel();
 }
+
+// Backup functionality
+async function handleExportEmbeddings() {
+    try {
+        exportEmbeddingsBtn.disabled = true;
+        updateStatus('Preparing embeddings for export...', true);
+        
+        const result = await exportEmbeddingsToOneDrive();
+        
+        updateStatus(`Successfully exported ${result.embeddingCount} embeddings (${result.fileSizeMB} MB) to OneDrive`, false);
+        
+        // Update export info
+        exportInfo.textContent = `Last export: ${result.embeddingCount} embeddings (${result.fileSizeMB} MB)`;
+        
+    } catch (error) {
+        console.error('Export failed:', error);
+        
+        // Check if it's because there are no embeddings
+        if (error.message.includes('No embeddings found to export')) {
+            updateStatus('No embeddings to export yet. Generate embeddings first, then try exporting again.', false);
+        } else {
+            updateStatus(`Export failed: ${error.message}`, false);
+        }
+    } finally {
+        exportEmbeddingsBtn.disabled = false;
+    }
+}
+
+async function handleImportEmbeddings() {
+    try {
+        importModal.style.display = 'flex';
+        showImportSection('loading');
+        
+        const files = await listAvailableEmbeddingFiles();
+        
+        if (files.length === 0) {
+            showImportSection('file-selection');
+            importFileList.innerHTML = '<p>No embedding files found on OneDrive.</p>';
+            return;
+        }
+        
+        displayImportFileList(files);
+        showImportSection('file-selection');
+        
+    } catch (error) {
+        console.error('Failed to load import files:', error);
+        alert(`Failed to load import files: ${error.message}`);
+        closeImportModal();
+    }
+}
+
+function displayImportFileList(files) {
+    importFileList.innerHTML = '';
+    
+    files.forEach(file => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+        fileItem.dataset.fileId = file.id;
+        
+        const formatDate = (dateStr) => new Date(dateStr).toLocaleString();
+        const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+        
+        fileItem.innerHTML = `
+            <div class="file-info">
+                <div class="file-name">${file.name}</div>
+                <div class="file-meta">
+                    ${file.embeddingCount} embeddings • ${formatSize(file.size)} • ${formatDate(file.createdDateTime)}
+                    ${file.hasValidFormat ? '' : ' • ⚠️ Unknown format'}
+                </div>
+            </div>
+            <div class="file-actions">
+                <button type="button" onclick="deleteImportFile('${file.id}', this)">Delete</button>
+            </div>
+        `;
+        
+        fileItem.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            
+            // Clear previous selection
+            document.querySelectorAll('.file-item').forEach(item => item.classList.remove('selected'));
+            
+            // Select this item
+            fileItem.classList.add('selected');
+            
+            // Show import options
+            importOptions.style.display = 'block';
+            confirmImportBtn.disabled = false;
+            confirmImportBtn.dataset.fileId = file.id;
+        });
+        
+        importFileList.appendChild(fileItem);
+    });
+}
+
+async function deleteImportFile(fileId, buttonElement) {
+    if (!confirm('Are you sure you want to delete this embedding file?')) {
+        return;
+    }
+    
+    try {
+        buttonElement.disabled = true;
+        buttonElement.textContent = 'Deleting...';
+        
+        await deleteEmbeddingFileFromOneDrive(fileId);
+        
+        // Remove from UI
+        buttonElement.closest('.file-item').remove();
+        
+        // Hide options if this was the selected file
+        if (confirmImportBtn.dataset.fileId === fileId) {
+            importOptions.style.display = 'none';
+            confirmImportBtn.disabled = true;
+        }
+        
+    } catch (error) {
+        console.error('Delete failed:', error);
+        alert(`Failed to delete file: ${error.message}`);
+        buttonElement.disabled = false;
+        buttonElement.textContent = 'Delete';
+    }
+}
+
+async function performImport() {
+    const fileId = confirmImportBtn.dataset.fileId;
+    const conflictStrategy = conflictStrategySelect.value;
+    
+    if (!fileId) {
+        alert('No file selected');
+        return;
+    }
+    
+    try {
+        showImportSection('progress');
+        importStatus.textContent = 'Downloading and processing embeddings...';
+        
+        const result = await importEmbeddingsFromOneDrive(fileId, conflictStrategy);
+        
+        // Show results
+        importSummary.innerHTML = `
+            <div class="summary-item">
+                <span class="label">Source Export Date:</span>
+                <span class="value">${new Date(result.sourceMetadata.exportDate).toLocaleString()}</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Total in File:</span>
+                <span class="value">${result.sourceMetadata.embeddingCount}</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Newly Imported:</span>
+                <span class="value">${result.imported}</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Updated Existing:</span>
+                <span class="value">${result.updated}</span>
+            </div>
+            <div class="summary-item">
+                <span class="label">Skipped:</span>
+                <span class="value">${result.skipped}</span>
+            </div>
+        `;
+        
+        showImportSection('results');
+        
+        // Update import info in main panel
+        importInfo.textContent = `Last import: ${result.imported + result.updated} embeddings imported/updated`;
+        
+    } catch (error) {
+        console.error('Import failed:', error);
+        alert(`Import failed: ${error.message}`);
+        showImportSection('file-selection');
+    }
+}
+
+function showImportSection(section) {
+    // Hide all sections
+    importLoading.style.display = 'none';
+    importFileSelection.style.display = 'none';
+    importProgress.style.display = 'none';
+    importResults.style.display = 'none';
+    
+    // Show selected section
+    document.getElementById(`import-${section}`).style.display = 'block';
+}
+
+function closeImportModal() {
+    importModal.style.display = 'none';
+    
+    // Reset modal state
+    importOptions.style.display = 'none';
+    confirmImportBtn.disabled = true;
+    confirmImportBtn.removeAttribute('data-file-id');
+    
+    // Clear selections
+    document.querySelectorAll('.file-item').forEach(item => item.classList.remove('selected'));
+}
+
+async function initializeBackupPanel() {
+    try {
+        // Always enable the export button - user might have embeddings from previous sessions
+        exportEmbeddingsBtn.disabled = false;
+        
+        // Check if we have embeddings to show accurate info
+        const sizeEstimate = await estimateExportSize();
+        
+        if (sizeEstimate.embeddingCount > 0) {
+            exportInfo.textContent = `Ready to export: ${sizeEstimate.embeddingCount} embeddings (~${sizeEstimate.estimatedSizeMB} MB)`;
+        } else {
+            exportInfo.textContent = 'Export will include any existing embeddings (may be empty if no embeddings generated yet)';
+        }
+        
+        // Show last export info if available
+        const lastExport = await getLastExportInfo();
+        if (lastExport) {
+            const date = new Date(lastExport.date).toLocaleString();
+            exportInfo.textContent += ` • Last export: ${date}`;
+        }
+        
+        // Show last import info if available
+        const lastImport = await getLastImportInfo();
+        if (lastImport) {
+            const date = new Date(lastImport.date).toLocaleString();
+            importInfo.textContent = `Last import: ${lastImport.imported + lastImport.updated} embeddings • ${date}`;
+        }
+        
+    } catch (error) {
+        console.error('Error initializing backup panel:', error);
+        // Even on error, keep export button enabled
+        exportEmbeddingsBtn.disabled = false;
+        exportInfo.textContent = 'Export available (click to check for embeddings)';
+    }
+}
+
+// Make deleteImportFile available globally for onclick handlers
+window.deleteImportFile = deleteImportFile;
 
 // Start the application
 main();

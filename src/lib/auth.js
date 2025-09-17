@@ -38,7 +38,7 @@ const msalConfig = {
 export const msalInstance = new PublicClientApplication(msalConfig);
 
 const loginRequest = {
-    scopes: ["User.Read", "Files.Read.All"]
+    scopes: ["User.Read", "Files.ReadWrite.All"]
 };
 
 export async function login() {
@@ -67,7 +67,7 @@ export async function getAuthToken() {
     }
 
     const request = {
-        scopes: ["Files.Read.All"],
+        scopes: ["Files.ReadWrite.All"],
         account: account
     };
 

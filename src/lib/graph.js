@@ -298,3 +298,180 @@ export async function getFolderPath(folderId = 'root') {
         return '/drive/root:';
     }
 }
+
+/**
+ * Upload a file to OneDrive in the app-specific folder
+ * @param {string} fileName - Name of the file to create
+ * @param {string} fileContent - Content of the file (JSON string)
+ * @param {string} folderPath - Folder path (default: /Apps/Photospace)
+ * @returns {Promise<Object>} - File upload result
+ */
+export async function uploadFileToOneDrive(fileName, fileContent, folderPath = '/Apps/Photospace') {
+    try {
+        const token = await getAuthToken();
+        
+        // First, ensure the folder exists
+        await createAppFolder();
+        
+        const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:${folderPath}/${fileName}:/content`;
+        
+        const response = await fetchWithAutoRefresh(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: fileContent
+        }, getAuthToken);
+        
+        return response;
+    } catch (error) {
+        console.error('Error uploading file to OneDrive:', error);
+        throw error;
+    }
+}
+
+/**
+ * Download a file from OneDrive by file ID
+ * @param {string} fileId - The OneDrive file ID
+ * @returns {Promise<string>} - File content as string
+ */
+export async function downloadFileFromOneDrive(fileId) {
+    try {
+        const token = await getAuthToken();
+        const downloadUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`;
+        
+        const response = await fetch(downloadUrl, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to download file: ${response.statusText}`);
+        }
+        
+        return await response.text();
+    } catch (error) {
+        console.error('Error downloading file from OneDrive:', error);
+        throw error;
+    }
+}
+
+/**
+ * List embedding files in the app folder
+ * @returns {Promise<Array>} - Array of embedding files
+ */
+export async function listEmbeddingFiles() {
+    try {
+        const token = await getAuthToken();
+        const listUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/Apps/Photospace:/children?$filter=startswith(name,'photospace_embeddings_')`;
+        
+        const response = await fetchWithAutoRefresh(listUrl, {}, getAuthToken);
+        
+        return response.value.map(file => ({
+            id: file.id,
+            name: file.name,
+            size: file.size,
+            createdDateTime: file.createdDateTime,
+            lastModifiedDateTime: file.lastModifiedDateTime
+        }));
+    } catch (error) {
+        // If folder doesn't exist, return empty array
+        if (error.message.includes('404')) {
+            return [];
+        }
+        console.error('Error listing embedding files:', error);
+        throw error;
+    }
+}
+
+/**
+ * Delete an embedding file from OneDrive
+ * @param {string} fileId - The file ID to delete
+ * @returns {Promise<void>}
+ */
+export async function deleteEmbeddingFile(fileId) {
+    try {
+        const token = await getAuthToken();
+        const deleteUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}`;
+        
+        await fetchWithAutoRefresh(deleteUrl, {
+            method: 'DELETE'
+        }, getAuthToken);
+    } catch (error) {
+        console.error('Error deleting embedding file:', error);
+        throw error;
+    }
+}
+
+/**
+ * Create the app-specific folder if it doesn't exist
+ * @returns {Promise<void>}
+ */
+async function createAppFolder() {
+    try {
+        const token = await getAuthToken();
+        
+        // Try to get the Photospace folder first
+        try {
+            const checkUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/Apps/Photospace`;
+            await fetchWithAutoRefresh(checkUrl, {}, getAuthToken);
+            return; // Folder exists
+        } catch (error) {
+            // Folder doesn't exist, we need to create it
+            console.log('Apps/Photospace folder does not exist, creating it...');
+        }
+        
+        // First, try to create or ensure Apps folder exists
+        let appsFolder;
+        try {
+            // Try to get existing Apps folder
+            const appsUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/Apps`;
+            appsFolder = await fetchWithAutoRefresh(appsUrl, {}, getAuthToken);
+        } catch (error) {
+            // Apps folder doesn't exist, create it
+            console.log('Apps folder does not exist, creating it...');
+            const createAppsUrl = `https://graph.microsoft.com/v1.0/me/drive/root/children`;
+            
+            appsFolder = await fetchWithAutoRefresh(createAppsUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: 'Apps',
+                    folder: {},
+                    '@microsoft.graph.conflictBehavior': 'replace'
+                })
+            }, getAuthToken);
+        }
+        
+        // Now create Photospace subfolder inside Apps
+        const createPhotospaceUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${appsFolder.id}/children`;
+        
+        await fetchWithAutoRefresh(createPhotospaceUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: 'Photospace',
+                folder: {},
+                '@microsoft.graph.conflictBehavior': 'replace'
+            })
+        }, getAuthToken);
+        
+        console.log('Successfully created Apps/Photospace folder structure');
+        
+    } catch (error) {
+        // Check if it's a conflict error (folder already exists)
+        if (error.message.includes('nameAlreadyExists') || error.message.includes('already exists')) {
+            console.log('Folder already exists, continuing...');
+            return;
+        }
+        
+        console.error('Error creating app folder:', error);
+        throw error;
+    }
+}

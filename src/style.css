@@ -789,3 +789,220 @@ button:disabled {
 .primary-btn:hover:not(:disabled) {
   background-color: #3dd6b8;
 }
+
+/* Embedding Backup & Sync Styles */
+#embedding-backup-panel {
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 2rem 0;
+}
+
+#embedding-backup-panel h3 {
+  margin: 0 0 1rem 0;
+  color: var(--primary-color);
+  font-size: 1.2rem;
+}
+
+.backup-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.backup-section {
+  padding: 1rem;
+  background-color: var(--bg-color);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.backup-section h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-color);
+}
+
+.backup-info {
+  background-color: var(--secondary-color);
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin: 0.5rem 0 1rem 0;
+  font-size: 0.9rem;
+  color: #ccc;
+  border-left: 3px solid var(--primary-color);
+}
+
+#embedding-files-list {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: var(--bg-color);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+#embedding-files-list h5 {
+  margin: 0 0 1rem 0;
+  color: var(--primary-color);
+}
+
+.file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background-color: var(--secondary-color);
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.file-item:hover {
+  background-color: #333;
+}
+
+.file-item.selected {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.file-info {
+  flex: 1;
+}
+
+.file-name {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.file-meta {
+  font-size: 0.85rem;
+  color: #999;
+}
+
+.file-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.file-actions button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+.file-actions button:hover {
+  background-color: var(--border-color);
+}
+
+.file-actions .delete-btn {
+  color: var(--error-color);
+  border-color: var(--error-color);
+}
+
+.file-actions .delete-btn:hover {
+  background-color: var(--error-color);
+  color: white;
+}
+
+/* Import Modal Styles */
+.import-modal {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.import-modal .modal-body {
+  padding: 1.5rem;
+}
+
+.import-options {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: var(--bg-color);
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+}
+
+.import-options h4 {
+  margin: 0 0 1rem 0;
+  color: var(--primary-color);
+}
+
+.import-options label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.import-options select {
+  width: 100%;
+  padding: 0.5rem;
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-color);
+  margin-bottom: 1rem;
+}
+
+.import-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+#import-progress {
+  text-align: center;
+  padding: 2rem;
+}
+
+#import-progress progress {
+  width: 100%;
+  margin: 1rem 0;
+}
+
+#import-results {
+  text-align: center;
+  padding: 2rem;
+}
+
+#import-summary {
+  background-color: var(--secondary-color);
+  padding: 1rem;
+  border-radius: 6px;
+  margin: 1rem 0;
+  text-align: left;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  margin: 0.5rem 0;
+}
+
+.summary-item .label {
+  font-weight: 500;
+}
+
+.summary-item .value {
+  color: var(--success-color);
+}
+
+/* Responsive design for backup panel */
+@media (max-width: 768px) {
+  .backup-controls {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .import-modal {
+    width: 95%;
+    margin: 5% auto;
+  }
+}

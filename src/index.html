@@ -82,6 +82,31 @@
                 </div>
             </div>
 
+            <div id="embedding-backup-panel">
+                <h3>Embedding Backup & Sync</h3>
+                <div class="backup-controls">
+                    <div class="backup-section">
+                        <h4>Export to OneDrive</h4>
+                        <div class="backup-info">
+                            <span id="export-info">Checking for embeddings...</span>
+                        </div>
+                        <button id="export-embeddings-btn">Export Embeddings</button>
+                    </div>
+                    
+                    <div class="backup-section">
+                        <h4>Import from OneDrive</h4>
+                        <div class="backup-info">
+                            <span id="import-info">Click to check for available files</span>
+                        </div>
+                        <button id="import-embeddings-btn">Import Embeddings</button>
+                        <div id="embedding-files-list" style="display: none;">
+                            <h5>Available Embedding Files:</h5>
+                            <div id="file-list-container"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="results-container">
                 <h2>Similar Photo Groups</h2>
                 <p class="placeholder">Analysis results will appear here. Groups with the most similar photos will be shown first.</p>
@@ -138,6 +163,52 @@
         </div>
     </div>
     
+    <!-- Import Modal -->
+    <div id="import-modal" class="modal" style="display:none;">
+        <div class="modal-content import-modal">
+            <div class="modal-header">
+                <h3>Import Embeddings from OneDrive</h3>
+                <span class="modal-close" id="import-modal-close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="import-loading" style="display: none;">
+                    <p>Loading available files...</p>
+                    <progress></progress>
+                </div>
+                
+                <div id="import-file-selection">
+                    <div id="import-file-list"></div>
+                    
+                    <div class="import-options" style="display: none;">
+                        <h4>Import Options</h4>
+                        <label for="conflict-strategy">What to do with existing embeddings:</label>
+                        <select id="conflict-strategy">
+                            <option value="skip">Skip existing (recommended)</option>
+                            <option value="overwrite">Overwrite existing</option>
+                        </select>
+                        
+                        <div class="import-actions">
+                            <button id="confirm-import-btn" disabled>Import Selected File</button>
+                            <button id="cancel-import-btn">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="import-progress" style="display: none;">
+                    <h4>Importing Embeddings...</h4>
+                    <progress id="import-progress-bar"></progress>
+                    <p id="import-status">Starting import...</p>
+                </div>
+                
+                <div id="import-results" style="display: none;">
+                    <h4>Import Complete</h4>
+                    <div id="import-summary"></div>
+                    <button id="close-import-btn">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="/main.js"></script>
 </body>
 </html>
