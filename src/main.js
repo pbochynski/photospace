@@ -22,6 +22,13 @@ const clearFolderBtn = document.getElementById('clear-folder-btn');
 // Embedding options
 const forceReprocessCheckbox = document.getElementById('force-reprocess-checkbox');
 
+// Analysis options
+const similarityThresholdSlider = document.getElementById('similarity-threshold');
+const thresholdValueDisplay = document.getElementById('threshold-value');
+const timeSpanSlider = document.getElementById('time-span');
+const timeSpanValueDisplay = document.getElementById('time-span-value');
+const sortMethodSelect = document.getElementById('sort-method');
+
 // Date filter elements
 const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
@@ -832,6 +839,8 @@ async function handleLoginClick() {
         if (account) {
             displayLoggedIn(account);
             await db.init();
+            // Initialize analysis settings UI after login
+            await initializeAnalysisSettings();
         }
     } catch (error) {
         console.error(error);
@@ -1226,9 +1235,14 @@ async function runAnalysis() {
         updateStatus(filterSummary, true, 25, 100);
 
         setTimeout(async () => {
+            // Get the current analysis settings
+            const similarityThreshold = await getSimilarityThreshold();
+            const timeSpanHours = await getTimeSpanHours();
+            const sortMethod = await getSortMethod();
+            
             let similarGroups = await findSimilarGroups(filteredPhotos, (progress) => {
                 updateStatus(`Finding groups... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.5), 100);
-            });
+            }, similarityThreshold, timeSpanHours, sortMethod);
 
             updateStatus(`Picking best photos...`, true, 75, 100);
 
@@ -1273,6 +1287,84 @@ async function runAnalysis() {
     }
 }
 
+// --- Analysis Settings Functions ---
+async function initializeAnalysisSettings() {
+    try {
+        // Initialize similarity threshold
+        const savedThreshold = await db.getSetting('similarityThreshold');
+        const threshold = savedThreshold !== null ? savedThreshold : 0.90; // Default to 0.90
+        
+        similarityThresholdSlider.value = threshold;
+        thresholdValueDisplay.textContent = threshold.toFixed(2);
+        
+        // Save default if no setting exists
+        if (savedThreshold === null) {
+            await db.setSetting('similarityThreshold', threshold);
+        }
+        
+        // Initialize time span
+        const savedTimeSpan = await db.getSetting('timeSpanHours');
+        const timeSpan = savedTimeSpan !== null ? savedTimeSpan : 8; // Default to 8 hours
+        
+        timeSpanSlider.value = timeSpan;
+        timeSpanValueDisplay.textContent = `${timeSpan} hours`;
+        
+        // Save default if no setting exists
+        if (savedTimeSpan === null) {
+            await db.setSetting('timeSpanHours', timeSpan);
+        }
+        
+        // Initialize sort method
+        const savedSortMethod = await db.getSetting('sortMethod');
+        const sortMethod = savedSortMethod !== null ? savedSortMethod : 'group-size'; // Default to group size
+        
+        sortMethodSelect.value = sortMethod;
+        
+        // Save default if no setting exists
+        if (savedSortMethod === null) {
+            await db.setSetting('sortMethod', sortMethod);
+        }
+    } catch (error) {
+        console.error('Error initializing analysis settings:', error);
+        // Set default values if database fails
+        similarityThresholdSlider.value = 0.90;
+        thresholdValueDisplay.textContent = '0.90';
+        timeSpanSlider.value = 8;
+        timeSpanValueDisplay.textContent = '8 hours';
+        sortMethodSelect.value = 'group-size';
+    }
+}
+
+async function getSimilarityThreshold() {
+    try {
+        const threshold = await db.getSetting('similarityThreshold');
+        return threshold !== null ? threshold : 0.90;
+    } catch (error) {
+        console.error('Error getting similarity threshold:', error);
+        return 0.90;
+    }
+}
+
+async function getTimeSpanHours() {
+    try {
+        const timeSpan = await db.getSetting('timeSpanHours');
+        return timeSpan !== null ? timeSpan : 8;
+    } catch (error) {
+        console.error('Error getting time span:', error);
+        return 8;
+    }
+}
+
+async function getSortMethod() {
+    try {
+        const sortMethod = await db.getSetting('sortMethod');
+        return sortMethod !== null ? sortMethod : 'group-size';
+    } catch (error) {
+        console.error('Error getting sort method:', error);
+        return 'group-size';
+    }
+}
+
 // --- Main Application Startup ---
 // NEW: We wrap the startup logic in an async function to use await.
 async function main() {
@@ -1306,6 +1398,9 @@ async function main() {
         displayLoggedIn(accounts[0]);
         await db.init();
         
+        // Initialize analysis settings UI
+        await initializeAnalysisSettings();
+        
         // Restore folder selection from URL if present
         await restoreFiltersFromURL();
     }
@@ -1322,6 +1417,26 @@ async function main() {
     clearDateBtn.addEventListener('click', clearDateFilter);
     dateFromInput.addEventListener('change', updateURLWithFilters);
     dateToInput.addEventListener('change', updateURLWithFilters);
+    
+    // Similarity threshold control event listeners
+    similarityThresholdSlider.addEventListener('input', async (e) => {
+        const value = parseFloat(e.target.value);
+        thresholdValueDisplay.textContent = value.toFixed(2);
+        await db.setSetting('similarityThreshold', value);
+    });
+    
+    // Time span control event listeners
+    timeSpanSlider.addEventListener('input', async (e) => {
+        const value = parseInt(e.target.value);
+        timeSpanValueDisplay.textContent = `${value} hours`;
+        await db.setSetting('timeSpanHours', value);
+    });
+    
+    // Sort method control event listeners
+    sortMethodSelect.addEventListener('change', async (e) => {
+        const value = e.target.value;
+        await db.setSetting('sortMethod', value);
+    });
     
     // Folder input event listeners
     selectedFolderInput.addEventListener('blur', handleFolderInputChange);

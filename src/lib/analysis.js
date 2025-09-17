@@ -185,10 +185,10 @@ export async function pickBestPhotoByQuality(photoGroup) {
     return photoGroup[0];
 }
 
-export async function findSimilarGroups(photos, progressCallback) {
+export async function findSimilarGroups(photos, progressCallback, similarityThreshold = 0.90, timeSpanHours = 8, sortMethod = 'group-size') {
     // 1. Temporal Clustering (Group into sessions)
     // A session is a burst of photos taken close together in time.
-    const TIME_SPAN = 8 * 60 * 60 * 1000;
+    const TIME_SPAN = timeSpanHours * 60 * 60 * 1000; // Convert hours to milliseconds
     photos.sort((a, b) => a.photo_taken_ts - b.photo_taken_ts);
 
     const sessions = [];
@@ -206,7 +206,7 @@ export async function findSimilarGroups(photos, progressCallback) {
     }
     
     // 2. Similarity Clustering (within each session)
-    const SIMILARITY_THRESHOLD = 0.90; // High threshold for near-duplicates
+    // Use the configurable threshold instead of hardcoded value
     const allSimilarGroups = [];
 
     sessions.forEach((session, index) => {
@@ -224,7 +224,7 @@ export async function findSimilarGroups(photos, progressCallback) {
                 
                 const similarity = cosineSimilarity(session[i].embedding, session[j].embedding);
 
-                if (similarity > SIMILARITY_THRESHOLD) {
+                if (similarity > similarityThreshold) {
                     currentGroup.push(session[j]);
                     visited[j] = true;
                 }
@@ -234,15 +234,31 @@ export async function findSimilarGroups(photos, progressCallback) {
                 allSimilarGroups.push({
                     photos: currentGroup,
                     timestamp: currentGroup[0].photo_taken_ts,
-                    similarity: SIMILARITY_THRESHOLD
+                    similarity: similarityThreshold
                 });
             }
         }
         if (progressCallback) progressCallback((index / sessions.length) * 100);
     });
 
-    // 3. Rank groups by reduction potential
-    allSimilarGroups.sort((a, b) => b.photos.length - a.photos.length);
+    // 3. Sort groups based on the selected method
+    switch (sortMethod) {
+        case 'group-size':
+            // Sort by reduction potential (largest groups first)
+            allSimilarGroups.sort((a, b) => b.photos.length - a.photos.length);
+            break;
+        case 'date-desc':
+            // Sort by date (newest first)
+            allSimilarGroups.sort((a, b) => b.timestamp - a.timestamp);
+            break;
+        case 'date-asc':
+            // Sort by date (oldest first)
+            allSimilarGroups.sort((a, b) => a.timestamp - b.timestamp);
+            break;
+        default:
+            // Default to group size
+            allSimilarGroups.sort((a, b) => b.photos.length - a.photos.length);
+    }
     
     return allSimilarGroups;
 }

@@ -55,6 +55,31 @@
                     </div>
                 </div>
                 <button id="start-analysis-button">3. Analyze & Find Similar Photos</button>
+                <div class="analysis-options">
+                    <label for="similarity-threshold">Similarity Threshold:</label>
+                    <div class="threshold-input-group">
+                        <input type="range" id="similarity-threshold" min="0.5" max="0.99" step="0.01" value="0.90">
+                        <span id="threshold-value">0.90</span>
+                        <small class="threshold-help">Higher = more strict (fewer groups, very similar photos only)</small>
+                    </div>
+                    
+                    <label for="time-span">Time Window for Photo Sessions:</label>
+                    <div class="threshold-input-group">
+                        <input type="range" id="time-span" min="1" max="24" step="1" value="8">
+                        <span id="time-span-value">8 hours</span>
+                        <small class="threshold-help">Photos taken within this time window are considered part of the same session</small>
+                    </div>
+                    
+                    <label for="sort-method">Sort Results By:</label>
+                    <div class="sort-input-group">
+                        <select id="sort-method">
+                            <option value="group-size">Group Size (Largest First)</option>
+                            <option value="date-desc">Date (Newest First)</option>
+                            <option value="date-asc">Date (Oldest First)</option>
+                        </select>
+                        <small class="threshold-help">Choose how to order the similar photo groups</small>
+                    </div>
+                </div>
             </div>
 
             <div id="results-container">
