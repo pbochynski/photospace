@@ -30,6 +30,8 @@ const thresholdValueDisplay = document.getElementById('threshold-value');
 const timeSpanSlider = document.getElementById('time-span');
 const timeSpanValueDisplay = document.getElementById('time-span-value');
 const sortMethodSelect = document.getElementById('sort-method');
+const workerCountSlider = document.getElementById('worker-count');
+const workerCountValueDisplay = document.getElementById('worker-count-value');
 
 // Date filter elements
 const dateFromInput = document.getElementById('date-from');
@@ -1029,8 +1031,8 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
 
 // Core worker management function - processes any array of photos
 async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Preparing to process') {
-    // Configurable number of parallel workers
-    const NUM_EMBEDDING_WORKERS = 4;
+    // Get configurable number of parallel workers from settings
+    const NUM_EMBEDDING_WORKERS = await getWorkerCount();
     return new Promise(async (resolve, reject) => {
         const totalToProcess = photosToProcess.length;
         if (totalToProcess === 0) {
@@ -1320,28 +1322,40 @@ async function runAnalysis() {
 // --- Analysis Settings Functions ---
 async function initializeAnalysisSettings() {
     try {
+        // Check if DOM elements are available
+        if (!similarityThresholdSlider || !thresholdValueDisplay || !timeSpanSlider || !timeSpanValueDisplay || !sortMethodSelect || !workerCountSlider || !workerCountValueDisplay) {
+            console.warn('Some DOM elements not found, skipping analysis settings initialization');
+            return;
+        }
+        
         // Initialize similarity threshold
         const savedThreshold = await db.getSetting('similarityThreshold');
-        const threshold = savedThreshold !== null ? savedThreshold : 0.90; // Default to 0.90
+        const threshold = savedThreshold !== null ? Number(savedThreshold) : 0.90; // Default to 0.90
         
-        similarityThresholdSlider.value = threshold;
-        thresholdValueDisplay.textContent = threshold.toFixed(2);
+        // Ensure threshold is a valid number
+        const validThreshold = (!isNaN(threshold) && threshold >= 0.5 && threshold <= 0.99) ? threshold : 0.90;
+        
+        similarityThresholdSlider.value = validThreshold;
+        thresholdValueDisplay.textContent = validThreshold.toFixed(2);
         
         // Save default if no setting exists
         if (savedThreshold === null) {
-            await db.setSetting('similarityThreshold', threshold);
+            await db.setSetting('similarityThreshold', validThreshold);
         }
         
         // Initialize time span
         const savedTimeSpan = await db.getSetting('timeSpanHours');
-        const timeSpan = savedTimeSpan !== null ? savedTimeSpan : 8; // Default to 8 hours
+        const timeSpan = savedTimeSpan !== null ? Number(savedTimeSpan) : 8; // Default to 8 hours
         
-        timeSpanSlider.value = timeSpan;
-        timeSpanValueDisplay.textContent = `${timeSpan} hours`;
+        // Ensure timeSpan is a valid number
+        const validTimeSpan = (!isNaN(timeSpan) && timeSpan >= 1 && timeSpan <= 24) ? timeSpan : 8;
+        
+        timeSpanSlider.value = validTimeSpan;
+        timeSpanValueDisplay.textContent = `${validTimeSpan} hours`;
         
         // Save default if no setting exists
         if (savedTimeSpan === null) {
-            await db.setSetting('timeSpanHours', timeSpan);
+            await db.setSetting('timeSpanHours', validTimeSpan);
         }
         
         // Initialize sort method
@@ -1354,6 +1368,21 @@ async function initializeAnalysisSettings() {
         if (savedSortMethod === null) {
             await db.setSetting('sortMethod', sortMethod);
         }
+        
+        // Initialize worker count
+        const savedWorkerCount = await db.getSetting('workerCount');
+        const workerCount = savedWorkerCount !== null ? Number(savedWorkerCount) : 4; // Default to 4 workers
+        
+        // Ensure workerCount is a valid number
+        const validWorkerCount = (!isNaN(workerCount) && workerCount >= 1 && workerCount <= 8) ? workerCount : 4;
+        
+        workerCountSlider.value = validWorkerCount;
+        workerCountValueDisplay.textContent = `${validWorkerCount} worker${validWorkerCount === 1 ? '' : 's'}`;
+        
+        // Save default if no setting exists
+        if (savedWorkerCount === null) {
+            await db.setSetting('workerCount', validWorkerCount);
+        }
     } catch (error) {
         console.error('Error initializing analysis settings:', error);
         // Set default values if database fails
@@ -1362,6 +1391,8 @@ async function initializeAnalysisSettings() {
         timeSpanSlider.value = 8;
         timeSpanValueDisplay.textContent = '8 hours';
         sortMethodSelect.value = 'group-size';
+        workerCountSlider.value = 4;
+        workerCountValueDisplay.textContent = '4 workers';
     }
 }
 
@@ -1392,6 +1423,16 @@ async function getSortMethod() {
     } catch (error) {
         console.error('Error getting sort method:', error);
         return 'group-size';
+    }
+}
+
+async function getWorkerCount() {
+    try {
+        const workerCount = await db.getSetting('workerCount');
+        return workerCount !== null ? workerCount : 4;
+    } catch (error) {
+        console.error('Error getting worker count:', error);
+        return 4;
     }
 }
 
@@ -1466,6 +1507,18 @@ async function main() {
     sortMethodSelect.addEventListener('change', async (e) => {
         const value = e.target.value;
         await db.setSetting('sortMethod', value);
+    });
+    
+    // Worker count control event listeners
+    workerCountSlider.addEventListener('input', async (e) => {
+        const value = parseInt(e.target.value);
+        workerCountValueDisplay.textContent = `${value} worker${value === 1 ? '' : 's'}`;
+        try {
+            await db.setSetting('workerCount', value);
+            updateStatus(`Parallel workers set to: ${value}`, false);
+        } catch (error) {
+            console.error('Error saving worker count:', error);
+        }
     });
     
     // Folder input event listeners

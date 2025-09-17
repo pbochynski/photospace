@@ -79,6 +79,13 @@
                         </select>
                         <small class="threshold-help">Choose how to order the similar photo groups</small>
                     </div>
+                    
+                    <label for="worker-count">Parallel Workers:</label>
+                    <div class="threshold-input-group">
+                        <input type="range" id="worker-count" min="1" max="8" step="1" value="4">
+                        <span id="worker-count-value">4 workers</span>
+                        <small class="threshold-help">Number of parallel workers for embedding generation (more workers = faster processing, but uses more CPU)</small>
+                    </div>
                 </div>
             </div>
 
