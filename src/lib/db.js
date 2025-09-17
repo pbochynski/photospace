@@ -221,6 +221,7 @@ class PhotoDB {
                     const existingPhoto = getRequest.result;
                     
                     if (existingPhoto) {
+                        // Photo exists in database
                         if (existingPhoto.embedding && conflictStrategy === 'skip') {
                             skipped++;
                         } else {
@@ -238,8 +239,28 @@ class PhotoDB {
                                 imported++;
                             }
                         }
+                    } else {
+                        // Photo doesn't exist in database - create new record from embedding data
+                        const newPhoto = {
+                            file_id: embeddingData.file_id,
+                            name: embeddingData.name,
+                            path: embeddingData.path,
+                            photo_taken_ts: embeddingData.photo_taken_ts,
+                            embedding: embeddingData.embedding,
+                            embedding_status: 1,
+                            sharpness: embeddingData.sharpness,
+                            exposure: embeddingData.exposure,
+                            quality_score: embeddingData.quality_score,
+                            // Set defaults for missing metadata (will be updated on next scan)
+                            size: 0,
+                            last_modified: new Date().toISOString(),
+                            thumbnail_url: null,
+                            scan_id: Date.now() // Use current timestamp as scan_id
+                        };
+                        
+                        store.put(newPhoto);
+                        imported++;
                     }
-                    // If photo doesn't exist, skip it (not in current scan)
                     
                     processed++;
                     if (processed === total) {

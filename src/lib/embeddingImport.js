@@ -62,36 +62,26 @@ export async function importEmbeddingsFromOneDrive(fileId, conflictStrategy = 's
 
 /**
  * List available embedding files on OneDrive
- * @returns {Promise<Array>} - Array of available embedding files with metadata
+ * @returns {Promise<Array>} - Array of available embedding files with basic metadata
  */
 export async function listAvailableEmbeddingFiles() {
     try {
         const files = await listEmbeddingFiles();
         
-        // Enhance with metadata if possible
-        const enhancedFiles = await Promise.all(files.map(async (file) => {
-            try {
-                // Try to peek at metadata without downloading full file
-                const content = await downloadFileFromOneDrive(file.id);
-                const data = JSON.parse(content);
-                
-                return {
-                    ...file,
-                    metadata: data.metadata,
-                    embeddingCount: data.metadata?.embeddingCount || 0,
-                    hasValidFormat: data.metadata?.format === 'photospace-embeddings-v1'
-                };
-            } catch (error) {
-                // If we can't read metadata, return basic info
-                console.warn(`Could not read metadata for file ${file.name}:`, error);
-                return {
-                    ...file,
-                    metadata: null,
-                    embeddingCount: 0,
-                    hasValidFormat: false
-                };
-            }
-        }));
+        // Return files with basic info only - no downloading/parsing
+        const enhancedFiles = files.map((file) => {
+            // Extract embedding count from filename if possible
+            const countMatch = file.name.match(/embeddings_(\d{4}-\d{2}-\d{2})/);
+            const dateFromName = countMatch ? countMatch[1] : null;
+            
+            return {
+                ...file,
+                metadata: null, // Will be loaded on demand
+                embeddingCount: 'Unknown', // Will be determined when file is selected
+                hasValidFormat: file.name.startsWith('photospace_embeddings_'), // Basic validation from filename
+                estimatedDate: dateFromName
+            };
+        });
         
         // Sort by creation date (newest first)
         enhancedFiles.sort((a, b) => new Date(b.createdDateTime) - new Date(a.createdDateTime));
@@ -101,6 +91,40 @@ export async function listAvailableEmbeddingFiles() {
     } catch (error) {
         console.error('Error listing embedding files:', error);
         throw error;
+    }
+}
+
+/**
+ * Get detailed metadata for a specific embedding file (only when needed)
+ * @param {string} fileId - File ID to get metadata for
+ * @returns {Promise<Object>} - Detailed file metadata
+ */
+export async function getEmbeddingFileMetadata(fileId) {
+    try {
+        console.log(`Loading metadata for file: ${fileId}`);
+        
+        const fileContent = await downloadFileFromOneDrive(fileId);
+        const data = JSON.parse(fileContent);
+        
+        return {
+            valid: true,
+            metadata: data.metadata || null,
+            embeddingCount: data.metadata?.embeddingCount || 0,
+            hasValidFormat: data.metadata?.format === 'photospace-embeddings-v1',
+            exportDate: data.metadata?.exportDate || null,
+            deviceInfo: data.metadata?.deviceInfo || null,
+            appVersion: data.metadata?.appVersion || null
+        };
+        
+    } catch (error) {
+        console.error('Error getting file metadata:', error);
+        return {
+            valid: false,
+            error: error.message,
+            metadata: null,
+            embeddingCount: 0,
+            hasValidFormat: false
+        };
     }
 }
 

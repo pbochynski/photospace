@@ -3,7 +3,7 @@ import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchPhotos
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
 import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } from './lib/embeddingExport.js';
-import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, validateEmbeddingFile } from './lib/embeddingImport.js';
+import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, validateEmbeddingFile, getEmbeddingFileMetadata } from './lib/embeddingImport.js';
 
 // --- DOM Elements ---
 const loginButton = document.getElementById('login-button');
@@ -1593,7 +1593,7 @@ function displayImportFileList(files) {
             <div class="file-info">
                 <div class="file-name">${file.name}</div>
                 <div class="file-meta">
-                    ${file.embeddingCount} embeddings • ${formatSize(file.size)} • ${formatDate(file.createdDateTime)}
+                    Click to load details • ${formatSize(file.size)} • ${formatDate(file.createdDateTime)}
                     ${file.hasValidFormat ? '' : ' • ⚠️ Unknown format'}
                 </div>
             </div>
@@ -1602,7 +1602,7 @@ function displayImportFileList(files) {
             </div>
         `;
         
-        fileItem.addEventListener('click', (e) => {
+        fileItem.addEventListener('click', async (e) => {
             if (e.target.tagName === 'BUTTON') return;
             
             // Clear previous selection
@@ -1611,10 +1611,39 @@ function displayImportFileList(files) {
             // Select this item
             fileItem.classList.add('selected');
             
-            // Show import options
-            importOptions.style.display = 'block';
-            confirmImportBtn.disabled = false;
-            confirmImportBtn.dataset.fileId = file.id;
+            // Show loading state
+            const metaDiv = fileItem.querySelector('.file-meta');
+            const originalMeta = metaDiv.innerHTML;
+            metaDiv.innerHTML = 'Loading file details...';
+            confirmImportBtn.disabled = true;
+            
+            try {
+                // Load metadata on demand
+                const metadata = await getEmbeddingFileMetadata(file.id);
+                
+                if (metadata.valid) {
+                    // Update display with actual metadata
+                    metaDiv.innerHTML = `
+                        ${metadata.embeddingCount} embeddings • ${formatSize(file.size)} • ${formatDate(file.createdDateTime)}
+                        ${metadata.hasValidFormat ? '' : ' • ⚠️ Unknown format'}
+                        ${metadata.exportDate ? ` • Exported: ${formatDate(metadata.exportDate)}` : ''}
+                    `;
+                    
+                    // Show import options
+                    importOptions.style.display = 'block';
+                    confirmImportBtn.disabled = false;
+                    confirmImportBtn.dataset.fileId = file.id;
+                } else {
+                    metaDiv.innerHTML = `${originalMeta} • ❌ Invalid file format`;
+                    importOptions.style.display = 'none';
+                    confirmImportBtn.disabled = true;
+                }
+            } catch (error) {
+                console.error('Error loading file metadata:', error);
+                metaDiv.innerHTML = `${originalMeta} • ❌ Error loading details`;
+                importOptions.style.display = 'none';
+                confirmImportBtn.disabled = true;
+            }
         });
         
         importFileList.appendChild(fileItem);
