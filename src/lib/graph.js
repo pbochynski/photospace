@@ -108,6 +108,17 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
     }
 
     console.log(`Processed ${photoCount} photos from folder ${folderId}`);
+    
+    // Clean up photos only from the specific folder we scanned
+    const folderPath = await getFolderPath(folderId);
+    console.log(`Cleaning up deleted photos from scanned folder: ${folderPath}`);
+    try {
+        const deletedCount = await db.deletePhotosFromScannedFoldersNotMatchingScanId(scanId, [folderPath]);
+        console.log(`Cleanup complete. Removed ${deletedCount} photos that were deleted from the scanned folder.`);
+    } catch (error) {
+        console.error("Error during cleanup:", error);
+    }
+    
     return photoCount;
 }
 
@@ -117,6 +128,7 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
 
     return new Promise(async (resolve, reject) => {
         const foldersToProcess = [startingFolderId];
+        const scannedFolderPaths = []; // Track which folders we actually scanned
         let activeWorkers = 0;
         let totalPhotoCount = await db.getPhotoCount();
         progressCallback({ count: totalPhotoCount });
@@ -125,6 +137,10 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
             try {
                 // Use folder ID instead of path for more reliable access
                 let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+                
+                // Get the folder path to track what we're scanning
+                const folderPath = await getFolderPath(folderId);
+                scannedFolderPaths.push(folderPath);
                 
                 while (url) {
                     console.log(`Processing folder ID: ${folderId}`);
@@ -160,6 +176,8 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                     
                     url = response['@odata.nextLink'];
                 }
+                // TODO clean up photos from this folder that were not updated in this scan
+                
             } catch (error) {
                 console.error(`Failed to process folder ${folderId}:`, error);
                 // We continue processing other folders even if one fails
@@ -184,7 +202,18 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                 // If the queue is empty and all workers are done, the scan is complete
                 if (foldersToProcess.length === 0 && activeWorkers === 0) {
                     console.log("Scan complete. All folders processed.");
-                    resolve(await db.getPhotoCount());
+                    
+                    // Clean up photos only from the folders we actually scanned
+                    console.log(`Cleaning up deleted photos from ${scannedFolderPaths.length} scanned folders...`);
+                    try {
+                        const deletedCount = await db.deletePhotosFromScannedFoldersNotMatchingScanId(scanId, scannedFolderPaths);
+                        console.log(`Cleanup complete. Removed ${deletedCount} photos that were deleted from scanned folders.`);
+                    } catch (error) {
+                        console.error("Error during cleanup:", error);
+                    }
+                    
+                    const finalPhotoCount = await db.getPhotoCount();
+                    resolve(finalPhotoCount);
                     return;
                 }
                 

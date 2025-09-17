@@ -102,6 +102,41 @@ class PhotoDB {
             cursorRequest.onerror = (event) => reject(event.target.error);
         });
     }
+
+    // --- Function to clean up photos from specific scanned folders only ---
+    async deletePhotosFromScannedFoldersNotMatchingScanId(currentScanId, scannedFolderPaths) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readwrite');
+            const store = tx.objectStore('photos');
+            const index = store.index('by_scan_id');
+            const range = IDBKeyRange.upperBound(currentScanId, true); // Everything less than currentScanId
+
+            let deletedCount = 0;
+            const cursorRequest = index.openCursor(range);
+            
+            cursorRequest.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    const photo = cursor.value;
+                    // Only delete if the photo is in one of the scanned folders
+                    const isInScannedFolder = scannedFolderPaths.some(folderPath => 
+                        photo.path && photo.path.startsWith(folderPath)
+                    );
+                    
+                    if (isInScannedFolder) {
+                        store.delete(cursor.primaryKey);
+                        deletedCount++;
+                    }
+                    cursor.continue();
+                } else {
+                    // End of cursor
+                    console.log(`Deleted ${deletedCount} stale photos from scanned folders.`);
+                    resolve(deletedCount);
+                }
+            };
+            cursorRequest.onerror = (event) => reject(event.target.error);
+        });
+    }
         
     // NEW: Functions to get/set settings like the deltaLink
     async getSetting(key) {

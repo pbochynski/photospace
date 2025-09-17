@@ -188,14 +188,14 @@ export async function pickBestPhotoByQuality(photoGroup) {
 export async function findSimilarGroups(photos, progressCallback) {
     // 1. Temporal Clustering (Group into sessions)
     // A session is a burst of photos taken close together in time.
-    const ONE_HOUR = 60 * 60 * 1000;
+    const TIME_SPAN = 8 * 60 * 60 * 1000;
     photos.sort((a, b) => a.photo_taken_ts - b.photo_taken_ts);
 
     const sessions = [];
     if (photos.length > 0) {
         let currentSession = [photos[0]];
         for (let i = 1; i < photos.length; i++) {
-            if (photos[i].photo_taken_ts - photos[i - 1].photo_taken_ts < ONE_HOUR) {
+            if (photos[i].photo_taken_ts - photos[i - 1].photo_taken_ts < TIME_SPAN) {
                 currentSession.push(photos[i]);
             } else {
                 sessions.push(currentSession);
@@ -206,7 +206,7 @@ export async function findSimilarGroups(photos, progressCallback) {
     }
     
     // 2. Similarity Clustering (within each session)
-    const SIMILARITY_THRESHOLD = 0.95; // High threshold for near-duplicates
+    const SIMILARITY_THRESHOLD = 0.90; // High threshold for near-duplicates
     const allSimilarGroups = [];
 
     sessions.forEach((session, index) => {
