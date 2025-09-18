@@ -132,26 +132,13 @@ class ModelSingleton {
             }
 
             const modelPath = '/models/clip-vit-base-patch16/';
-            
-            console.log('Loading models from:', modelPath);
-            console.log('Full model URL would be:', self.location?.origin + modelPath);
 
             // Load the CLIP model and processor with individual error handling
             try {
-                console.log('Loading CLIPVisionModelWithProjection...');
                 this.clipModel = await CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator);
-                console.log('CLIPVisionModelWithProjection loaded successfully');
-                
-                console.log('Loading AutoProcessor...');
                 this.clipProcessor = await AutoProcessor.from_pretrained(modelPath, accelerator);
-                console.log('AutoProcessor loaded successfully');
             } catch (error) {
                 console.error('Model loading error:', error);
-                console.error('Error details:', {
-                    message: error.message,
-                    stack: error.stack,
-                    modelPath: modelPath
-                });
                 throw error;
             }
             
@@ -171,19 +158,33 @@ self.onmessage = async (event) => {
             await ModelSingleton.getInstance();
             // Model loading status is posted inside getInstance()
         } catch (error) {
+            console.error('Worker model initialization failed:', error);
             self.postMessage({ status: 'error', error: error.message });
         }
         return;
     }
 
-    const { file_id, thumbnail_url } = event.data;
-    console.log(`Worker started: ${JSON.stringify(event.data)}`);
+    const { file_id } = event.data;
     try {
         const { clipModel, clipProcessor } = await ModelSingleton.getInstance();
+        const thumbnail_url = `/api/thumb/${file_id}`;
         
-        if (!thumbnail_url) throw new Error("Thumbnail URL is missing.");
-
-        const image = await RawImage.fromURL(thumbnail_url);
+        // Use fetch() to properly work with service worker, then convert to RawImage
+        const response = await fetch(thumbnail_url);
+        
+        if (!response.ok) {
+            console.error(`Worker fetch failed: ${response.status} ${response.statusText} for ${file_id}`);
+            throw new Error(`Failed to fetch thumbnail: ${response.status} ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        
+        if (blob.size === 0) {
+            console.error(`Worker received empty blob for ${file_id}`);
+            throw new Error(`Received empty blob for thumbnail: ${file_id}`);
+        }
+        
+        const image = await RawImage.fromBlob(blob);
         
         // Calculate basic quality metrics using the RawImage data
         const sharpness = estimateSharpness(image);

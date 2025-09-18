@@ -67,7 +67,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
     if (!token) throw new Error("Authentication token not available.");
 
     let photoCount = 0;
-    let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+    let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
     
     while (url) {
         console.log(`Processing single folder ID: ${folderId}`);
@@ -88,7 +88,6 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
                     size: item.size,
                     path: fullPath,
                     last_modified: item.lastModifiedDateTime,
-                    thumbnail_url: item.thumbnails[0].large?.url || item.thumbnails[0].medium?.url || item.thumbnails[0].small?.url,
                     photo_taken_ts: item.photo.takenDateTime,
                     scan_id: scanId
                 };
@@ -136,7 +135,7 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
         const processFolder = async (folderId) => {
             try {
                 // Use folder ID instead of path for more reliable access
-                let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+                let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
                 
                 // Get the folder path to track what we're scanning
                 const folderPath = await getFolderPath(folderId);
@@ -153,13 +152,12 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                             foldersToProcess.push(item.id);
                         } 
                         // If it's a photo with a thumbnail, process it
-                        else if (item.photo && item.thumbnails && item.thumbnails.length > 0) {
+                        else if (item.photo) {
                             photosInPage.push({
                                 file_id: item.id,
                                 name: item.name,
                                 path: item.parentReference?.path,
                                 photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
-                                thumbnail_url: item.thumbnails[0]?.large?.url,
                                 embedding_status: 0,
                                 embedding: null,
                                 scan_id: scanId

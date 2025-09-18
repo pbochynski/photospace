@@ -404,11 +404,15 @@ function displayResults(groups) {
             const photoItem = document.createElement('div');
             photoItem.className = 'photo-item';
             const recommendedBadge = p.isBest ? '<div class="recommended-badge">⭐ RECOMMENDED</div>' : '';
+            
+            // Use service worker thumbnail endpoint instead of direct OneDrive URL
+            const thumbnailSrc = `/api/thumb/${p.file_id}`;
+            
             photoItem.innerHTML = `
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
-                    <img src="${p.thumbnail_url}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
+                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
                     ${recommendedBadge}
                     <div class="photo-score">
                         <div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}</div>
@@ -482,8 +486,17 @@ function displayResults(groups) {
             populateImageMetadata(photo);
             
             if (fileId) {
-                // Step 1: Show modal immediately with thumbnail (already loaded)
-                modalImg.src = img.src; // Use existing thumbnail
+                // Send auth token to service worker for both thumbnail and full-size requests
+                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                    const token = await getAuthToken();
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SET_TOKEN',
+                        token: token
+                    });
+                }
+                
+                // Step 1: Show modal immediately with thumbnail (already loaded via service worker)
+                modalImg.src = img.src; // Use existing thumbnail from service worker
                 modal.style.display = 'flex';
                 
                 // Step 2: Load full-size image in background
@@ -947,36 +960,6 @@ async function runEmbeddingGeneration() {
     }
 }
 
-async function fetchThumbnailAsBlobURL(fileId, getAuthToken) {
-    const url = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
-    try {
-        // For binary content, we need the Response object, not parsed JSON
-        let token = await getAuthToken();
-        let options = {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        };
-        let response = await fetch(url, options);
-        
-        // Handle token refresh for binary content
-        if ((response.status === 401 || response.status === 403)) {
-            token = await getAuthToken(true); // force refresh
-            options.headers['Authorization'] = `Bearer ${token}`;
-            response = await fetch(url, options);
-        }
-        
-        if (!response.ok) {
-            throw new Error(`Graph API error fetching thumbnail: ${response.statusText}`);
-        }
-        const blob = await response.blob();
-        return URL.createObjectURL(blob);
-    } catch (error) {
-        console.error(`Failed to fetch thumbnail for ${fileId}:`, error);
-        return null; // Return null on failure
-    }
-}
-
 // Load full-size image using service worker for persistent caching
 async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
     try {
@@ -994,19 +977,29 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
             const stableImageUrl = `/api/image/${fileId}`;
             
             try {
+                console.log('Attempting service worker fetch for:', fileId);
                 const response = await fetch(stableImageUrl);
+                console.log('Service worker response status:', response.status);
+                
                 if (response.ok) {
                     const blob = await response.blob();
                     const blobUrl = URL.createObjectURL(blob);
                     modalImg.src = blobUrl;
+                    console.log('Successfully loaded image via service worker');
                     return blobUrl; // Return for cleanup
+                } else {
+                    console.warn('Service worker returned error status:', response.status, response.statusText);
+                    throw new Error(`Service worker error: ${response.status}`);
                 }
             } catch (swError) {
                 console.warn('Service worker fetch failed, falling back to direct fetch:', swError);
             }
+        } else {
+            console.log('Service worker not available, using direct fetch');
         }
         
-        // Fallback: Direct fetch if service worker not available
+        // Fallback: Direct fetch if service worker not available or failed
+        console.log('Attempting direct fetch for:', fileId);
         const fullSizeUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/content`;
         const response = await fetch(fullSizeUrl, {
             headers: {
@@ -1014,17 +1007,23 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
             }
         });
         
+        console.log('Direct fetch response status:', response.status);
+        
         if (response.ok) {
             const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);
             modalImg.src = blobUrl;
+            console.log('Successfully loaded image via direct fetch');
             return blobUrl; // Return for cleanup
         } else {
-            console.warn('Failed to load full-size image, keeping thumbnail');
-            return null;
+            console.error('Direct fetch failed with status:', response.status, response.statusText);
+            const errorText = await response.text();
+            console.error('Error response:', errorText);
+            throw new Error(`Direct fetch failed: ${response.status} ${response.statusText}`);
         }
     } catch (error) {
         console.error('Error loading full-size image:', error);
+        console.log('Keeping thumbnail as fallback');
         return null;
     }
 }
@@ -1033,6 +1032,7 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
 async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Preparing to process') {
     // Get configurable number of parallel workers from settings
     const NUM_EMBEDDING_WORKERS = await getWorkerCount();
+    
     return new Promise(async (resolve, reject) => {
         const totalToProcess = photosToProcess.length;
         if (totalToProcess === 0) {
@@ -1042,11 +1042,51 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
             return;
         }
         updateStatus(`${statusPrefix} ${totalToProcess} photos...`);
+        
+        // Send auth token to service worker before starting processing
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            try {
+                const token = await getAuthToken();
+                
+                // Create a promise to wait for confirmation
+                const tokenPromise = new Promise((resolve, reject) => {
+                    const channel = new MessageChannel();
+                    channel.port1.onmessage = (event) => {
+                        if (event.data.status === 'token_set') {
+                            console.log('Service worker confirmed token receipt');
+                            resolve();
+                        } else {
+                            reject(new Error('Unexpected response from service worker'));
+                        }
+                    };
+                    
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SET_TOKEN',
+                        token: token
+                    }, [channel.port2]);
+                });
+                
+                // Wait for confirmation with timeout
+                await Promise.race([
+                    tokenPromise,
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Service worker token timeout')), 5000)
+                    )
+                ]);
+                
+                console.log('Auth token successfully sent to service worker for thumbnail processing');
+            } catch (error) {
+                console.error('Failed to send auth token to service worker:', error);
+                // Continue anyway - might still work if token was previously set
+            }
+        }
+        
+        updateStatus(`Starting processing of ${totalToProcess} photos...`, true, 0, totalToProcess);
+        
         // Worker pool
         const workers = [];
         let processedCount = 0;
         let modelReadyCount = 0;
-        const objectUrlMap = new Map();
         let errorOccurred = false;
         // Queue for photos
         const photoQueue = [...photosToProcess];
@@ -1058,12 +1098,9 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
         async function assignNext(workerIdx) {
             if (photoQueue.length === 0) return;
             const photo = photoQueue.shift();
-            const blobUrl = await fetchThumbnailAsBlobURL(photo.file_id, getAuthToken);
-            if (blobUrl) {
-                objectUrlMap.set(photo.file_id, blobUrl);
+            if (photo) {
                 workers[workerIdx].postMessage({
-                    file_id: photo.file_id,
-                    thumbnail_url: blobUrl
+                    file_id: photo.file_id
                 });
                 workerBusy[workerIdx] = true;
             } else {
@@ -1082,6 +1119,7 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
         function makeOnMessage(workerIdx) {
             return async (event) => {
                 const { file_id, embedding, qualityMetrics, status, error } = event.data;
+                
                 if (status === 'model_loading') {
                     updateStatus('Loading AI Model... (This may take a moment)');
                 } else if (status === 'model_ready') {
@@ -1094,13 +1132,14 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
                 } else if (status === 'complete') {
                     processedCount++;
                     await db.updatePhotoEmbedding(file_id, embedding, qualityMetrics);
-                    // Revoke blob URL
-                    const objectUrl = objectUrlMap.get(file_id);
-                    if (objectUrl) {
-                        URL.revokeObjectURL(objectUrl);
-                        objectUrlMap.delete(file_id);
-                    }
-                    updateStatus(`Processing photos...`, true, processedCount, totalToProcess);
+                    
+                    // Calculate remaining photos in queue
+                    const remainingInQueue = photoQueue.length;
+                    const totalProcessed = processedCount;
+                    const currentlyProcessing = NUM_EMBEDDING_WORKERS - (photoQueue.length > 0 ? 0 : (NUM_EMBEDDING_WORKERS - Math.max(0, totalToProcess - processedCount)));
+                    
+                    updateStatus(`Processing photos... ${totalProcessed}/${totalToProcess} complete, ${remainingInQueue} in queue`, true, processedCount, totalToProcess);
+                    
                     if (processedCount === totalToProcess) {
                         workers.forEach(w => w.terminate());
                         updateStatus('All photos processed! Ready for analysis.', false);
@@ -1112,12 +1151,13 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
                 } else if (status === 'error') {
                     console.error(`Worker error for file ${file_id}:`, error);
                     processedCount++;
-                    // Revoke blob URL
-                    const objectUrl = objectUrlMap.get(file_id);
-                    if (objectUrl) {
-                        URL.revokeObjectURL(objectUrl);
-                        objectUrlMap.delete(file_id);
-                    }
+                    
+                    // Calculate remaining photos in queue
+                    const remainingInQueue = photoQueue.length;
+                    const totalProcessed = processedCount;
+                    
+                    updateStatus(`Processing photos... ${totalProcessed}/${totalToProcess} complete, ${remainingInQueue} in queue (some errors)`, true, processedCount, totalToProcess);
+                    
                     if (processedCount === totalToProcess) {
                         workers.forEach(w => w.terminate());
                         updateStatus('Processing finished with some errors.', false);
@@ -1134,6 +1174,7 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
             const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
             worker.onmessage = makeOnMessage(i);
             worker.onerror = (err) => {
+                console.error(`Worker ${i} error:`, err);
                 if (!errorOccurred) {
                     errorOccurred = true;
                     workers.forEach(w => w.terminate());
@@ -1303,12 +1344,12 @@ async function runAnalysis() {
 
             // Display results immediately
             displayResults(similarGroups);
-            updateStatus('Analysis complete! Refreshing thumbnails in background...', false);
+            updateStatus('Analysis complete!', false);
             startAnalysisButton.disabled = false;
 
             // Queue thumbnail refresh for result folders in background
             if (similarGroups.length > 0) {
-                refreshResultFolderThumbnails(similarGroups);
+                // refreshResultFolderThumbnails(similarGroups);
             }
         }, 100);
 
@@ -1429,7 +1470,7 @@ async function getSortMethod() {
 async function getWorkerCount() {
     try {
         const workerCount = await db.getSetting('workerCount');
-        return workerCount !== null ? workerCount : 4;
+        return (workerCount != null) ? workerCount : 4; // != null checks for both null and undefined
     } catch (error) {
         console.error('Error getting worker count:', error);
         return 4;

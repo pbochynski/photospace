@@ -55,9 +55,8 @@ class PhotoDB {
                     request.onsuccess = () => {
                         const existingPhoto = request.result;
                         if (existingPhoto) {
-                            // Photo exists, update scan_id and thumbnail_url (thumbnail URLs expire)
+                            // Photo exists, update scan_id
                             existingPhoto.scan_id = newPhoto.scan_id;
-                            existingPhoto.thumbnail_url = newPhoto.thumbnail_url;
                             store.put(existingPhoto);
                         } else {
                             // New photo, add it completely
@@ -118,12 +117,19 @@ class PhotoDB {
                 const cursor = event.target.result;
                 if (cursor) {
                     const photo = cursor.value;
-                    // Only delete if the photo is in one of the scanned folders
-                    const isInScannedFolder = scannedFolderPaths.some(folderPath => 
-                        photo.path && photo.path.startsWith(folderPath)
-                    );
+                    // Only delete if the photo is DIRECTLY in one of the scanned folders (not subfolders)
+                    const isDirectlyInScannedFolder = scannedFolderPaths.some(folderPath => {
+                        if (!photo.path) return false;
+                        
+                        // Photo.path is always the folder path, so compare directly
+                        const photoDir = photo.path;
+                        
+                        
+                        // Check if the photo directory exactly matches the scanned folder path
+                        return photoDir === folderPath;
+                    });
                     
-                    if (isInScannedFolder) {
+                    if (isDirectlyInScannedFolder) {
                         store.delete(cursor.primaryKey);
                         deletedCount++;
                     }
@@ -254,7 +260,6 @@ class PhotoDB {
                             // Set defaults for missing metadata (will be updated on next scan)
                             size: 0,
                             last_modified: new Date().toISOString(),
-                            thumbnail_url: null,
                             scan_id: Date.now() // Use current timestamp as scan_id
                         };
                         
