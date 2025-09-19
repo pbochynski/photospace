@@ -1,5 +1,53 @@
 // Import the correct, higher-level components for vision-language models.
 import { AutoProcessor, CLIPVisionModelWithProjection, RawImage, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.5.2';
+// Worker ID for console prefixing
+let workerId = 'Unknown';
+
+// Override console in worker to send messages to main thread
+const originalConsole = {
+    log: console.log,
+    error: console.error,
+    warn: console.warn,
+    info: console.info
+};
+
+function sendConsoleToMain(level, args) {
+    // Prefix messages with worker ID
+    const prefixedArgs = [`[Worker ${workerId}]`, ...args];
+    
+    // Send to main thread for debug console
+    self.postMessage({
+        type: 'console',
+        level: level,
+        args: prefixedArgs.map(arg => {
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg, null, 2);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        })
+    });
+    
+    // Also call original console with prefix
+    originalConsole[level].apply(console, prefixedArgs);
+}
+
+console.log = (...args) => sendConsoleToMain('log', args);
+console.error = (...args) => sendConsoleToMain('error', args);
+console.warn = (...args) => sendConsoleToMain('warn', args);
+console.info = (...args) => sendConsoleToMain('info', args);
+
+// Catch worker errors
+self.addEventListener('error', (event) => {
+    sendConsoleToMain('error', [`Worker Error: ${event.message}`, event.filename ? `at ${event.filename}:${event.lineno}` : '']);
+});
+
+self.addEventListener('unhandledrejection', (event) => {
+    sendConsoleToMain('error', [`Worker Unhandled Rejection: ${event.reason}`]);
+});
 
 // Face detection will be done using simple image analysis
 // MediaPipe requires DOM access which is not available in web workers
@@ -152,6 +200,13 @@ class ModelSingleton {
 }
 
 self.onmessage = async (event) => {
+    // Handle worker ID assignment
+    if (event.data && event.data.type === 'setWorkerId') {
+        workerId = event.data.workerId;
+        console.log(`Worker ID set to: ${workerId}`);
+        return;
+    }
+    
     // Handle worker init message for model loading
     if (event.data && event.data.type === 'init') {
         try {
@@ -166,25 +221,31 @@ self.onmessage = async (event) => {
 
     const { file_id } = event.data;
     try {
+        console.log(`Starting processing for file: ${file_id}`);
         const { clipModel, clipProcessor } = await ModelSingleton.getInstance();
         const thumbnail_url = `/api/thumb/${file_id}`;
         
+        console.log(`Fetching thumbnail for: ${file_id}`);
         // Use fetch() to properly work with service worker, then convert to RawImage
         const response = await fetch(thumbnail_url);
         
         if (!response.ok) {
-            console.error(`Worker fetch failed: ${response.status} ${response.statusText} for ${file_id}`);
+            console.error(`Fetch failed: ${response.status} ${response.statusText} for ${file_id}`);
             throw new Error(`Failed to fetch thumbnail: ${response.status} ${response.statusText}`);
         }
         
+        console.log(`Got response for: ${file_id}, content-type: ${response.headers.get('content-type')}`);
         const blob = await response.blob();
+        console.log(`Blob size: ${blob.size} bytes for ${file_id}`);
         
         if (blob.size === 0) {
-            console.error(`Worker received empty blob for ${file_id}`);
+            console.error(`Empty blob for ${file_id}`);
             throw new Error(`Received empty blob for thumbnail: ${file_id}`);
         }
         
+        console.log(`Creating RawImage for: ${file_id}`);
         const image = await RawImage.fromBlob(blob);
+        console.log(`RawImage created: ${image.width}x${image.height} for ${file_id}`);
         
         // Calculate basic quality metrics using the RawImage data
         const sharpness = estimateSharpness(image);
@@ -193,22 +254,44 @@ self.onmessage = async (event) => {
         
         // Calculate final quality score including face metrics
         const qualityScore = calculateQualityScore(sharpness, exposure);
+        console.log(`Quality metrics calculated for ${file_id}: sharpness=${sharpness}, exposure=${exposure}, score=${qualityScore}`);
 
         // Generate embedding
-        const image_inputs = await clipProcessor(image); 
-        const { image_embeds } = await clipModel(image_inputs);
-        const embedding = image_embeds.normalize().tolist()[0];
-
-        self.postMessage({
-            status: 'complete',
-            file_id: file_id,
-            embedding: embedding,
-            qualityMetrics: {
-                sharpness: sharpness,
-                exposure: exposure,
-                qualityScore: qualityScore
-            }
-        });
+        console.log(`Starting embedding generation for: ${file_id}`);
+        try {
+            console.log(`Processing image with clipProcessor for: ${file_id}`);
+            const image_inputs = await clipProcessor(image);
+            console.log(`Image inputs processed for: ${file_id}, shape:`, image_inputs?.pixel_values?.dims || 'unknown');
+            
+            console.log(`Running inference with clipModel for: ${file_id}`);
+            const { image_embeds } = await clipModel(image_inputs);
+            console.log(`Model inference complete for: ${file_id}, embedding shape:`, image_embeds?.dims || 'unknown');
+            
+            console.log(`Normalizing embedding for: ${file_id}`);
+            const normalized_embeds = image_embeds.normalize();
+            console.log(`Converting to list for: ${file_id}`);
+            const embedding = normalized_embeds.tolist()[0];
+            console.log(`Embedding generated successfully for: ${file_id}, length: ${embedding?.length || 'unknown'}`);
+            
+            self.postMessage({
+                status: 'complete',
+                file_id: file_id,
+                embedding: embedding,
+                qualityMetrics: {
+                    sharpness: sharpness,
+                    exposure: exposure,
+                    qualityScore: qualityScore
+                }
+            });
+        } catch (embeddingError) {
+            console.error(`Embedding generation failed for ${file_id}:`, embeddingError);
+            console.error(`Embedding error details:`, {
+                message: embeddingError.message,
+                stack: embeddingError.stack,
+                name: embeddingError.name
+            });
+            throw embeddingError;
+        }
 
     } catch (error) {
         console.error(`Worker failed for file ${file_id}:`, error);

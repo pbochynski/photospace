@@ -1006,3 +1006,127 @@ button:disabled {
     margin: 5% auto;
   }
 }
+
+/* Debug Console Styles */
+#debug-show-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: var(--error-color);
+  color: white;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 9999;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  transition: background-color 0.2s;
+}
+
+#debug-show-btn:hover {
+  background-color: #ff6b6b;
+}
+
+#debug-console {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  width: 400px;
+  max-width: calc(100vw - 40px);
+  height: 300px;
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  z-index: 10000;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+#debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: var(--bg-color);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 8px 8px 0 0;
+  font-weight: bold;
+}
+
+#debug-controls {
+  display: flex;
+  gap: 5px;
+}
+
+#debug-controls button {
+  padding: 2px 8px;
+  font-size: 12px;
+  min-height: auto;
+  background-color: var(--border-color);
+  color: var(--text-color);
+}
+
+#debug-controls button:hover {
+  background-color: var(--primary-color);
+}
+
+#debug-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  background-color: #000;
+  color: #0f0;
+  border-radius: 0 0 8px 8px;
+}
+
+.debug-entry {
+  margin: 2px 0;
+  padding: 2px 0;
+  border-bottom: 1px solid #333;
+  word-wrap: break-word;
+}
+
+.debug-entry.error {
+  color: #ff6b6b;
+}
+
+.debug-entry.warn {
+  color: #ffeb3b;
+}
+
+.debug-entry.info {
+  color: #4fc3f7;
+}
+
+.debug-entry .timestamp {
+  color: #888;
+  font-size: 10px;
+}
+
+/* Mobile-specific adjustments for debug console */
+@media (max-width: 768px) {
+  #debug-console {
+    width: calc(100vw - 40px);
+    height: 250px;
+    bottom: 80px;
+    right: 20px;
+    left: 20px;
+  }
+  
+  #debug-console {
+    font-size: 11px;
+  }
+  
+  #debug-show-btn {
+    bottom: 15px;
+    right: 15px;
+    width: 45px;
+    height: 45px;
+    font-size: 18px;
+  }
+}
