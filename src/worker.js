@@ -171,12 +171,12 @@ class ModelSingleton {
                     accelerator = { device: 'webgpu', dtype };
                     console.log(`WebGPU is available. Using device: webgpu, dtype: ${dtype}`);
                 } catch (e) {
-                    console.warn("WebGPU request failed, falling back to CPU/WASM.", e);
-                    accelerator = { device: 'cpu' }; // Explicitly fallback
+                    console.warn("WebGPU request failed, falling back to WASM.", e);
+                    accelerator = { device: 'wasm' }; // Use 'wasm' instead of 'cpu'
                 }
             } else {
-                console.warn("WebGPU not supported, using CPU/WASM.");
-                accelerator = { device: 'cpu' }; // Explicitly fallback
+                console.warn("WebGPU not supported, using WASM.");
+                accelerator = { device: 'wasm' }; // Use 'wasm' instead of 'cpu'
             }
 
             const modelPath = '/models/clip-vit-base-patch16/';
