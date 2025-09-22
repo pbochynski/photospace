@@ -311,22 +311,88 @@ export async function uploadFileToOneDrive(fileName, fileContent, folderPath = '
         // First, ensure the folder exists
         await createAppFolder();
         
-        const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:${folderPath}/${fileName}:/content`;
+        // Convert content to blob to get accurate size
+        const blob = new Blob([fileContent]);
+        const fileSize = blob.size;
         
-        const response = await fetchWithAutoRefresh(uploadUrl, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: fileContent
-        }, getAuthToken);
+        console.log(`File size: ${(fileSize / (1024 * 1024)).toFixed(2)} MB`);
+        console.log('Using chunked upload for file');
         
-        return response;
+        return await chunkedUpload(fileName, blob, folderPath, token);
+        
     } catch (error) {
         console.error('Error uploading file to OneDrive:', error);
         throw error;
     }
+}
+
+/**
+ * Chunked upload for large files using Microsoft Graph upload session
+ */
+async function chunkedUpload(fileName, blob, folderPath, token) {
+    // Step 1: Create upload session
+    const uploadSessionUrl = `https://graph.microsoft.com/v1.0/me/drive/root:${folderPath}/${fileName}:/createUploadSession`;
+    
+    console.log('Creating upload session...');
+    const sessionResponse = await fetchWithAutoRefresh(uploadSessionUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            item: {
+                "@microsoft.graph.conflictBehavior": "replace",
+                name: fileName
+            }
+        })
+    }, getAuthToken);
+    
+    const sessionData = await sessionResponse.json();
+    const uploadUrl = sessionData.uploadUrl;
+    
+    if (!uploadUrl) {
+        throw new Error('Failed to create upload session');
+    }
+    
+    console.log('Upload session created, starting chunked upload...');
+    
+    // Step 2: Upload file in chunks
+    const chunkSize = 10 * 1024 * 1024; // 10MB chunks
+    const totalSize = blob.size;
+    let uploadedBytes = 0;
+    
+    while (uploadedBytes < totalSize) {
+        const chunkStart = uploadedBytes;
+        const chunkEnd = Math.min(uploadedBytes + chunkSize, totalSize);
+        const chunk = blob.slice(chunkStart, chunkEnd);
+        
+        console.log(`Uploading chunk: ${chunkStart}-${chunkEnd-1}/${totalSize} (${((chunkEnd/totalSize)*100).toFixed(1)}%)`);
+        
+        const chunkResponse = await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+                'Content-Range': `bytes ${chunkStart}-${chunkEnd-1}/${totalSize}`,
+                'Content-Length': chunk.size.toString()
+            },
+            body: chunk
+        });
+        
+        if (chunkResponse.status === 202) {
+            // Chunk uploaded successfully, continue
+            uploadedBytes = chunkEnd;
+        } else if (chunkResponse.status === 200 || chunkResponse.status === 201) {
+            // Upload completed
+            console.log('Upload completed successfully');
+            return await chunkResponse.json();
+        } else {
+            const errorText = await chunkResponse.text();
+            console.error('Chunk upload failed:', chunkResponse.status, errorText);
+            throw new Error(`Chunk upload failed: ${chunkResponse.status} ${errorText}`);
+        }
+    }
+    
+    throw new Error('Upload completed but no final response received');
 }
 
 /**

@@ -36,12 +36,21 @@ export async function exportEmbeddingsToOneDrive() {
         
         console.log(`Export file size: ${fileSizeMB} MB`);
         
+        // Show warning for very large files
+        if (parseFloat(fileSizeMB) > 100) {
+            console.log('⚠️ Large file detected - upload may take several minutes');
+        }
+        
         // 4. Generate filename with timestamp
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const fileName = `photospace_embeddings_${timestamp}.json`;
         
         // 5. Upload to OneDrive
         console.log(`Uploading ${fileName} to OneDrive...`);
+        if (parseFloat(fileSizeMB) > 4) {
+            console.log('Using chunked upload for large file - this may take a few minutes...');
+        }
+        
         const uploadResult = await uploadFileToOneDrive(fileName, jsonContent);
         
         // 6. Store export metadata in settings
