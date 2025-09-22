@@ -348,8 +348,7 @@ async function chunkedUpload(fileName, blob, folderPath, token) {
         })
     }, getAuthToken);
     
-    const sessionData = await sessionResponse.json();
-    const uploadUrl = sessionData.uploadUrl;
+    const uploadUrl = sessionResponse.uploadUrl;
     
     if (!uploadUrl) {
         throw new Error('Failed to create upload session');
