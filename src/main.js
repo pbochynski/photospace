@@ -992,7 +992,6 @@ async function runPhotoScan() {
     
     startScanButton.disabled = true;
     startEmbeddingButton.disabled = true;
-    startAnalysisButton.disabled = true;
 
     try {
         // --- STEP 1: Generate a new scan ID ---
@@ -1050,7 +1049,6 @@ async function handleScanClick() {
 
 async function runEmbeddingGeneration() {
     startEmbeddingButton.disabled = true;
-    startAnalysisButton.disabled = true;
 
     try {
         const forceReprocess = forceReprocessCheckbox.checked;
@@ -1190,7 +1188,6 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
         const totalToProcess = photosToProcess.length;
         if (totalToProcess === 0) {
             updateStatus('No photos to process.', false);
-            startAnalysisButton.disabled = false;
             resolve();
             return;
         }
@@ -1261,7 +1258,6 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
                 if (processedCount === totalToProcess) {
                     workers.forEach(w => w.terminate());
                     updateStatus('Processing finished with some errors.', false);
-                    startAnalysisButton.disabled = false;
                     resolve();
                 } else {
                     assignNext(workerIdx);
@@ -1302,7 +1298,6 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
                     if (processedCount === totalToProcess) {
                         workers.forEach(w => w.terminate());
                         updateStatus('All photos processed! Ready for analysis.', false);
-                        startAnalysisButton.disabled = false;
                         resolve();
                     } else {
                         assignNext(workerIdx);
@@ -1320,7 +1315,6 @@ async function processPhotosWithWorkers(photosToProcess, statusPrefix = 'Prepari
                     if (processedCount === totalToProcess) {
                         workers.forEach(w => w.terminate());
                         updateStatus('Processing finished with some errors.', false);
-                        startAnalysisButton.disabled = false;
                         resolve();
                     } else {
                         assignNext(workerIdx);
@@ -1373,7 +1367,6 @@ async function generateEmbeddings(folderPath = '/drive/root:', forceReprocess = 
             ? 'No photos found in selected folder.' 
             : 'All photos in selected folder are already processed.';
         updateStatus(message, false);
-        startAnalysisButton.disabled = false;
         return;
     }
     
