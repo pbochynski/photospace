@@ -203,6 +203,12 @@ button:disabled {
   border: 1px solid var(--border-color);
 }
 
+.analysis-action {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
 .analysis-options label {
   display: block;
   margin-bottom: 0.5rem;
@@ -1098,16 +1104,44 @@ button:disabled {
   border-bottom: 1px solid var(--border-color);
 }
 
+.panel-title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .panel-title {
   margin: 0;
   font-size: 1rem;
   color: var(--text-color);
 }
 
+.current-path {
+  font-size: 0.85rem;
+  color: var(--primary-color);
+  font-family: monospace;
+  opacity: 0.8;
+}
+
 .panel-tools {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.75rem;
+}
+
+.panel-tools label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.panel-tools select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.9rem;
 }
 
 .panel-toggle {
@@ -1205,6 +1239,35 @@ button:disabled {
 .scanned-folder-actions button {
   padding: 0.3rem 0.6rem;
   font-size: 0.8rem;
+}
+
+/* Processing configuration styles */
+.processing-actions {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.processing-actions .primary-action {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.processing-actions .embedding-controls {
+  flex: 1;
+}
+
+.processing-row {
+  margin-bottom: 1rem;
+}
+
+.processing-row h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--primary-color);
+  font-size: 1rem;
 }
 
 #import-progress {

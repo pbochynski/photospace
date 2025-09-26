@@ -177,6 +177,11 @@ const browserSortSelect = document.getElementById('browser-sort');
 const browserRefreshBtn = document.getElementById('browser-refresh');
 const browserUpBtn = document.getElementById('browser-up');
 const browserAddScannedBtn = document.getElementById('browser-add-scanned');
+const browserCurrentPath = document.getElementById('browser-current-path');
+const analysisMenuBtn = document.getElementById('analysis-menu-btn');
+const analysisMenu = document.getElementById('analysis-menu');
+const analysisCurrentBtn = document.getElementById('analysis-current-folder');
+const analysisAllBtn = document.getElementById('analysis-all-folders');
 
 // Folder selector elements
 const selectedFolderInput = null;
@@ -802,8 +807,8 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 selectedFolderId = folder.id;
                 selectedFolderPath = await getFolderPath(folder.id);
                 selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
-            // input removed
                 updateURLWithPath(selectedFolderPath);
+                updateBrowserCurrentPath();
                 await renderBrowserPhotoGrid(true);
             });
             browserPhotoGrid.appendChild(item);
@@ -1531,6 +1536,10 @@ async function generateEmbeddings(folderPath = '/drive/root:', forceReprocess = 
 }
 
 async function runAnalysis() {
+    return await runAnalysisForScope('current');
+}
+
+async function runAnalysisForScope(scope) {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
     
@@ -1538,37 +1547,57 @@ async function runAnalysis() {
     await initializeServiceWorkerToken();
     
     try {
-        // Get all photos from database (no folder filter here)
-        const allPhotos = await db.getAllPhotosWithEmbedding();
+        let allPhotos;
+        let scopeDescription;
+        
+        if (scope === 'all') {
+            // Get ALL photos with embeddings from IndexedDB, regardless of scanned folders
+            allPhotos = await db.getAllPhotosWithEmbedding();
+            scopeDescription = 'all indexed photos';
+        } else {
+            // Get photos from current folder only
+            const currentPath = selectedFolderPath || '/drive/root:';
+            allPhotos = await db.getAllPhotosWithEmbeddingFromFolder(currentPath);
+            scopeDescription = 'current folder only';
+        }
         
         if(allPhotos.length === 0) {
-            updateStatus('No photos with embeddings found to analyze.', false);
+            updateStatus(`No photos with embeddings found in ${scopeDescription}.`, false);
             startAnalysisButton.disabled = false;
             return;
         }
 
-        // Apply filters (folder and date range)
-        const filteredPhotos = applyFilters(allPhotos);
+        // Apply filters (date range only, folder filter handled by scope)
+        const dateFilter = getDateFilter();
+        let filteredPhotos = allPhotos;
+        
+        if (dateFilter) {
+            filteredPhotos = filteredPhotos.filter(photo => {
+                const photoDate = photo.photo_taken_ts || photo.last_modified;
+                if (!photoDate) return false;
+                
+                const photoTime = new Date(photoDate).getTime();
+                
+                if (dateFilter.from && photoTime < dateFilter.from) return false;
+                if (dateFilter.to && photoTime > dateFilter.to) return false;
+                
+                return true;
+            });
+        }
         
         if(filteredPhotos.length === 0) {
-            updateStatus('No photos match the current filters.', false);
+            updateStatus(`No photos match the current filters in ${scopeDescription}.`, false);
             startAnalysisButton.disabled = false;
             return;
         }
 
         // Show filter summary
-        const dateFilter = getDateFilter();
         const minGroupSize = await getMinGroupSize();
-        let filterSummary = `Analyzing ${filteredPhotos.length} photos`;
-        if (selectedFolderPath || dateFilter) {
-            filterSummary += ' (filtered';
-            if (selectedFolderPath) filterSummary += ` by folder: ${selectedFolderDisplayName}`;
-            if (dateFilter) {
-                const fromStr = dateFilter.from ? new Date(dateFilter.from).toLocaleDateString() : 'start';
-                const toStr = dateFilter.to ? new Date(dateFilter.to).toLocaleDateString() : 'end';
-                filterSummary += ` by date: ${fromStr} to ${toStr}`;
-            }
-            filterSummary += ')';
+        let filterSummary = `Analyzing ${filteredPhotos.length} photos from ${scopeDescription}`;
+        if (dateFilter) {
+            const fromStr = dateFilter.from ? new Date(dateFilter.from).toLocaleDateString() : 'start';
+            const toStr = dateFilter.to ? new Date(dateFilter.to).toLocaleDateString() : 'end';
+            filterSummary += ` (filtered by date: ${fromStr} to ${toStr})`;
         }
         filterSummary += ` • Min group size: ${minGroupSize} photos`;
         
@@ -1880,7 +1909,36 @@ async function main() {
             await runEmbeddingGenerationForScope('all');
         });
     }
-    startAnalysisButton.addEventListener('click', runAnalysis);
+    // Analysis split button: default main action runs for current folder
+    startAnalysisButton.addEventListener('click', async () => {
+        await runAnalysisForScope('current');
+    });
+    if (analysisMenuBtn) {
+        analysisMenuBtn.addEventListener('click', () => {
+            const open = analysisMenu.classList.toggle('open');
+            analysisMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            analysisMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
+        });
+        document.addEventListener('click', (e) => {
+            if (!analysisMenu.contains(e.target) && e.target !== analysisMenuBtn) {
+                analysisMenu.classList.remove('open');
+                analysisMenuBtn.setAttribute('aria-expanded', 'false');
+                analysisMenu.setAttribute('aria-hidden', 'true');
+            }
+        });
+    }
+    if (analysisCurrentBtn) {
+        analysisCurrentBtn.addEventListener('click', async () => {
+            analysisMenu.classList.remove('open');
+            await runAnalysisForScope('current');
+        });
+    }
+    if (analysisAllBtn) {
+        analysisAllBtn.addEventListener('click', async () => {
+            analysisMenu.classList.remove('open');
+            await runAnalysisForScope('all');
+        });
+    }
     
     // Filter control event listeners
     // input removed
@@ -1979,16 +2037,16 @@ async function main() {
                 if (!selectedFolderId || selectedFolderId === 'root') return;
                 const info = await getFolderInfo(selectedFolderId);
                 if (info.parentId) {
-                    selectedFolderId = info.parentId;
-                    selectedFolderPath = await getFolderPath(selectedFolderId);
-                } else {
-                    selectedFolderId = 'root';
-                    selectedFolderPath = '/drive/root:';
-                }
-                selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
-                // input removed
-                updateURLWithPath(selectedFolderPath);
-                await renderBrowserPhotoGrid(true);
+                selectedFolderId = info.parentId;
+                selectedFolderPath = await getFolderPath(selectedFolderId);
+            } else {
+                selectedFolderId = 'root';
+                selectedFolderPath = '/drive/root:';
+            }
+            selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
+            updateURLWithPath(selectedFolderPath);
+            updateBrowserCurrentPath();
+            await renderBrowserPhotoGrid(true);
             } catch (e) {
                 console.error('Failed to navigate up', e);
             }
@@ -2057,7 +2115,10 @@ async function main() {
     // Initialize backup panel
     await initializeBackupPanel();
     // Initial browser photo grid load (if logged in and a folder is selected)
-    try { await renderBrowserPhotoGrid(); } catch {}
+    try { 
+        updateBrowserCurrentPath();
+        await renderBrowserPhotoGrid(); 
+    } catch {}
     // Render scanned folders list
     try { await renderScannedFoldersList(); } catch {}
 }
@@ -2365,6 +2426,14 @@ function applyPanelExpandedState(panel, toggleBtn, expanded) {
         panel.classList.add('collapsed');
         toggleBtn.setAttribute('aria-expanded', 'false');
         toggleBtn.textContent = '▸';
+    }
+}
+
+// Update browser current path display
+function updateBrowserCurrentPath() {
+    if (browserCurrentPath) {
+        const displayPath = selectedFolderDisplayName || 'OneDrive (Root)';
+        browserCurrentPath.textContent = displayPath;
     }
 }
 
