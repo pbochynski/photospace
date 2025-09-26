@@ -18,29 +18,44 @@
         </header>
 
         <main id="main-content" style="display: none;">
-            <div id="status-panel">
+            <div id="status-panel" class="panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">Status</h3>
+                    <div class="panel-tools"></div>
+                </div>
                 <p id="status-text">Ready to start.</p>
                 <progress id="progress-bar" value="0" max="100" style="display: none;"></progress>
             </div>
             
-            <div id="folder-selector-panel">
-                <label for="selected-folder">Folder Filter (optional):</label>
-                <div class="folder-input-group">
-                    <input type="text" id="selected-folder" value="All folders" placeholder="All folders or enter path like: Pictures/Vacation">
-                    <button id="browse-folder-btn" type="button" title="Browse folders">📁</button>
-                    <button id="clear-folder-btn" type="button" title="Clear filter">✕</button>
+            <!-- OneDrive Browser (initial structure: folder filter + date filter) -->
+            <section class="panel" data-panel-key="browser">
+                <div class="panel-header">
+                    <h3 class="panel-title">OneDrive Browser</h3>
+                    <div class="panel-tools">
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
                 </div>
-            </div>
-            
-            <div id="date-filter-panel">
-                <label for="date-range-inputs">Date Range Filter (optional):</label>
-                <div class="date-range-group">
-                    <input type="date" id="date-from" placeholder="From date">
-                    <span>to</span>
-                    <input type="date" id="date-to" placeholder="To date">
-                    <button id="clear-date-btn" type="button">✕ Clear</button>
+                <div class="panel-body">
+                    <div id="folder-selector-panel">
+                        <label for="selected-folder">Folder Filter (optional):</label>
+                        <div class="folder-input-group">
+                            <input type="text" id="selected-folder" value="All folders" placeholder="All folders or enter path like: Pictures/Vacation">
+                            <button id="browse-folder-btn" type="button" title="Browse folders">📁</button>
+                            <button id="clear-folder-btn" type="button" title="Clear filter">✕</button>
+                        </div>
+                    </div>
+                    
+                    <div id="date-filter-panel">
+                        <label for="date-range-inputs">Date Range Filter (optional):</label>
+                        <div class="date-range-group">
+                            <input type="date" id="date-from" placeholder="From date">
+                            <span>to</span>
+                            <input type="date" id="date-to" placeholder="To date">
+                            <button id="clear-date-btn" type="button">✕ Clear</button>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </section>
             
             <div id="controls">
                 <button id="start-scan-button">1. Scan Photos</button>
@@ -55,42 +70,91 @@
                     </div>
                 </div>
                 <button id="start-analysis-button">3. Analyze & Find Similar Photos</button>
-                <div class="analysis-options">
-                    <label for="similarity-threshold">Similarity Threshold:</label>
-                    <div class="threshold-input-group">
-                        <input type="range" id="similarity-threshold" min="0.5" max="0.99" step="0.01" value="0.90">
-                        <span id="threshold-value">0.90</span>
-                        <small class="threshold-help">Higher = more strict (fewer groups, very similar photos only)</small>
-                    </div>
-                    
-                    <label for="time-span">Time Window for Photo Sessions:</label>
-                    <div class="threshold-input-group">
-                        <input type="range" id="time-span" min="1" max="24" step="1" value="8">
-                        <span id="time-span-value">8 hours</span>
-                        <small class="threshold-help">Photos taken within this time window are considered part of the same session</small>
-                    </div>
-                    
-                    <label for="sort-method">Sort Results By:</label>
-                    <div class="sort-input-group">
-                        <select id="sort-method">
-                            <option value="group-size">Group Size (Largest First)</option>
-                            <option value="date-desc">Date (Newest First)</option>
-                            <option value="date-asc">Date (Oldest First)</option>
-                        </select>
-                        <small class="threshold-help">Choose how to order the similar photo groups</small>
-                    </div>
-                    
-                    <label for="worker-count">Parallel Workers:</label>
-                    <div class="threshold-input-group">
-                        <input type="range" id="worker-count" min="1" max="8" step="1" value="4">
-                        <span id="worker-count-value">4 workers</span>
-                        <small class="threshold-help">Number of parallel workers for embedding generation (more workers = faster processing, but uses more CPU)</small>
-                    </div>
-                </div>
+                
             </div>
 
-            <div id="embedding-backup-panel">
-                <h3>Embedding Backup & Sync</h3>
+            <!-- Processing Configuration Panel -->
+            <section class="panel" data-panel-key="processing">
+                <div class="panel-header">
+                    <h3 class="panel-title">Processing Configuration</h3>
+                    <div class="panel-tools">
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="processing-config">
+                        <div class="processing-row">
+                            <label for="worker-count">Parallel Workers:</label>
+                            <div class="threshold-input-group">
+                                <input type="range" id="worker-count" min="1" max="8" step="1" value="4">
+                                <span id="worker-count-value">4 workers</span>
+                                <small class="threshold-help">Number of parallel workers for embedding generation (more workers = faster processing, but uses more CPU)</small>
+                            </div>
+                        </div>
+                        <div class="processing-row">
+                            <h4>Scanned Folders</h4>
+                            <div id="scanned-folders-list" class="scanned-folders-list">
+                                <div class="empty-note">No folders added yet. Use the OneDrive Browser to add.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Similarity Analysis Panel -->
+            <section class="panel" data-panel-key="analysis">
+                <div class="panel-header">
+                    <h3 class="panel-title">Similarity Analysis</h3>
+                    <div class="panel-tools">
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="analysis-options">
+                        <label for="similarity-threshold">Similarity Threshold:</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="similarity-threshold" min="0.5" max="0.99" step="0.01" value="0.90">
+                            <span id="threshold-value">0.90</span>
+                            <small class="threshold-help">Higher = more strict (fewer groups, very similar photos only)</small>
+                        </div>
+                        
+                        <label for="time-span">Time Window for Photo Sessions:</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="time-span" min="1" max="24" step="1" value="8">
+                            <span id="time-span-value">8 hours</span>
+                            <small class="threshold-help">Photos taken within this time window are considered part of the same session</small>
+                        </div>
+                        
+                        <label for="min-group-size">Minimum Group Size:</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="min-group-size" min="2" max="20" step="1" value="3">
+                            <span id="min-group-size-value">3 photos</span>
+                            <small class="threshold-help">Only show groups with at least this many similar photos</small>
+                        </div>
+                        
+                        <label for="sort-method">Sort Results By:</label>
+                        <div class="sort-input-group">
+                            <select id="sort-method">
+                                <option value="group-size">Group Size (Largest First)</option>
+                                <option value="date-desc">Date (Newest First)</option>
+                                <option value="date-asc">Date (Oldest First)</option>
+                            </select>
+                            <small class="threshold-help">Choose how to order the similar photo groups</small>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Embedding Backup & Sync Panel -->
+            <section class="panel" data-panel-key="backup">
+                <div class="panel-header">
+                    <h3 class="panel-title">Embedding Backup & Sync</h3>
+                    <div class="panel-tools">
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                <div id="embedding-backup-panel">
                 <div class="backup-controls">
                     <div class="backup-section">
                         <h4>Export to OneDrive</h4>
@@ -112,13 +176,25 @@
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
+                </div>
+            </section>
 
-            <div id="results-container">
-                <h2>Similar Photo Groups</h2>
-                <p class="placeholder">Analysis results will appear here. Groups with the most similar photos will be shown first.</p>
-                <!-- Results will be dynamically inserted here -->
-            </div>
+            <!-- Results Panel -->
+            <section class="panel" data-panel-key="results">
+                <div class="panel-header">
+                    <h3 class="panel-title">Similar Photo Groups</h3>
+                    <div class="panel-tools">
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="results-container">
+                        <p class="placeholder">Analysis results will appear here. Groups with the most similar photos will be shown first.</p>
+                        <!-- Results will be dynamically inserted here -->
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
     <div id="image-modal" class="modal" style="display:none;">

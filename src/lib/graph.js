@@ -76,7 +76,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
         const photosInPage = [];
         for (const item of response.value) {
             // Only process photos, skip folders completely
-            if (item.photo && item.thumbnails && item.thumbnails.length > 0) {
+            if (item.photo) {
                 const folderPath = item.parentReference?.path || '/drive/root:';
                 const fullPath = folderPath === '/drive/root:' ? 
                     `/drive/root:/${item.name}` : 

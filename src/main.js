@@ -182,6 +182,8 @@ const similarityThresholdSlider = document.getElementById('similarity-threshold'
 const thresholdValueDisplay = document.getElementById('threshold-value');
 const timeSpanSlider = document.getElementById('time-span');
 const timeSpanValueDisplay = document.getElementById('time-span-value');
+const minGroupSizeSlider = document.getElementById('min-group-size');
+const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
 const sortMethodSelect = document.getElementById('sort-method');
 const workerCountSlider = document.getElementById('worker-count');
 const workerCountValueDisplay = document.getElementById('worker-count-value');
@@ -520,12 +522,31 @@ function updateStatus(text, showProgress = false, progressValue = 0, progressMax
     }
 }
 
-function displayLoggedIn(account) {
+// Helper function to initialize service worker with auth token
+async function initializeServiceWorkerToken() {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        try {
+            const token = await getAuthToken();
+            navigator.serviceWorker.controller.postMessage({
+                type: 'SET_TOKEN',
+                token: token
+            });
+            console.log('Service worker initialized with auth token');
+        } catch (error) {
+            console.error('Failed to initialize service worker with token:', error);
+        }
+    }
+}
+
+async function displayLoggedIn(account) {
     loginButton.style.display = 'none';
     userInfo.textContent = `Welcome, ${account.name}`;
     userInfo.style.display = 'block';
     mainContent.style.display = 'block';
     updateStatus('Ready. Click "Scan OneDrive Photos" to begin.');
+    
+    // Initialize service worker with auth token
+    await initializeServiceWorkerToken();
 }
 
 function displayResults(groups) {
@@ -1031,7 +1052,7 @@ async function handleLoginClick() {
     try {
         const account = await login();
         if (account) {
-            displayLoggedIn(account);
+            await displayLoggedIn(account);
             await db.init();
             // Initialize analysis settings UI after login
             await initializeAnalysisSettings();
@@ -1379,6 +1400,10 @@ async function generateEmbeddings(folderPath = '/drive/root:', forceReprocess = 
 async function runAnalysis() {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
+    
+    // Ensure service worker has auth token (backup in case it wasn't set during login)
+    await initializeServiceWorkerToken();
+    
     try {
         // Get all photos from database (no folder filter here)
         const allPhotos = await db.getAllPhotosWithEmbedding();
@@ -1400,6 +1425,7 @@ async function runAnalysis() {
 
         // Show filter summary
         const dateFilter = getDateFilter();
+        const minGroupSize = await getMinGroupSize();
         let filterSummary = `Analyzing ${filteredPhotos.length} photos`;
         if (selectedFolderPath || dateFilter) {
             filterSummary += ' (filtered';
@@ -1411,6 +1437,7 @@ async function runAnalysis() {
             }
             filterSummary += ')';
         }
+        filterSummary += ` • Min group size: ${minGroupSize} photos`;
         
         updateStatus(filterSummary, true, 25, 100);
 
@@ -1419,10 +1446,16 @@ async function runAnalysis() {
             const similarityThreshold = await getSimilarityThreshold();
             const timeSpanHours = await getTimeSpanHours();
             const sortMethod = await getSortMethod();
+            const minGroupSize = await getMinGroupSize();
             
             let similarGroups = await findSimilarGroups(filteredPhotos, (progress) => {
                 updateStatus(`Finding groups... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.5), 100);
             }, similarityThreshold, timeSpanHours, sortMethod);
+            
+            // Filter groups by minimum size
+            const totalGroupsFound = similarGroups.length;
+            similarGroups = similarGroups.filter(group => group.photos.length >= minGroupSize);
+            const filteredOutCount = totalGroupsFound - similarGroups.length;
 
             updateStatus(`Picking best photos...`, true, 75, 100);
 
@@ -1451,7 +1484,13 @@ async function runAnalysis() {
 
             // Display results immediately
             displayResults(similarGroups);
-            updateStatus('Analysis complete!', false);
+            
+            // Show final status with filtering info
+            let finalStatus = 'Analysis complete!';
+            if (filteredOutCount > 0) {
+                finalStatus += ` (${filteredOutCount} groups filtered out due to min group size)`;
+            }
+            updateStatus(finalStatus, false);
             startAnalysisButton.disabled = false;
 
             // Queue thumbnail refresh for result folders in background
@@ -1471,7 +1510,7 @@ async function runAnalysis() {
 async function initializeAnalysisSettings() {
     try {
         // Check if DOM elements are available
-        if (!similarityThresholdSlider || !thresholdValueDisplay || !timeSpanSlider || !timeSpanValueDisplay || !sortMethodSelect || !workerCountSlider || !workerCountValueDisplay) {
+        if (!similarityThresholdSlider || !thresholdValueDisplay || !timeSpanSlider || !timeSpanValueDisplay || !minGroupSizeSlider || !minGroupSizeValueDisplay || !sortMethodSelect || !workerCountSlider || !workerCountValueDisplay) {
             console.warn('Some DOM elements not found, skipping analysis settings initialization');
             return;
         }
@@ -1506,6 +1545,21 @@ async function initializeAnalysisSettings() {
             await db.setSetting('timeSpanHours', validTimeSpan);
         }
         
+        // Initialize min group size
+        const savedMinGroupSize = await db.getSetting('minGroupSize');
+        const minGroupSize = savedMinGroupSize !== null ? Number(savedMinGroupSize) : 3; // Default to 3 photos
+        
+        // Ensure minGroupSize is a valid number
+        const validMinGroupSize = (!isNaN(minGroupSize) && minGroupSize >= 2 && minGroupSize <= 20) ? minGroupSize : 3;
+        
+        minGroupSizeSlider.value = validMinGroupSize;
+        minGroupSizeValueDisplay.textContent = `${validMinGroupSize} photos`;
+        
+        // Save default if no setting exists
+        if (savedMinGroupSize === null) {
+            await db.setSetting('minGroupSize', validMinGroupSize);
+        }
+        
         // Initialize sort method
         const savedSortMethod = await db.getSetting('sortMethod');
         const sortMethod = savedSortMethod !== null ? savedSortMethod : 'group-size'; // Default to group size
@@ -1538,6 +1592,8 @@ async function initializeAnalysisSettings() {
         thresholdValueDisplay.textContent = '0.90';
         timeSpanSlider.value = 8;
         timeSpanValueDisplay.textContent = '8 hours';
+        minGroupSizeSlider.value = 3;
+        minGroupSizeValueDisplay.textContent = '3 photos';
         sortMethodSelect.value = 'group-size';
         workerCountSlider.value = 4;
         workerCountValueDisplay.textContent = '4 workers';
@@ -1584,6 +1640,16 @@ async function getWorkerCount() {
     }
 }
 
+async function getMinGroupSize() {
+    try {
+        const minGroupSize = await db.getSetting('minGroupSize');
+        return minGroupSize !== null ? minGroupSize : 3;
+    } catch (error) {
+        console.error('Error getting min group size:', error);
+        return 3;
+    }
+}
+
 // --- Main Application Startup ---
 // NEW: We wrap the startup logic in an async function to use await.
 async function main() {
@@ -1614,7 +1680,7 @@ async function main() {
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length > 0) {
         msalInstance.setActiveAccount(accounts[0]);
-        displayLoggedIn(accounts[0]);
+        await displayLoggedIn(accounts[0]);
         await db.init();
         
         // Initialize analysis settings UI
@@ -1649,6 +1715,13 @@ async function main() {
         const value = parseInt(e.target.value);
         timeSpanValueDisplay.textContent = `${value} hours`;
         await db.setSetting('timeSpanHours', value);
+    });
+    
+    // Min group size control event listeners
+    minGroupSizeSlider.addEventListener('input', async (e) => {
+        const value = parseInt(e.target.value);
+        minGroupSizeValueDisplay.textContent = `${value} photos`;
+        await db.setSetting('minGroupSize', value);
     });
     
     // Sort method control event listeners
@@ -1725,6 +1798,9 @@ async function main() {
         }
     });
     
+    // Initialize collapsible panels state and handlers
+    initializeCollapsiblePanels();
+
     // Initialize backup panel
     await initializeBackupPanel();
 }
@@ -1991,6 +2067,49 @@ async function initializeBackupPanel() {
 
 // Make deleteImportFile available globally for onclick handlers
 window.deleteImportFile = deleteImportFile;
+
+// Collapsible Panels: init and persistence
+function initializeCollapsiblePanels() {
+    const panels = document.querySelectorAll('.panel[data-panel-key]');
+    panels.forEach(async (panel) => {
+        const key = panel.getAttribute('data-panel-key');
+        const toggleBtn = panel.querySelector('.panel-toggle');
+        if (!toggleBtn) return;
+
+        // Restore state from DB
+        try {
+            const stored = await db.getSetting(`ui.panel.${key}.expanded`);
+            const isExpanded = stored === null ? true : Boolean(stored);
+            applyPanelExpandedState(panel, toggleBtn, isExpanded);
+        } catch (e) {
+            applyPanelExpandedState(panel, toggleBtn, true);
+        }
+
+        // Listener
+        toggleBtn.addEventListener('click', async () => {
+            const currentlyExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+            const next = !currentlyExpanded;
+            applyPanelExpandedState(panel, toggleBtn, next);
+            try {
+                await db.setSetting(`ui.panel.${key}.expanded`, next);
+            } catch (e) {
+                console.warn('Failed to persist panel state', key, e);
+            }
+        });
+    });
+}
+
+function applyPanelExpandedState(panel, toggleBtn, expanded) {
+    if (expanded) {
+        panel.classList.remove('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'true');
+        toggleBtn.textContent = '▾';
+    } else {
+        panel.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        toggleBtn.textContent = '▸';
+    }
+}
 
 // Start the application
 main();

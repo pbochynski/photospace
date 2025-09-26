@@ -17,7 +17,7 @@ body {
 }
 
 #app {
-  max-width: 1200px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 1rem;
 }
@@ -196,7 +196,7 @@ button:disabled {
   transition: all 0.2s ease;
 }
 
-#threshold-value {
+#threshold-value, #min-group-size-value {
   font-weight: 600;
   color: var(--primary-color);
   min-width: 4rem;
@@ -908,6 +908,55 @@ button:disabled {
 .file-actions .delete-btn:hover {
   background-color: var(--error-color);
   color: white;
+}
+
+/* Generic Panel Components */
+.panel {
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.panel-title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-color);
+}
+
+.panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.panel-toggle {
+  background: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.panel-toggle:hover {
+  border-color: var(--primary-color);
+}
+
+.panel-body {
+  padding: 1rem;
+}
+
+.panel.collapsed .panel-body {
+  display: none;
 }
 
 /* Import Modal Styles */
