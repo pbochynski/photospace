@@ -191,7 +191,7 @@ const workerCountValueDisplay = document.getElementById('worker-count-value');
 // Date filter elements
 const dateFromInput = document.getElementById('date-from');
 const dateToInput = document.getElementById('date-to');
-const clearDateBtn = document.getElementById('clear-date-btn');
+const dateEnabledToggle = document.getElementById('date-enabled-toggle');
 
 // Embedding backup elements
 const exportEmbeddingsBtn = document.getElementById('export-embeddings-btn');
@@ -246,17 +246,25 @@ function updateURLWithFilters() {
         url.searchParams.delete('path');
     }
     
+    // Update date filter enable flag
+    const dateEnabled = isDateFilterEnabled();
+    if (dateEnabled) {
+        url.searchParams.set('dateEnabled', 'true');
+    } else {
+        url.searchParams.set('dateEnabled', 'false');
+    }
+    
     // Update date range
     const dateFrom = dateFromInput.value;
     const dateTo = dateToInput.value;
     
-    if (dateFrom) {
+    if (dateEnabled && dateFrom) {
         url.searchParams.set('dateFrom', dateFrom);
     } else {
         url.searchParams.delete('dateFrom');
     }
     
-    if (dateTo) {
+    if (dateEnabled && dateTo) {
         url.searchParams.set('dateTo', dateTo);
     } else {
         url.searchParams.delete('dateTo');
@@ -279,6 +287,7 @@ function getPathFromURL() {
 function getDateFiltersFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     return {
+        dateEnabled: urlParams.get('dateEnabled') !== 'false',
         dateFrom: urlParams.get('dateFrom') || null,
         dateTo: urlParams.get('dateTo') || null
     };
@@ -296,6 +305,9 @@ function setDefaultDateRange() {
 function restoreDateFiltersFromURL() {
     const dateFilters = getDateFiltersFromURL();
     
+    // Restore toggle
+    dateEnabledToggle.checked = dateFilters.dateEnabled !== false;
+    
     if (dateFilters.dateFrom || dateFilters.dateTo) {
         // Restore from URL
         dateFromInput.value = dateFilters.dateFrom || '';
@@ -304,6 +316,7 @@ function restoreDateFiltersFromURL() {
         // Set default to last month
         setDefaultDateRange();
     }
+    applyDateEnabledUI();
 }
 
 async function restoreFolderFromURL() {
@@ -460,14 +473,24 @@ async function handleFolderInputChange() {
     }
 }
 
-function clearDateFilter() {
-    dateFromInput.value = '';
-    dateToInput.value = '';
-    updateURLWithFilters();
-    updateStatus('Date filter cleared', false);
+function isDateFilterEnabled() {
+    return dateEnabledToggle ? dateEnabledToggle.checked : true;
+}
+
+function applyDateEnabledUI() {
+    const disabled = !isDateFilterEnabled();
+    dateFromInput.disabled = disabled;
+    dateToInput.disabled = disabled;
+    const switchText = document.querySelector('.switch-text');
+    if (switchText) {
+        switchText.textContent = disabled ? 'Disabled' : 'Enabled';
+    }
 }
 
 function getDateFilter() {
+    if (!isDateFilterEnabled()) {
+        return null;
+    }
     const fromDate = dateFromInput.value;
     const toDate = dateToInput.value;
     
@@ -1515,6 +1538,27 @@ async function initializeAnalysisSettings() {
             return;
         }
         
+        // Initialize date toggle and restore last range from DB if URL absent
+        try {
+            const dateEnabledSetting = await db.getSetting('dateEnabled');
+            if (dateEnabledSetting !== null) {
+                dateEnabledToggle.checked = Boolean(dateEnabledSetting);
+            }
+            const dateFilters = getDateFiltersFromURL();
+            if (!dateFilters.dateFrom && !dateFilters.dateTo) {
+                const savedFrom = await db.getSetting('dateFrom');
+                const savedTo = await db.getSetting('dateTo');
+                if (savedFrom) dateFromInput.value = savedFrom;
+                if (savedTo) dateToInput.value = savedTo;
+                if (!savedFrom && !savedTo) {
+                    setDefaultDateRange();
+                }
+            }
+            applyDateEnabledUI();
+        } catch (e) {
+            // Non-fatal
+        }
+
         // Initialize similarity threshold
         const savedThreshold = await db.getSetting('similarityThreshold');
         const threshold = savedThreshold !== null ? Number(savedThreshold) : 0.90; // Default to 0.90
@@ -1699,9 +1743,19 @@ async function main() {
     
     // Filter control event listeners
     clearFolderBtn.addEventListener('click', clearFolderFilter);
-    clearDateBtn.addEventListener('click', clearDateFilter);
-    dateFromInput.addEventListener('change', updateURLWithFilters);
-    dateToInput.addEventListener('change', updateURLWithFilters);
+    dateFromInput.addEventListener('change', async () => {
+        await db.setSetting('dateFrom', dateFromInput.value || '');
+        updateURLWithFilters();
+    });
+    dateToInput.addEventListener('change', async () => {
+        await db.setSetting('dateTo', dateToInput.value || '');
+        updateURLWithFilters();
+    });
+    dateEnabledToggle.addEventListener('change', async () => {
+        await db.setSetting('dateEnabled', isDateFilterEnabled());
+        applyDateEnabledUI();
+        updateURLWithFilters();
+    });
     
     // Similarity threshold control event listeners
     similarityThresholdSlider.addEventListener('input', async (e) => {

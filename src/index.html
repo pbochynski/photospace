@@ -46,13 +46,20 @@
                     </div>
                     
                     <div id="date-filter-panel">
-                        <label for="date-range-inputs">Date Range Filter (optional):</label>
+                        <div class="date-filter-header">
+                            <label for="date-range-inputs">Date Range Filter</label>
+                            <label class="switch-label">
+                                <input type="checkbox" id="date-enabled-toggle" checked>
+                                <span class="switch"></span>
+                                <span class="switch-text">Enabled</span>
+                            </label>
+                        </div>
                         <div class="date-range-group">
                             <input type="date" id="date-from" placeholder="From date">
                             <span>to</span>
                             <input type="date" id="date-to" placeholder="To date">
-                            <button id="clear-date-btn" type="button">✕ Clear</button>
                         </div>
+                        <small class="threshold-help">Toggle OFF to temporarily search all dates without losing your selected range</small>
                     </div>
                 </div>
             </section>
