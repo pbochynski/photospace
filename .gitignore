@@ -91,3 +91,4 @@ dist/
 
 # Vite files
 dist*.onnx
+public/models/
