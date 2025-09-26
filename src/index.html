@@ -84,8 +84,8 @@
                         <div class="processing-row">
                             <label for="worker-count">Parallel Workers:</label>
                             <div class="threshold-input-group">
-                                <input type="range" id="worker-count" min="1" max="8" step="1" value="4">
-                                <span id="worker-count-value">4 workers</span>
+                                <input type="range" id="worker-count" min="1" max="8" step="1">
+                                <span id="worker-count-value">Loading...</span>
                                 <small class="threshold-help">Number of parallel workers for embedding generation (more
                                     workers = faster processing, but uses more CPU)</small>
                             </div>
@@ -108,8 +108,8 @@
                                         aria-expanded="false">▾</button>
                                     <div id="embedding-menu" class="menu" role="menu" aria-hidden="true">
                                         <button id="embedding-current-folder" role="menuitem">In Current Folder</button>
-                                        <button id="embedding-all-folders" role="menuitem">In All Scanned
-                                            Folders</button>
+                                        <button id="embedding-all-folders" role="menuitem">In All Scanned Folders</button>
+                                        <button id="embedding-all-indexed" role="menuitem">All Indexed Files</button>
                                     </div>
                                 </div>
                                 <div class="embedding-options">

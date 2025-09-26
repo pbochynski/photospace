@@ -170,6 +170,7 @@ const embeddingMenuBtn = document.getElementById('embedding-menu-btn');
 const embeddingMenu = document.getElementById('embedding-menu');
 const embeddingCurrentBtn = document.getElementById('embedding-current-folder');
 const embeddingAllBtn = document.getElementById('embedding-all-folders');
+const embeddingAllIndexedBtn = document.getElementById('embedding-all-indexed');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
 const browserPhotoGrid = document.getElementById('browser-photo-grid');
@@ -198,7 +199,6 @@ const timeSpanSlider = document.getElementById('time-span');
 const timeSpanValueDisplay = document.getElementById('time-span-value');
 const minGroupSizeSlider = document.getElementById('min-group-size');
 const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
-const sortMethodSelect = document.getElementById('sort-method');
 const resultsSortSelect = document.getElementById('results-sort');
 const workerCountSlider = document.getElementById('worker-count');
 const workerCountValueDisplay = document.getElementById('worker-count-value');
@@ -1168,7 +1168,7 @@ async function handleLoginClick() {
             await displayLoggedIn(account);
             await db.init();
             // Initialize analysis settings UI after login
-            await initializeAnalysisSettings();
+            await initializeAnalysisSettingsWithRetry();
         }
     } catch (error) {
         console.error(error);
@@ -1256,6 +1256,10 @@ async function runEmbeddingGenerationForScope(scope) {
                 await generateEmbeddings(p, forceReprocess);
             }
             updateStatus(`Embedding generation complete for ${targets.length} folder(s).`, false);
+        } else if (scope === 'indexed') {
+            // Generate embeddings for all indexed photos regardless of folder
+            await generateEmbeddingsForAllIndexedPhotos(forceReprocess);
+            updateStatus('Embedding generation complete for all indexed files.', false);
         } else {
             const path = selectedFolderPath || '/drive/root:';
             await generateEmbeddings(path, forceReprocess);
@@ -1535,6 +1539,32 @@ async function generateEmbeddings(folderPath = '/drive/root:', forceReprocess = 
     return await processPhotosWithWorkers(photosToProcess, statusPrefix);
 }
 
+// High-level function for processing all indexed photos regardless of folder
+async function generateEmbeddingsForAllIndexedPhotos(forceReprocess = false) {
+    let photosToProcess;
+    
+    if (forceReprocess) {
+        photosToProcess = await db.getAllPhotos();
+    } else {
+        // Get all photos that don't have embeddings yet
+        const allPhotos = await db.getAllPhotos();
+        photosToProcess = allPhotos.filter(photo => !photo.embedding);
+    }
+    
+    if (photosToProcess.length === 0) {
+        const message = forceReprocess 
+            ? 'No indexed photos found in database.' 
+            : 'All indexed photos already have embeddings.';
+        updateStatus(message, false);
+        return;
+    }
+    
+    const actionWord = forceReprocess ? 'reprocess' : 'process';
+    const statusPrefix = `Preparing to ${actionWord}`;
+    
+    return await processPhotosWithWorkers(photosToProcess, statusPrefix);
+}
+
 async function runAnalysis() {
     return await runAnalysisForScope('current');
 }
@@ -1669,12 +1699,35 @@ async function runAnalysisForScope(scope) {
 }
 
 // --- Analysis Settings Functions ---
+async function initializeAnalysisSettingsWithRetry(maxRetries = 10, delay = 100) {
+    for (let i = 0; i < maxRetries; i++) {
+        const success = await initializeAnalysisSettings();
+        if (success) {
+            return;
+        }
+        console.log(`Retrying initializeAnalysisSettings (attempt ${i + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    console.error('Failed to initialize analysis settings after maximum retries');
+}
+
 async function initializeAnalysisSettings() {
     try {
+        // Get DOM elements fresh each time to ensure they're available
+        const similarityThresholdSlider = document.getElementById('similarity-threshold');
+        const thresholdValueDisplay = document.getElementById('threshold-value');
+        const timeSpanSlider = document.getElementById('time-span');
+        const timeSpanValueDisplay = document.getElementById('time-span-value');
+        const minGroupSizeSlider = document.getElementById('min-group-size');
+        const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
+        const resultsSortSelect = document.getElementById('results-sort');
+        const workerCountSlider = document.getElementById('worker-count');
+        const workerCountValueDisplay = document.getElementById('worker-count-value');
+        
         // Check if DOM elements are available
-        if (!similarityThresholdSlider || !thresholdValueDisplay || !timeSpanSlider || !timeSpanValueDisplay || !minGroupSizeSlider || !minGroupSizeValueDisplay || !sortMethodSelect || !workerCountSlider || !workerCountValueDisplay) {
+        if (!similarityThresholdSlider || !thresholdValueDisplay || !timeSpanSlider || !timeSpanValueDisplay || !minGroupSizeSlider || !minGroupSizeValueDisplay || !workerCountSlider || !workerCountValueDisplay) {
             console.warn('Some DOM elements not found, skipping analysis settings initialization');
-            return;
+            return false;
         }
         
         // Initialize date toggle and restore last range from DB if URL absent
@@ -1763,25 +1816,49 @@ async function initializeAnalysisSettings() {
         // Ensure workerCount is a valid number
         const validWorkerCount = (!isNaN(workerCount) && workerCount >= 1 && workerCount <= 8) ? workerCount : 4;
         
+        // Set both the slider value and display text
         workerCountSlider.value = validWorkerCount;
         workerCountValueDisplay.textContent = `${validWorkerCount} worker${validWorkerCount === 1 ? '' : 's'}`;
+        
+        // Don't trigger the input event during initialization to avoid overriding
         
         // Save default if no setting exists
         if (savedWorkerCount === null) {
             await db.setSetting('workerCount', validWorkerCount);
         }
+        
+        console.log(`Worker count initialized to: ${validWorkerCount}`);
+        return true;
     } catch (error) {
         console.error('Error initializing analysis settings:', error);
-        // Set default values if database fails
-        similarityThresholdSlider.value = 0.90;
-        thresholdValueDisplay.textContent = '0.90';
-        timeSpanSlider.value = 8;
-        timeSpanValueDisplay.textContent = '8 hours';
-        minGroupSizeSlider.value = 3;
-        minGroupSizeValueDisplay.textContent = '3 photos';
+        // Set default values if database fails - get elements again in case they weren't available before
+        const similarityThresholdSlider = document.getElementById('similarity-threshold');
+        const thresholdValueDisplay = document.getElementById('threshold-value');
+        const timeSpanSlider = document.getElementById('time-span');
+        const timeSpanValueDisplay = document.getElementById('time-span-value');
+        const minGroupSizeSlider = document.getElementById('min-group-size');
+        const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
+        const resultsSortSelect = document.getElementById('results-sort');
+        const workerCountSlider = document.getElementById('worker-count');
+        const workerCountValueDisplay = document.getElementById('worker-count-value');
+        
+        if (similarityThresholdSlider) similarityThresholdSlider.value = 0.90;
+        if (thresholdValueDisplay) thresholdValueDisplay.textContent = '0.90';
+        if (timeSpanSlider) timeSpanSlider.value = 8;
+        if (timeSpanValueDisplay) timeSpanValueDisplay.textContent = '8 hours';
+        if (minGroupSizeSlider) minGroupSizeSlider.value = 3;
+        if (minGroupSizeValueDisplay) minGroupSizeValueDisplay.textContent = '3 photos';
         if (resultsSortSelect) resultsSortSelect.value = 'group-size';
-        workerCountSlider.value = 4;
-        workerCountValueDisplay.textContent = '4 workers';
+        if (workerCountSlider) workerCountSlider.value = 4;
+        if (workerCountValueDisplay) workerCountValueDisplay.textContent = '4 workers';
+        
+        // Also save the default value to database
+        try {
+            await db.setSetting('workerCount', 4);
+        } catch (dbError) {
+            console.error('Error saving default worker count:', dbError);
+        }
+        return false;
     }
 }
 
@@ -1869,7 +1946,7 @@ async function main() {
         await db.init();
         
         // Initialize analysis settings UI
-        await initializeAnalysisSettings();
+        await initializeAnalysisSettingsWithRetry();
         
         // Restore folder selection from URL if present
         await restoreFiltersFromURL();
@@ -1907,6 +1984,12 @@ async function main() {
         embeddingAllBtn.addEventListener('click', async () => {
             embeddingMenu.classList.remove('open');
             await runEmbeddingGenerationForScope('all');
+        });
+    }
+    if (embeddingAllIndexedBtn) {
+        embeddingAllIndexedBtn.addEventListener('click', async () => {
+            embeddingMenu.classList.remove('open');
+            await runEmbeddingGenerationForScope('indexed');
         });
     }
     // Analysis split button: default main action runs for current folder
@@ -2467,5 +2550,10 @@ async function renderScannedFoldersList() {
     });
 }
 
-// Start the application
-main();
+// Start the application when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', main);
+} else {
+    // DOM is already ready
+    main();
+}
