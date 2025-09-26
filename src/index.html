@@ -36,31 +36,25 @@
                     </div>
                 </div>
                 <div class="panel-body">
-                    <div id="folder-selector-panel">
-                        <label for="selected-folder">Folder Filter (optional):</label>
-                        <div class="folder-input-group">
-                            <input type="text" id="selected-folder" value="All folders" placeholder="All folders or enter path like: Pictures/Vacation">
-                            <button id="browse-folder-btn" type="button" title="Browse folders">📁</button>
-                            <button id="clear-folder-btn" type="button" title="Clear filter">✕</button>
-                        </div>
-                    </div>
                     
-                    <div id="date-filter-panel">
-                        <div class="date-filter-header">
-                            <label for="date-range-inputs">Date Range Filter</label>
-                            <label class="switch-label">
-                                <input type="checkbox" id="date-enabled-toggle" checked>
-                                <span class="switch"></span>
-                                <span class="switch-text">Enabled</span>
-                            </label>
+                    
+                    
+
+                    <!-- Browser toolbar and photo grid -->
+                    <div class="browser-toolbar">
+                        <div class="toolbar-left">
+                            <label for="browser-sort">Sort:</label>
+                            <select id="browser-sort">
+                                <option value="date-desc">Date (Newest First)</option>
+                                <option value="date-asc">Date (Oldest First)</option>
+                            </select>
                         </div>
-                        <div class="date-range-group">
-                            <input type="date" id="date-from" placeholder="From date">
-                            <span>to</span>
-                            <input type="date" id="date-to" placeholder="To date">
+                        <div class="toolbar-right">
+                            <button id="browser-up" type="button" class="secondary-btn">Up</button>
+                            <button id="browser-refresh" type="button" class="secondary-btn">Refresh</button>
                         </div>
-                        <small class="threshold-help">Toggle OFF to temporarily search all dates without losing your selected range</small>
                     </div>
+                    <div id="browser-photo-grid" class="photo-grid"></div>
                 </div>
             </section>
             
@@ -118,6 +112,23 @@
                 </div>
                 <div class="panel-body">
                     <div class="analysis-options">
+                        <div id="date-filter-panel">
+                            <div class="date-filter-header">
+                                <label for="date-range-inputs">Date Range Filter</label>
+                                <label class="switch-label">
+                                    <input type="checkbox" id="date-enabled-toggle" checked>
+                                    <span class="switch"></span>
+                                    <span class="switch-text">Enabled</span>
+                                </label>
+                            </div>
+                            <div class="date-range-group">
+                                <input type="date" id="date-from" placeholder="From date">
+                                <span>to</span>
+                                <input type="date" id="date-to" placeholder="To date">
+                            </div>
+                            <small class="threshold-help">Toggle OFF to temporarily search all dates without losing your selected range</small>
+                        </div>
+                        
                         <label for="similarity-threshold">Similarity Threshold:</label>
                         <div class="threshold-input-group">
                             <input type="range" id="similarity-threshold" min="0.5" max="0.99" step="0.01" value="0.90">

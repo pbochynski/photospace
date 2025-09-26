@@ -569,6 +569,27 @@ button:disabled {
   gap: 16px; /* more space between images */
 }
 
+/* Browser toolbar */
+.browser-toolbar {
+  margin: 1rem 0 0.5rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.browser-toolbar label {
+  font-weight: 600;
+}
+
+.browser-toolbar select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--background-color);
+  color: var(--text-color);
+}
+
 .photo-item img {
   width: 100%;
   height: 200px; /* larger height */
@@ -576,6 +597,33 @@ button:disabled {
   background: #222; /* subtle background for letterboxing */
   border-radius: 4px;
   display: block;
+}
+
+.folder-thumb {
+  width: 100%;
+  height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #222;
+  border-radius: 4px;
+}
+
+.folder-icon {
+  font-size: 2.25rem;
+}
+
+.folder-name {
+  font-size: 0.95rem;
+  color: var(--text-color);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
 }
 
 .photo-score {

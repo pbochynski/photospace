@@ -253,6 +253,49 @@ export async function fetchFolders(folderId = 'root') {
 }
 
 /**
+ * Fetch both folders and photos from a folder (non-recursive) for browsing UI
+ * @param {string} folderId - The folder ID to list (or 'root')
+ * @returns {Promise<{folders: Array, photos: Array}>}
+ */
+export async function fetchFolderChildren(folderId = 'root') {
+    try {
+        let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$select=id,name,folder,photo,parentReference,lastModifiedDateTime,createdDateTime,size&$orderby=name`;
+        const folders = [];
+        const photos = [];
+
+        while (url) {
+            const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
+            for (const item of response.value) {
+                if (item.folder) {
+                    folders.push({
+                        id: item.id,
+                        name: item.name,
+                        isFolder: true,
+                        parentId: item.parentReference?.id || null,
+                        path: item.parentReference?.path || ''
+                    });
+                } else if (item.photo) {
+                    photos.push({
+                        file_id: item.id,
+                        name: item.name,
+                        size: item.size,
+                        path: item.parentReference?.path || '/drive/root:',
+                        last_modified: item.lastModifiedDateTime,
+                        photo_taken_ts: item.photo.takenDateTime || item.createdDateTime
+                    });
+                }
+            }
+            url = response['@odata.nextLink'] || null;
+        }
+
+        return { folders, photos };
+    } catch (error) {
+        console.error('Error fetching folder children:', error);
+        throw error;
+    }
+}
+
+/**
  * Get folder information by ID
  * @param {string} folderId - The folder ID
  * @returns {Promise<Object>} - Folder information

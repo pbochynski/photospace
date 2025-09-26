@@ -1,5 +1,5 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
-import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchPhotosFromSingleFolder } from './lib/graph.js';
+import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchPhotosFromSingleFolder, fetchFolderChildren } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
 import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } from './lib/embeddingExport.js';
@@ -168,11 +168,15 @@ const startScanButton = document.getElementById('start-scan-button');
 const startEmbeddingButton = document.getElementById('start-embedding-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
+const browserPhotoGrid = document.getElementById('browser-photo-grid');
+const browserSortSelect = document.getElementById('browser-sort');
+const browserRefreshBtn = document.getElementById('browser-refresh');
+const browserUpBtn = document.getElementById('browser-up');
 
 // Folder selector elements
-const selectedFolderInput = document.getElementById('selected-folder');
-const browseFolderBtn = document.getElementById('browse-folder-btn');
-const clearFolderBtn = document.getElementById('clear-folder-btn');
+const selectedFolderInput = null;
+const browseFolderBtn = null;
+const clearFolderBtn = null;
 
 // Embedding options
 const forceReprocessCheckbox = document.getElementById('force-reprocess-checkbox');
@@ -329,7 +333,7 @@ async function restoreFolderFromURL() {
                 selectedFolderId = folderId;
                 selectedFolderPath = pathFromURL;
                 selectedFolderDisplayName = pathToDisplayName(pathFromURL);
-                selectedFolderInput.value = formatPathForUser(pathFromURL) || 'All folders';
+                // input removed
                 updateStatus(`Restored folder filter: ${selectedFolderDisplayName}`, false);
             } else {
                 console.warn('Could not find folder for path:', pathFromURL);
@@ -349,7 +353,7 @@ function resetFolderToNoFilter() {
     selectedFolderId = null;
     selectedFolderPath = null;
     selectedFolderDisplayName = 'All folders';
-    selectedFolderInput.value = 'All folders';
+    // input removed
 }
 
 async function restoreFiltersFromURL() {
@@ -442,7 +446,7 @@ function formatPathForUser(internalPath) {
 
 // Handle folder input changes (when user types a path)
 async function handleFolderInputChange() {
-    const userInput = selectedFolderInput.value;
+    const userInput = '';
     
     if (userInput === 'All folders' || userInput.trim() === '') {
         clearFolderFilter();
@@ -464,7 +468,7 @@ async function handleFolderInputChange() {
             // Invalid path - reset input and show error
             updateStatus('Invalid folder path. Please check the path or use Browse button.', false);
             setTimeout(() => {
-                selectedFolderInput.value = selectedFolderPath ? formatPathForUser(selectedFolderPath) : 'All folders';
+                // input removed
             }, 100);
         }
     } catch (error) {
@@ -757,6 +761,70 @@ function displayResults(groups) {
     }
 }
 
+// Render photos for the currently selected folder in the browser panel
+async function renderBrowserPhotoGrid(forceReload = false) {
+    if (!browserPhotoGrid) return;
+    browserPhotoGrid.innerHTML = '<div class="loading">Loading...</div>';
+
+    try {
+        // Decide folder path to preview
+        const folderId = selectedFolderId || 'root';
+        // Fetch folders and photos directly from OneDrive API
+        const { folders, photos } = await fetchFolderChildren(folderId);
+
+        // Sort
+        const sort = (browserSortSelect && browserSortSelect.value) || 'date-desc';
+        const sortedPhotos = [...photos].sort((a, b) => {
+            const at = new Date(a.photo_taken_ts || a.last_modified || 0).getTime();
+            const bt = new Date(b.photo_taken_ts || b.last_modified || 0).getTime();
+            return sort === 'date-asc' ? at - bt : bt - at;
+        });
+
+        // Render folders first
+        browserPhotoGrid.innerHTML = '';
+        folders.forEach(folder => {
+            const item = document.createElement('div');
+            item.className = 'photo-item';
+            item.innerHTML = `
+                <div class="folder-thumb">
+                    <div class="folder-icon">📁</div>
+                    <div class="folder-name">${folder.name}</div>
+                </div>
+            `;
+            item.addEventListener('click', async () => {
+                // Navigate into subfolder
+                selectedFolderId = folder.id;
+                selectedFolderPath = await getFolderPath(folder.id);
+                selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
+            // input removed
+                updateURLWithPath(selectedFolderPath);
+                await renderBrowserPhotoGrid(true);
+            });
+            browserPhotoGrid.appendChild(item);
+        });
+
+        // Render photos (all)
+        sortedPhotos.forEach((p) => {
+            const item = document.createElement('div');
+            item.className = 'photo-item';
+            const thumbnailSrc = `/api/thumb/${p.file_id}`;
+            item.innerHTML = `
+                <label class="photo-checkbox-label">
+                    <span class="photo-checkbox-custom"></span>
+                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
+                    <div class="photo-score">
+                        <div class="photo-path">${p.path ? (p.path.replace('/drive/root:', '') || '/') : ''}</div>
+                    </div>
+                </label>
+            `;
+            browserPhotoGrid.appendChild(item);
+        });
+    } catch (e) {
+        console.error('Failed to render browser photo grid', e);
+        browserPhotoGrid.innerHTML = '<div class="error-message">Failed to load photos.</div>';
+    }
+}
+
 // Function to populate image metadata overlay
 function populateImageMetadata(photo) {
     const photoName = document.getElementById('photo-name');
@@ -1010,6 +1078,8 @@ function updateBreadcrumb(folderInfo) {
 
 function updateUpButton() {
     folderUpBtn.disabled = folderHistory.length === 0;
+    // Also wire Browser Up to use the same navigation stack
+    const browserUp = document.getElementById('folder-up-btn');
 }
 
 function navigateUp() {
@@ -1023,7 +1093,7 @@ function navigateUp() {
 
 function selectCurrentFolder() {
     // Update the input field and internal state
-    selectedFolderInput.value = formatPathForUser(selectedFolderPath) || 'All folders';
+    // input removed
     updateStatus(`Selected folder: ${selectedFolderDisplayName}`, false);
     hideFolderBrowser();
 }
@@ -1736,13 +1806,13 @@ async function main() {
 
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
-    browseFolderBtn.addEventListener('click', () => showFolderBrowser());
+    // input removed
     startScanButton.addEventListener('click', handleScanClick);
     startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
     startAnalysisButton.addEventListener('click', runAnalysis);
     
     // Filter control event listeners
-    clearFolderBtn.addEventListener('click', clearFolderFilter);
+    // input removed
     dateFromInput.addEventListener('change', async () => {
         await db.setSetting('dateFrom', dateFromInput.value || '');
         updateURLWithFilters();
@@ -1797,15 +1867,10 @@ async function main() {
     });
     
     // Folder input event listeners
-    selectedFolderInput.addEventListener('blur', handleFolderInputChange);
-    selectedFolderInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            handleFolderInputChange();
-        }
-    });
+    // input removed
     
     // Folder selector event listeners
-    browseFolderBtn.addEventListener('click', () => showFolderBrowser());
+    // input removed
     
     // Folder browser event listeners
     folderModalClose.addEventListener('click', hideFolderBrowser);
@@ -1813,6 +1878,43 @@ async function main() {
     selectFolderBtn.addEventListener('click', selectCurrentFolder);
     folderUpBtn.addEventListener('click', navigateUp);
     folderRefreshBtn.addEventListener('click', () => loadFolders(currentBrowsingFolderId));
+
+    // Browser toolbar events
+    if (browserSortSelect) {
+        const savedBrowserSort = await db.getSetting('browserSort');
+        if (savedBrowserSort) browserSortSelect.value = savedBrowserSort;
+        browserSortSelect.addEventListener('change', async (e) => {
+            await db.setSetting('browserSort', e.target.value);
+            await renderBrowserPhotoGrid();
+        });
+    }
+    if (browserRefreshBtn) {
+        browserRefreshBtn.addEventListener('click', async () => {
+            await renderBrowserPhotoGrid(true);
+        });
+    }
+    if (browserUpBtn) {
+        browserUpBtn.addEventListener('click', async () => {
+            // Use API to get parent
+            try {
+                if (!selectedFolderId || selectedFolderId === 'root') return;
+                const info = await getFolderInfo(selectedFolderId);
+                if (info.parentId) {
+                    selectedFolderId = info.parentId;
+                    selectedFolderPath = await getFolderPath(selectedFolderId);
+                } else {
+                    selectedFolderId = 'root';
+                    selectedFolderPath = '/drive/root:';
+                }
+                selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
+                // input removed
+                updateURLWithPath(selectedFolderPath);
+                await renderBrowserPhotoGrid(true);
+            } catch (e) {
+                console.error('Failed to navigate up', e);
+            }
+        });
+    }
     
     // Close folder modal on outside click
     folderModal.addEventListener('click', (e) => {
@@ -1857,6 +1959,8 @@ async function main() {
 
     // Initialize backup panel
     await initializeBackupPanel();
+    // Initial browser photo grid load (if logged in and a folder is selected)
+    try { await renderBrowserPhotoGrid(); } catch {}
 }
 
 // Backup functionality
