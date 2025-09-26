@@ -20,13 +20,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Create models directory
+        run: mkdir -p public/models/clip-vit-base-patch16/onnx
+
+      - name: Download ONNX models from Hugging Face
+        run: |
+          echo "Downloading CLIP ONNX models..."
+          curl -L -o public/models/clip-vit-base-patch16/onnx/model_quantized.onnx \
+            "https://huggingface.co/Xenova/clip-vit-base-patch16/resolve/main/onnx/model_quantized.onnx"
+          curl -L -o public/models/clip-vit-base-patch16/onnx/text_model_fp16.onnx \
+            "https://huggingface.co/Xenova/clip-vit-base-patch16/resolve/main/onnx/text_model_fp16.onnx"
+          curl -L -o public/models/clip-vit-base-patch16/onnx/text_model_quantized.onnx \
+            "https://huggingface.co/Xenova/clip-vit-base-patch16/resolve/main/onnx/text_model_quantized.onnx"
+          curl -L -o public/models/clip-vit-base-patch16/onnx/vision_model_fp16.onnx \
+            "https://huggingface.co/Xenova/clip-vit-base-patch16/resolve/main/onnx/vision_model_fp16.onnx"
+          curl -L -o public/models/clip-vit-base-patch16/onnx/vision_model_quantized.onnx \
+            "https://huggingface.co/Xenova/clip-vit-base-patch16/resolve/main/onnx/vision_model_quantized.onnx"
+          echo "Model download completed. File sizes:"
+          ls -lh public/models/clip-vit-base-patch16/onnx/
 
       - name: Install dependencies
         run: npm install
