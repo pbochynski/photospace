@@ -51,6 +51,7 @@
                         </div>
                         <div class="toolbar-right">
                             <button id="browser-up" type="button" class="secondary-btn">Up</button>
+                            <button id="browser-add-scanned" type="button" class="secondary-btn">Add to Scanned Folders</button>
                             <button id="browser-refresh" type="button" class="secondary-btn">Refresh</button>
                         </div>
                     </div>
@@ -61,7 +62,14 @@
             <div id="controls">
                 <button id="start-scan-button">1. Scan Photos</button>
                 <div class="embedding-controls">
-                    <button id="start-embedding-button">2. Generate Embeddings</button>
+                    <div class="split-btn">
+                        <button id="start-embedding-button" class="split-main">2. Generate Embeddings</button>
+                        <button id="embedding-menu-btn" class="split-caret" aria-haspopup="true" aria-expanded="false">▾</button>
+                        <div id="embedding-menu" class="menu" role="menu" aria-hidden="true">
+                            <button id="embedding-current-folder" role="menuitem">In Current Folder</button>
+                            <button id="embedding-all-folders" role="menuitem">In All Scanned Folders</button>
+                        </div>
+                    </div>
                     <div class="embedding-options">
                         <label class="checkbox-label">
                             <input type="checkbox" id="force-reprocess-checkbox">
@@ -150,15 +158,6 @@
                             <small class="threshold-help">Only show groups with at least this many similar photos</small>
                         </div>
                         
-                        <label for="sort-method">Sort Results By:</label>
-                        <div class="sort-input-group">
-                            <select id="sort-method">
-                                <option value="group-size">Group Size (Largest First)</option>
-                                <option value="date-desc">Date (Newest First)</option>
-                                <option value="date-asc">Date (Oldest First)</option>
-                            </select>
-                            <small class="threshold-help">Choose how to order the similar photo groups</small>
-                        </div>
                     </div>
                 </div>
             </section>
@@ -203,6 +202,12 @@
                 <div class="panel-header">
                     <h3 class="panel-title">Similar Photo Groups</h3>
                     <div class="panel-tools">
+                        <label for="results-sort">Sort:</label>
+                        <select id="results-sort">
+                            <option value="group-size">Group Size (Largest First)</option>
+                            <option value="date-desc">Date (Newest First)</option>
+                            <option value="date-asc">Date (Oldest First)</option>
+                        </select>
                         <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
                     </div>
                 </div>

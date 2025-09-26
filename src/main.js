@@ -166,12 +166,17 @@ const statusText = document.getElementById('status-text');
 const progressBar = document.getElementById('progress-bar');
 const startScanButton = document.getElementById('start-scan-button');
 const startEmbeddingButton = document.getElementById('start-embedding-button');
+const embeddingMenuBtn = document.getElementById('embedding-menu-btn');
+const embeddingMenu = document.getElementById('embedding-menu');
+const embeddingCurrentBtn = document.getElementById('embedding-current-folder');
+const embeddingAllBtn = document.getElementById('embedding-all-folders');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
 const browserPhotoGrid = document.getElementById('browser-photo-grid');
 const browserSortSelect = document.getElementById('browser-sort');
 const browserRefreshBtn = document.getElementById('browser-refresh');
 const browserUpBtn = document.getElementById('browser-up');
+const browserAddScannedBtn = document.getElementById('browser-add-scanned');
 
 // Folder selector elements
 const selectedFolderInput = null;
@@ -189,6 +194,7 @@ const timeSpanValueDisplay = document.getElementById('time-span-value');
 const minGroupSizeSlider = document.getElementById('min-group-size');
 const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
 const sortMethodSelect = document.getElementById('sort-method');
+const resultsSortSelect = document.getElementById('results-sort');
 const workerCountSlider = document.getElementById('worker-count');
 const workerCountValueDisplay = document.getElementById('worker-count-value');
 
@@ -1099,10 +1105,9 @@ function selectCurrentFolder() {
 }
 
 async function runPhotoScan() {
-    // For scanning, use selected folder or default to root
-    const scanFolderId = selectedFolderId || 'root';
-    const scanFolderPath = selectedFolderPath || '/drive/root:';
-    const scanFolderDisplayName = selectedFolderDisplayName || 'OneDrive (Root)';
+    // Determine folders to scan: use scannedFolders list if present, else current selection
+    const scannedList = (await db.getSetting('scannedFolders')) || [];
+    const foldersToScan = scannedList.length > 0 ? scannedList : [selectedFolderPath || '/drive/root:'];
     
     startScanButton.disabled = true;
     startEmbeddingButton.disabled = true;
@@ -1110,13 +1115,20 @@ async function runPhotoScan() {
     try {
         // --- STEP 1: Generate a new scan ID ---
         const newScanId = Date.now();
-        console.log(`Starting new scan with ID: ${newScanId} in folder: ${scanFolderDisplayName}`);
-        updateStatus(`Scanning ${scanFolderDisplayName} for photos...`, true, 0, 100);
+        console.log(`Starting new scan with ID: ${newScanId} for ${foldersToScan.length} folder(s)`);
+        updateStatus(`Scanning ${foldersToScan.length} folder(s) for photos...`, true, 0, 100);
 
         // --- STEP 2: Crawl OneDrive starting from selected folder ---
-        await fetchAllPhotos(newScanId, (progress) => {
-            updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
-        }, scanFolderId);
+        // If multiple folders, scan each by id; resolve path -> id
+        const scanOne = async (path) => {
+            const id = await findFolderIdByPath(path);
+            await fetchAllPhotos(newScanId, (progress) => {
+                updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
+            }, id || 'root');
+        };
+        for (const p of foldersToScan) {
+            await scanOne(p);
+        }
         
         // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
         updateStatus('Cleaning up deleted files...', true, 0, 100);
@@ -1127,7 +1139,10 @@ async function runPhotoScan() {
         
         // --- STEP 4: Generate embeddings for only the new files ---
         // generateEmbeddings() will automatically find files with embedding_status = 0
-        await generateEmbeddings(scanFolderPath, false); // Never force reprocess during scan
+        // Generate embeddings for scanned folders only
+        for (const p of foldersToScan) {
+            await generateEmbeddings(p, false); // Never force reprocess during scan
+        }
 
     } catch (error) {
         console.error('Scan failed:', error);
@@ -1216,6 +1231,31 @@ async function runEmbeddingGeneration() {
         await generateEmbeddingsForPhotos(filteredPhotos);
         
         // Refresh backup panel to enable export button if embeddings were generated
+        await initializeBackupPanel();
+    } catch (error) {
+        console.error('Embedding generation failed:', error);
+        updateStatus(`Error during embedding generation: ${error.message}`, false);
+    } finally {
+        startEmbeddingButton.disabled = false;
+    }
+}
+
+async function runEmbeddingGenerationForScope(scope) {
+    startEmbeddingButton.disabled = true;
+    try {
+        const forceReprocess = forceReprocessCheckbox.checked;
+        if (scope === 'all') {
+            const list = (await db.getSetting('scannedFolders')) || [];
+            const targets = list.length > 0 ? list : ['/drive/root:'];
+            for (const p of targets) {
+                await generateEmbeddings(p, forceReprocess);
+            }
+            updateStatus(`Embedding generation complete for ${targets.length} folder(s).`, false);
+        } else {
+            const path = selectedFolderPath || '/drive/root:';
+            await generateEmbeddings(path, forceReprocess);
+            updateStatus('Embedding generation complete for current folder.', false);
+        }
         await initializeBackupPanel();
     } catch (error) {
         console.error('Embedding generation failed:', error);
@@ -1674,15 +1714,17 @@ async function initializeAnalysisSettings() {
             await db.setSetting('minGroupSize', validMinGroupSize);
         }
         
-        // Initialize sort method
-        const savedSortMethod = await db.getSetting('sortMethod');
-        const sortMethod = savedSortMethod !== null ? savedSortMethod : 'group-size'; // Default to group size
+        // Initialize sort method (moved to Results header)
+        const savedResultsSort = await db.getSetting('resultsSort');
+        const resultsSort = savedResultsSort !== null ? savedResultsSort : 'group-size'; // Default to group size
         
-        sortMethodSelect.value = sortMethod;
+        if (resultsSortSelect) {
+            resultsSortSelect.value = resultsSort;
+        }
         
         // Save default if no setting exists
-        if (savedSortMethod === null) {
-            await db.setSetting('sortMethod', sortMethod);
+        if (savedResultsSort === null) {
+            await db.setSetting('resultsSort', resultsSort);
         }
         
         // Initialize worker count
@@ -1708,7 +1750,7 @@ async function initializeAnalysisSettings() {
         timeSpanValueDisplay.textContent = '8 hours';
         minGroupSizeSlider.value = 3;
         minGroupSizeValueDisplay.textContent = '3 photos';
-        sortMethodSelect.value = 'group-size';
+        if (resultsSortSelect) resultsSortSelect.value = 'group-size';
         workerCountSlider.value = 4;
         workerCountValueDisplay.textContent = '4 workers';
     }
@@ -1736,7 +1778,7 @@ async function getTimeSpanHours() {
 
 async function getSortMethod() {
     try {
-        const sortMethod = await db.getSetting('sortMethod');
+        const sortMethod = await db.getSetting('resultsSort');
         return sortMethod !== null ? sortMethod : 'group-size';
     } catch (error) {
         console.error('Error getting sort method:', error);
@@ -1808,7 +1850,36 @@ async function main() {
     loginButton.addEventListener('click', handleLoginClick);
     // input removed
     startScanButton.addEventListener('click', handleScanClick);
-    startEmbeddingButton.addEventListener('click', runEmbeddingGeneration);
+    // Split button: default main action runs for current folder
+    startEmbeddingButton.addEventListener('click', async () => {
+        await runEmbeddingGenerationForScope('current');
+    });
+    if (embeddingMenuBtn) {
+        embeddingMenuBtn.addEventListener('click', () => {
+            const open = embeddingMenu.classList.toggle('open');
+            embeddingMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            embeddingMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
+        });
+        document.addEventListener('click', (e) => {
+            if (!embeddingMenu.contains(e.target) && e.target !== embeddingMenuBtn) {
+                embeddingMenu.classList.remove('open');
+                embeddingMenuBtn.setAttribute('aria-expanded', 'false');
+                embeddingMenu.setAttribute('aria-hidden', 'true');
+            }
+        });
+    }
+    if (embeddingCurrentBtn) {
+        embeddingCurrentBtn.addEventListener('click', async () => {
+            embeddingMenu.classList.remove('open');
+            await runEmbeddingGenerationForScope('current');
+        });
+    }
+    if (embeddingAllBtn) {
+        embeddingAllBtn.addEventListener('click', async () => {
+            embeddingMenu.classList.remove('open');
+            await runEmbeddingGenerationForScope('all');
+        });
+    }
     startAnalysisButton.addEventListener('click', runAnalysis);
     
     // Filter control event listeners
@@ -1848,11 +1919,19 @@ async function main() {
         await db.setSetting('minGroupSize', value);
     });
     
-    // Sort method control event listeners
-    sortMethodSelect.addEventListener('change', async (e) => {
-        const value = e.target.value;
-        await db.setSetting('sortMethod', value);
-    });
+    // Sort method control event listeners (moved to Results header)
+    if (resultsSortSelect) {
+        const savedResultsSort = await db.getSetting('resultsSort');
+        if (savedResultsSort) resultsSortSelect.value = savedResultsSort;
+        resultsSortSelect.addEventListener('change', async (e) => {
+            const value = e.target.value;
+            await db.setSetting('resultsSort', value);
+            // Re-run analysis if results are currently displayed
+            if (resultsContainer.children.length > 1) {
+                await runAnalysis();
+            }
+        });
+    }
     
     // Worker count control event listeners
     workerCountSlider.addEventListener('input', async (e) => {
@@ -1915,6 +1994,24 @@ async function main() {
             }
         });
     }
+    if (browserAddScannedBtn) {
+        browserAddScannedBtn.addEventListener('click', async () => {
+            try {
+                const path = selectedFolderPath || '/drive/root:';
+                const list = (await db.getSetting('scannedFolders')) || [];
+                if (!list.includes(path)) {
+                    list.push(path);
+                    await db.setSetting('scannedFolders', list);
+                    await renderScannedFoldersList();
+                    updateStatus('Added to scanned folders', false);
+                } else {
+                    updateStatus('Folder already in scanned list', false);
+                }
+            } catch (e) {
+                console.error('Failed to add scanned folder', e);
+            }
+        });
+    }
     
     // Close folder modal on outside click
     folderModal.addEventListener('click', (e) => {
@@ -1961,6 +2058,8 @@ async function main() {
     await initializeBackupPanel();
     // Initial browser photo grid load (if logged in and a folder is selected)
     try { await renderBrowserPhotoGrid(); } catch {}
+    // Render scanned folders list
+    try { await renderScannedFoldersList(); } catch {}
 }
 
 // Backup functionality
@@ -2267,6 +2366,36 @@ function applyPanelExpandedState(panel, toggleBtn, expanded) {
         toggleBtn.setAttribute('aria-expanded', 'false');
         toggleBtn.textContent = '▸';
     }
+}
+
+// Render scanned folders list in Processing panel
+async function renderScannedFoldersList() {
+    const container = document.getElementById('scanned-folders-list');
+    if (!container) return;
+    const list = (await db.getSetting('scannedFolders')) || [];
+    container.innerHTML = '';
+    if (list.length === 0) {
+        container.innerHTML = '<div class="empty-note">No folders added yet. Use the OneDrive Browser to add.</div>';
+        return;
+    }
+    list.forEach((p, idx) => {
+        const item = document.createElement('div');
+        item.className = 'scanned-folder-item';
+        const display = p.replace('/drive/root:', '') || '/';
+        item.innerHTML = `
+            <div class="scanned-folder-path">${display}</div>
+            <div class="scanned-folder-actions">
+                <button type="button" data-idx="${idx}" class="secondary-btn remove-btn">Remove</button>
+            </div>
+        `;
+        item.querySelector('.remove-btn').addEventListener('click', async () => {
+            const current = (await db.getSetting('scannedFolders')) || [];
+            current.splice(idx, 1);
+            await db.setSetting('scannedFolders', current);
+            await renderScannedFoldersList();
+        });
+        container.appendChild(item);
+    });
 }
 
 // Start the application

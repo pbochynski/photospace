@@ -91,6 +91,63 @@ button:disabled {
   gap: 0.5rem;
 }
 
+/* Split button styles */
+.split-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.split-btn .split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.split-btn .split-caret {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 0.75rem 0.9rem;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  cursor: pointer;
+}
+
+.split-btn .split-caret:hover {
+  background-color: #63a4ff;
+}
+
+.split-btn .menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  min-width: 220px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+  display: none;
+  z-index: 1000;
+}
+
+.split-btn .menu.open {
+  display: block;
+}
+
+.split-btn .menu button {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  padding: 0.6rem 0.9rem;
+  text-align: left;
+}
+
+.split-btn .menu button:hover {
+  background: var(--border-color);
+}
+
 .embedding-options {
   display: flex;
   justify-content: center;
@@ -1119,6 +1176,35 @@ button:disabled {
   display: flex;
   gap: 1rem;
   justify-content: flex-end;
+}
+
+/* Scanned folders list */
+.scanned-folders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scanned-folder-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.scanned-folder-path {
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scanned-folder-actions button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
 }
 
 #import-progress {
