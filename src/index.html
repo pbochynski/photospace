@@ -101,24 +101,15 @@
                         <div class="processing-actions">
                             <button id="start-scan-button" class="primary-action">1. Scan Photos</button>
                             <div class="embedding-controls">
-                                <div class="split-btn">
-                                    <button id="start-embedding-button" class="split-main">2. Generate
-                                        Embeddings</button>
-                                    <button id="embedding-menu-btn" class="split-caret" aria-haspopup="true"
-                                        aria-expanded="false">▾</button>
-                                    <div id="embedding-menu" class="menu" role="menu" aria-hidden="true">
-                                        <button id="embedding-current-folder" role="menuitem">In Current Folder</button>
-                                        <button id="embedding-all-folders" role="menuitem">In All Scanned Folders</button>
-                                        <button id="embedding-all-indexed" role="menuitem">All Indexed Files</button>
-                                    </div>
-                                </div>
                                 <div class="embedding-options">
                                     <label class="checkbox-label">
-                                        <input type="checkbox" id="force-reprocess-checkbox">
+                                        <input type="checkbox" id="auto-start-embeddings-checkbox" checked>
                                         <span class="checkbox-custom"></span>
-                                        Force reprocess all photos
+                                        Auto-start embedding generation
                                     </label>
+                                    <small class="threshold-help">Automatically starts processing when new photos are indexed</small>
                                 </div>
+                                <button id="pause-resume-embeddings" class="secondary-btn" style="margin-top: 8px;">⏸️ Pause Embedding Workers</button>
                             </div>
                         </div>
 
