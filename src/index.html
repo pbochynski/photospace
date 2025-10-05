@@ -55,10 +55,10 @@
                             </select>
                         </div>
                         <div class="toolbar-right">
-                            <button id="browser-up" type="button" class="secondary-btn">Up</button>
-                            <button id="browser-add-scanned" type="button" class="secondary-btn">Add to Scanned
-                                Folders</button>
-                            <button id="browser-refresh" type="button" class="secondary-btn">Refresh</button>
+                            <button id="browser-up" type="button" class="secondary-btn">📁 Up</button>
+                            <button id="browser-analyze" type="button" class="primary-btn">🔍 Analyze This Folder</button>
+                            <button id="browser-add-scanned" type="button" class="secondary-btn">➕ Add to Scanned</button>
+                            <button id="browser-refresh" type="button" class="secondary-btn">🔄 Refresh</button>
                         </div>
                     </div>
                     <div id="browser-photo-grid" class="photo-grid"></div>
@@ -164,10 +164,10 @@
 
                         <label for="time-span">Time Window for Photo Sessions:</label>
                         <div class="threshold-input-group">
-                            <input type="range" id="time-span" min="1" max="24" step="1" value="8">
+                            <input type="range" id="time-span" min="0" max="24" step="1" value="8">
                             <span id="time-span-value">8 hours</span>
                             <small class="threshold-help">Photos taken within this time window are considered part of
-                                the same session</small>
+                                the same session. Set to 0 to disable temporal clustering (compare all photos regardless of time).</small>
                         </div>
 
                         <label for="min-group-size">Minimum Group Size:</label>
@@ -180,14 +180,8 @@
                         
                         <!-- Analysis Action -->
                         <div class="analysis-action">
-                            <div class="split-btn">
-                                <button id="start-analysis-button" class="split-main">Analyze & Find Similar Photos</button>
-                                <button id="analysis-menu-btn" class="split-caret" aria-haspopup="true" aria-expanded="false">▾</button>
-                                <div id="analysis-menu" class="menu" role="menu" aria-hidden="true">
-                                    <button id="analysis-current-folder" role="menuitem">Current Folder Only</button>
-                                    <button id="analysis-all-folders" role="menuitem">All Indexed Photos</button>
-                                </div>
-                            </div>
+                            <button id="start-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
+                            <small class="threshold-help">Analyzes all photos that have been indexed and processed with embeddings</small>
                         </div>
 
                     </div>
@@ -259,7 +253,10 @@
         <div class="image-metadata-overlay" id="image-metadata">
             <div class="metadata-header">
                 <h4 id="photo-name">Photo Details</h4>
-                <button class="metadata-toggle" id="metadata-toggle">📊</button>
+                <div class="metadata-actions">
+                    <button class="metadata-toggle" id="metadata-toggle">📊</button>
+                    <button class="delete-photo-btn" id="modal-delete-btn" title="Delete this photo">🗑️</button>
+                </div>
             </div>
             <div class="metadata-content" id="metadata-content">
                 <div class="metric-row">

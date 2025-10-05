@@ -178,11 +178,8 @@ const browserSortSelect = document.getElementById('browser-sort');
 const browserRefreshBtn = document.getElementById('browser-refresh');
 const browserUpBtn = document.getElementById('browser-up');
 const browserAddScannedBtn = document.getElementById('browser-add-scanned');
+const browserAnalyzeBtn = document.getElementById('browser-analyze');
 const browserCurrentPath = document.getElementById('browser-current-path');
-const analysisMenuBtn = document.getElementById('analysis-menu-btn');
-const analysisMenu = document.getElementById('analysis-menu');
-const analysisCurrentBtn = document.getElementById('analysis-current-folder');
-const analysisAllBtn = document.getElementById('analysis-all-folders');
 
 // Folder selector elements
 const selectedFolderInput = null;
@@ -249,6 +246,7 @@ let selectedFolderPath = null; // null means no folder filter
 let selectedFolderDisplayName = 'All folders'; // Display for no filter
 let currentBrowsingFolderId = 'root';
 let folderHistory = []; // Stack for navigation
+let currentModalPhoto = null; // Track the photo currently displayed in modal
 
 // --- URL Parameter Functions ---
 function updateURLWithFilters() {
@@ -615,7 +613,6 @@ function displayResults(groups) {
         group.photos.forEach((p, idx) => {
             const photoItem = document.createElement('div');
             photoItem.className = 'photo-item';
-            const recommendedBadge = p.isBest ? '<div class="recommended-badge">⭐ RECOMMENDED</div>' : '';
             
             // Use service worker thumbnail endpoint instead of direct OneDrive URL
             const thumbnailSrc = `/api/thumb/${p.file_id}`;
@@ -625,7 +622,6 @@ function displayResults(groups) {
                     <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
                     <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
-                    ${recommendedBadge}
                     <div class="photo-score">
                         <div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}</div>
                         ${p.quality_score ? `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>` : ''}
@@ -694,6 +690,9 @@ function displayResults(groups) {
             const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
             const photo = groups[groupIdx].photos[photoIdx];
             
+            // Store current photo for modal actions (e.g., delete)
+            currentModalPhoto = photo;
+            
             // Populate metadata overlay
             populateImageMetadata(photo);
             
@@ -732,44 +731,6 @@ function displayResults(groups) {
         });
     });
 
-    // Modal close logic (only add once)
-    if (!window._modalEventsAdded) {
-        window._modalEventsAdded = true;
-        const modal = document.getElementById('image-modal');
-        const modalImg = document.getElementById('modal-img');
-        const closeBtn = document.getElementById('modal-close');
-        const metadataToggle = document.getElementById('metadata-toggle');
-        const metadataContent = document.getElementById('metadata-content');
-        
-        // Metadata toggle functionality
-        metadataToggle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            metadataContent.classList.toggle('collapsed');
-            metadataToggle.textContent = metadataContent.classList.contains('collapsed') ? '📊' : '📈';
-        });
-        
-        const closeModal = () => {
-            // Trigger custom 'hide' event for cleanup
-            modal.dispatchEvent(new Event('hide'));
-            modal.style.display = 'none';
-            modalImg.src = '';
-            // Reset metadata overlay
-            metadataContent.classList.remove('collapsed');
-            metadataToggle.textContent = '📊';
-        };
-        
-        closeBtn.addEventListener('click', closeModal);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                closeModal();
-            }
-        });
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
-    }
 }
 
 // Render photos for the currently selected folder in the browser panel
@@ -782,6 +743,59 @@ async function renderBrowserPhotoGrid(forceReload = false) {
         const folderId = selectedFolderId || 'root';
         // Fetch folders and photos directly from OneDrive API
         const { folders, photos } = await fetchFolderChildren(folderId);
+
+        // Automatically index browsed photos to database
+        if (photos.length > 0) {
+            try {
+                // Use current timestamp as scan ID for browsed photos
+                const scanId = Date.now();
+                
+                // Prepare photos for database with all required fields
+                const photosToIndex = photos.map(photo => {
+                    // Convert photo_taken_ts to timestamp if it's a string
+                    const photoTakenTs = photo.photo_taken_ts 
+                        ? (typeof photo.photo_taken_ts === 'string' 
+                            ? new Date(photo.photo_taken_ts).getTime() 
+                            : photo.photo_taken_ts)
+                        : (photo.last_modified 
+                            ? new Date(photo.last_modified).getTime() 
+                            : Date.now());
+                    
+                    return {
+                        file_id: photo.file_id,
+                        name: photo.name,
+                        size: photo.size || 0,
+                        path: photo.path || '/drive/root:',
+                        last_modified: photo.last_modified || new Date().toISOString(),
+                        photo_taken_ts: photoTakenTs,
+                        embedding_status: 0, // New photos need embeddings
+                        embedding: null,
+                        scan_id: scanId
+                    };
+                });
+                
+                // Add or update photos in database
+                await db.addOrUpdatePhotos(photosToIndex);
+                console.log(`✅ Auto-indexed ${photos.length} photos from browsing`);
+                
+                // Show summary
+                const totalIndexed = await db.getPhotoCount();
+                const needEmbeddings = await db.getPhotosWithoutEmbedding();
+                console.log(`📊 Total indexed: ${totalIndexed}, Need embeddings: ${needEmbeddings.length}`);
+                
+                // Update status briefly
+                const oldStatus = statusText.textContent;
+                updateStatus(`Auto-indexed ${photos.length} photos (${needEmbeddings.length} need embeddings)`, false);
+                setTimeout(() => {
+                    if (statusText.textContent.includes('Auto-indexed')) {
+                        updateStatus(oldStatus, false);
+                    }
+                }, 3000);
+            } catch (indexError) {
+                console.error('❌ Failed to auto-index photos:', indexError);
+                // Don't block the UI if indexing fails
+            }
+        }
 
         // Sort
         const sort = (browserSortSelect && browserSortSelect.value) || 'date-desc';
@@ -853,13 +867,16 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 try {
                     const dbPhoto = await db.getPhotoById(fileId);
                     if (dbPhoto) {
+                        currentModalPhoto = dbPhoto; // Store for modal actions
                         populateImageMetadata(dbPhoto);
                     } else {
                         // Fallback to OneDrive photo data
+                        currentModalPhoto = photo; // Store for modal actions
                         populateImageMetadata(photo);
                     }
                 } catch (error) {
                     console.warn('Could not fetch photo from database:', error);
+                    currentModalPhoto = photo; // Store for modal actions
                     populateImageMetadata(photo);
                 }
                 
@@ -889,6 +906,116 @@ async function renderBrowserPhotoGrid(forceReload = false) {
         console.error('Failed to render browser photo grid', e);
         browserPhotoGrid.innerHTML = '<div class="error-message">Failed to load photos.</div>';
     }
+}
+
+// Initialize image modal handlers (call once at startup)
+function initializeImageModal() {
+    const modal = document.getElementById('image-modal');
+    const modalImg = document.getElementById('modal-img');
+    const closeBtn = document.getElementById('modal-close');
+    const metadataToggle = document.getElementById('metadata-toggle');
+    const metadataContent = document.getElementById('metadata-content');
+    const deleteBtn = document.getElementById('modal-delete-btn');
+    
+    if (!modal || !closeBtn) {
+        console.warn('Image modal elements not found');
+        return;
+    }
+    
+    // Metadata toggle functionality
+    if (metadataToggle && metadataContent) {
+        metadataToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            metadataContent.classList.toggle('collapsed');
+            metadataToggle.textContent = metadataContent.classList.contains('collapsed') ? '📊' : '📈';
+        });
+    }
+    
+    // Delete photo functionality
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            
+            if (!currentModalPhoto) {
+                alert('No photo selected');
+                return;
+            }
+            
+            const photoName = currentModalPhoto.name || 'this photo';
+            if (!confirm(`Delete "${photoName}"? This cannot be undone.`)) {
+                return;
+            }
+            
+            try {
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = '⏳';
+                
+                // Delete from OneDrive
+                const token = await getAuthToken();
+                const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${currentModalPhoto.file_id}`, {
+                    method: 'DELETE',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to delete: ${response.status} ${response.statusText}`);
+                }
+                
+                console.log(`Successfully deleted photo: ${photoName} (${currentModalPhoto.file_id})`);
+                
+                // Delete from local database
+                await db.deletePhotos([currentModalPhoto.file_id]);
+                console.log(`Removed photo from database: ${currentModalPhoto.file_id}`);
+                
+                // Close modal
+                closeModal();
+                
+                // Show success message
+                updateStatus(`Photo "${photoName}" deleted successfully`, false);
+                
+                // Refresh the current view if applicable
+                if (browserPhotoGrid && browserPhotoGrid.children.length > 0) {
+                    await renderBrowserPhotoGrid(true);
+                }
+                
+            } catch (error) {
+                console.error('Failed to delete photo:', error);
+                alert(`Failed to delete photo: ${error.message}`);
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = '🗑️';
+            }
+        });
+    }
+    
+    const closeModal = () => {
+        // Trigger custom 'hide' event for cleanup
+        modal.dispatchEvent(new Event('hide'));
+        modal.style.display = 'none';
+        if (modalImg) modalImg.src = '';
+        currentModalPhoto = null; // Clear current photo reference
+        // Reset metadata overlay
+        if (metadataContent) metadataContent.classList.remove('collapsed');
+        if (metadataToggle) metadataToggle.textContent = '📊';
+        // Reset delete button
+        if (deleteBtn) {
+            deleteBtn.disabled = false;
+            deleteBtn.textContent = '🗑️';
+        }
+    };
+    
+    closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeModal();
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.style.display === 'flex') {
+            closeModal();
+        }
+    });
+    
+    console.log('Image modal initialized');
 }
 
 // Function to populate image metadata overlay
@@ -1712,11 +1839,16 @@ async function runAnalysisForScope(scope) {
             // Get photos from current folder only
             const currentPath = selectedFolderPath || '/drive/root:';
             allPhotos = await db.getAllPhotosWithEmbeddingFromFolder(currentPath);
-            scopeDescription = 'current folder only';
+            scopeDescription = `current folder: ${pathToDisplayName(currentPath)}`;
         }
         
+        console.log(`📊 Analysis scope: ${scopeDescription}, found ${allPhotos.length} photos with embeddings`);
+        
         if(allPhotos.length === 0) {
-            updateStatus(`No photos with embeddings found in ${scopeDescription}.`, false);
+            const totalIndexed = await db.getPhotoCount();
+            const needEmbeddings = await db.getPhotosWithoutEmbedding();
+            updateStatus(`No photos with embeddings found in ${scopeDescription}. Total indexed: ${totalIndexed}, Need embeddings: ${needEmbeddings.length}`, false);
+            console.warn(`⚠️ No photos with embeddings. Total photos: ${totalIndexed}, Without embeddings: ${needEmbeddings.length}`);
             startAnalysisButton.disabled = false;
             return;
         }
@@ -1726,6 +1858,8 @@ async function runAnalysisForScope(scope) {
         let filteredPhotos = allPhotos;
         
         if (dateFilter) {
+            console.log(`📅 Date filter active: ${new Date(dateFilter.from).toLocaleDateString()} to ${new Date(dateFilter.to).toLocaleDateString()}`);
+            const beforeFilter = filteredPhotos.length;
             filteredPhotos = filteredPhotos.filter(photo => {
                 const photoDate = photo.photo_taken_ts || photo.last_modified;
                 if (!photoDate) return false;
@@ -1737,10 +1871,14 @@ async function runAnalysisForScope(scope) {
                 
                 return true;
             });
+            console.log(`📅 Date filter: ${beforeFilter} photos → ${filteredPhotos.length} photos (filtered out ${beforeFilter - filteredPhotos.length})`);
+        } else {
+            console.log(`📅 No date filter applied`);
         }
         
         if(filteredPhotos.length === 0) {
-            updateStatus(`No photos match the current filters in ${scopeDescription}.`, false);
+            updateStatus(`No photos match the current filters in ${scopeDescription}. Try disabling date filter or adjusting date range.`, false);
+            console.warn(`⚠️ All photos filtered out! Check date filter settings.`);
             startAnalysisButton.disabled = false;
             return;
         }
@@ -1768,10 +1906,14 @@ async function runAnalysisForScope(scope) {
                 updateStatus(`Finding groups... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.5), 100);
             }, similarityThreshold, timeSpanHours, sortMethod);
             
+            console.log(`🔍 Found ${similarGroups.length} similar groups (before min size filter)`);
+            
             // Filter groups by minimum size
             const totalGroupsFound = similarGroups.length;
             similarGroups = similarGroups.filter(group => group.photos.length >= minGroupSize);
             const filteredOutCount = totalGroupsFound - similarGroups.length;
+            
+            console.log(`🔍 After min size filter (≥${minGroupSize}): ${similarGroups.length} groups (filtered out ${filteredOutCount} small groups)`);
 
             updateStatus(`Picking best photos...`, true, 75, 100);
 
@@ -1894,11 +2036,11 @@ async function initializeAnalysisSettings() {
         const savedTimeSpan = await db.getSetting('timeSpanHours');
         const timeSpan = savedTimeSpan !== null ? Number(savedTimeSpan) : 8; // Default to 8 hours
         
-        // Ensure timeSpan is a valid number
-        const validTimeSpan = (!isNaN(timeSpan) && timeSpan >= 1 && timeSpan <= 24) ? timeSpan : 8;
+        // Ensure timeSpan is a valid number (0 = disabled, 1-24 = hours)
+        const validTimeSpan = (!isNaN(timeSpan) && timeSpan >= 0 && timeSpan <= 24) ? timeSpan : 8;
         
         timeSpanSlider.value = validTimeSpan;
-        timeSpanValueDisplay.textContent = `${validTimeSpan} hours`;
+        timeSpanValueDisplay.textContent = validTimeSpan === 0 ? 'Disabled (compare all)' : `${validTimeSpan} hours`;
         
         // Save default if no setting exists
         if (savedTimeSpan === null) {
@@ -2116,36 +2258,10 @@ async function main() {
             await runEmbeddingGenerationForScope('indexed');
         });
     }
-    // Analysis split button: default main action runs for current folder
+    // Analysis button: analyze all indexed photos
     startAnalysisButton.addEventListener('click', async () => {
-        await runAnalysisForScope('current');
+        await runAnalysisForScope('all');
     });
-    if (analysisMenuBtn) {
-        analysisMenuBtn.addEventListener('click', () => {
-            const open = analysisMenu.classList.toggle('open');
-            analysisMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-            analysisMenu.setAttribute('aria-hidden', open ? 'false' : 'true');
-        });
-        document.addEventListener('click', (e) => {
-            if (!analysisMenu.contains(e.target) && e.target !== analysisMenuBtn) {
-                analysisMenu.classList.remove('open');
-                analysisMenuBtn.setAttribute('aria-expanded', 'false');
-                analysisMenu.setAttribute('aria-hidden', 'true');
-            }
-        });
-    }
-    if (analysisCurrentBtn) {
-        analysisCurrentBtn.addEventListener('click', async () => {
-            analysisMenu.classList.remove('open');
-            await runAnalysisForScope('current');
-        });
-    }
-    if (analysisAllBtn) {
-        analysisAllBtn.addEventListener('click', async () => {
-            analysisMenu.classList.remove('open');
-            await runAnalysisForScope('all');
-        });
-    }
     
     // Filter control event listeners
     // input removed
@@ -2173,7 +2289,7 @@ async function main() {
     // Time span control event listeners
     timeSpanSlider.addEventListener('input', async (e) => {
         const value = parseInt(e.target.value);
-        timeSpanValueDisplay.textContent = `${value} hours`;
+        timeSpanValueDisplay.textContent = value === 0 ? 'Disabled (compare all)' : `${value} hours`;
         await db.setSetting('timeSpanHours', value);
     });
     
@@ -2277,6 +2393,11 @@ async function main() {
             }
         });
     }
+    if (browserAnalyzeBtn) {
+        browserAnalyzeBtn.addEventListener('click', async () => {
+            await runAnalysisForScope('current');
+        });
+    }
     
     // Close folder modal on outside click
     folderModal.addEventListener('click', (e) => {
@@ -2318,6 +2439,9 @@ async function main() {
     
     // Initialize collapsible panels state and handlers
     initializeCollapsiblePanels();
+    
+    // Initialize image modal handlers
+    initializeImageModal();
 
     // Initialize backup panel
     await initializeBackupPanel();

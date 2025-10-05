@@ -778,7 +778,13 @@ button:disabled {
   color: #fff;
 }
 
-.metadata-toggle {
+.metadata-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.metadata-toggle,
+.delete-photo-btn {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.3);
   color: white;
@@ -789,8 +795,19 @@ button:disabled {
   transition: background-color 0.2s;
 }
 
-.metadata-toggle:hover {
+.metadata-toggle:hover,
+.delete-photo-btn:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.delete-photo-btn:hover {
+  background: rgba(220, 38, 38, 0.2);
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+.delete-photo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .metadata-content {
