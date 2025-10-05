@@ -193,6 +193,7 @@ class PhotoDB {
                     embedding: photo.embedding,
                     sharpness: photo.sharpness,
                     exposure: photo.exposure,
+                    face: photo.face, // Export face detection metrics
                     quality_score: photo.quality_score,
                     photo_taken_ts: photo.photo_taken_ts,
                     name: photo.name,
@@ -236,6 +237,7 @@ class PhotoDB {
                             existingPhoto.embedding_status = 1;
                             existingPhoto.sharpness = embeddingData.sharpness;
                             existingPhoto.exposure = embeddingData.exposure;
+                            existingPhoto.face = embeddingData.face; // Import face metrics
                             existingPhoto.quality_score = embeddingData.quality_score;
                             
                             store.put(existingPhoto);
@@ -256,6 +258,7 @@ class PhotoDB {
                             embedding_status: 1,
                             sharpness: embeddingData.sharpness,
                             exposure: embeddingData.exposure,
+                            face: embeddingData.face, // Import face metrics
                             quality_score: embeddingData.quality_score,
                             // Set defaults for missing metadata (will be updated on next scan)
                             size: 0,
@@ -316,12 +319,13 @@ PhotoDB.prototype.updatePhotoEmbedding = async function(file_id, embedding, qual
                  photo.embedding = embedding;
                  photo.embedding_status = 1;
                  
-                 // Store quality metrics if provided
-                 if (qualityMetrics) {
-                     photo.sharpness = qualityMetrics.sharpness;
-                     photo.exposure = qualityMetrics.exposure;
-                     photo.quality_score = qualityMetrics.qualityScore;
-                 }
+                // Store quality metrics if provided
+                if (qualityMetrics) {
+                    photo.sharpness = qualityMetrics.sharpness;
+                    photo.exposure = qualityMetrics.exposure;
+                    photo.face = qualityMetrics.face; // Store face detection metrics
+                    photo.quality_score = qualityMetrics.qualityScore;
+                }
                  
                  store.put(photo);
                  resolve();

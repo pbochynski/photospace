@@ -830,6 +830,61 @@ async function renderBrowserPhotoGrid(forceReload = false) {
             `;
             browserPhotoGrid.appendChild(item);
         });
+        
+        // Add click event listeners to browser photos for full-size modal
+        browserPhotoGrid.querySelectorAll('.photo-item img').forEach((img, idx) => {
+            img.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                
+                const modal = document.getElementById('image-modal');
+                const modalImg = document.getElementById('modal-img');
+                const fileId = img.getAttribute('data-file-id');
+                
+                // Get photo data from sortedPhotos array
+                const photo = sortedPhotos[idx - folders.length]; // Subtract folder count
+                
+                if (!photo) {
+                    console.error('Photo data not found for index:', idx);
+                    return;
+                }
+                
+                // Try to get full photo data from database (includes quality metrics)
+                try {
+                    const dbPhoto = await db.getPhotoById(fileId);
+                    if (dbPhoto) {
+                        populateImageMetadata(dbPhoto);
+                    } else {
+                        // Fallback to OneDrive photo data
+                        populateImageMetadata(photo);
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch photo from database:', error);
+                    populateImageMetadata(photo);
+                }
+                
+                if (fileId) {
+                    // Send auth token to service worker
+                    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                        const token = await getAuthToken();
+                        navigator.serviceWorker.controller.postMessage({
+                            type: 'SET_TOKEN',
+                            token: token
+                        });
+                    }
+                    
+                    // Show modal with thumbnail first
+                    modalImg.src = img.src;
+                    modal.style.display = 'flex';
+                    
+                    // Load full-size image in background
+                    await loadFullSizeImage(fileId, modalImg, img.src);
+                } else {
+                    modalImg.src = img.src;
+                    modal.style.display = 'flex';
+                }
+            });
+        });
     } catch (e) {
         console.error('Failed to render browser photo grid', e);
         browserPhotoGrid.innerHTML = '<div class="error-message">Failed to load photos.</div>';
@@ -846,33 +901,104 @@ function populateImageMetadata(photo) {
     // Set photo name
     photoName.textContent = photo.name || 'Unknown Photo';
     
-    // Display quality metrics
-    if (photo.sharpness !== undefined) {
-        sharpnessValue.textContent = `${Math.round(photo.sharpness)}`;
+    // Display sharpness metric
+    if (photo.sharpness !== undefined && isFinite(photo.sharpness)) {
+        const sharpness = typeof photo.sharpness === 'number' ? photo.sharpness : 0;
+        sharpnessValue.textContent = `${sharpness.toFixed(2)}`;
+        
+        // Color code sharpness (sharp images: 15-40+, blurry: <10)
+        if (sharpness >= 15) {
+            sharpnessValue.style.color = '#4caf50'; // Sharp
+        } else if (sharpness >= 10) {
+            sharpnessValue.style.color = '#ffeb3b'; // OK
+        } else {
+            sharpnessValue.style.color = '#f44336'; // Blurry
+        }
     } else {
         sharpnessValue.textContent = 'N/A';
+        sharpnessValue.style.color = '#fff';
     }
     
+    // Display exposure metrics (now with detailed breakdown)
     if (photo.exposure !== undefined) {
-        const exposurePercent = Math.round(photo.exposure * 100);
-        exposureValue.textContent = `${exposurePercent}%`;
-        
-        // Color code exposure (green for good, yellow for ok, red for poor)
-        if (exposurePercent >= 40 && exposurePercent <= 60) {
-            exposureValue.style.color = '#4caf50'; // Good exposure
-        } else if (exposurePercent >= 25 && exposurePercent <= 75) {
-            exposureValue.style.color = '#ffeb3b'; // OK exposure
+        // Check if it's the new object format or old number format
+        if (typeof photo.exposure === 'object') {
+            const exp = photo.exposure;
+            const brightness = Math.round((exp.meanBrightness || 0) * 100);
+            const clipping = Math.round((exp.clipping || 0) * 100);
+            const dynamicRange = Math.round((exp.dynamicRange || 0) * 100);
+            const entropy = Math.round((exp.entropy || 0) * 100);
+            
+            exposureValue.innerHTML = `
+                <div style="margin-bottom: 4px;">Brightness: ${brightness}%</div>
+                <div style="font-size: 0.85em; opacity: 0.9;">
+                    Clipping: ${clipping}% | Dynamic Range: ${dynamicRange}% | Entropy: ${entropy}%
+                </div>
+            `;
+            
+            // Color code based on overall exposure quality
+            if (brightness >= 40 && brightness <= 60 && clipping < 5) {
+                exposureValue.style.color = '#4caf50'; // Good exposure
+            } else if (brightness >= 25 && brightness <= 75 && clipping < 10) {
+                exposureValue.style.color = '#ffeb3b'; // OK exposure
+            } else {
+                exposureValue.style.color = '#f44336'; // Poor exposure
+            }
         } else {
-            exposureValue.style.color = '#f44336'; // Poor exposure
+            // Legacy format (single number)
+            const exposurePercent = Math.round(photo.exposure * 100);
+            exposureValue.textContent = `${exposurePercent}%`;
+            
+            if (exposurePercent >= 40 && exposurePercent <= 60) {
+                exposureValue.style.color = '#4caf50';
+            } else if (exposurePercent >= 25 && exposurePercent <= 75) {
+                exposureValue.style.color = '#ffeb3b';
+            } else {
+                exposureValue.style.color = '#f44336';
+            }
         }
     } else {
         exposureValue.textContent = 'N/A';
         exposureValue.style.color = '#fff';
     }
     
-    if (photo.quality_score !== undefined) {
+    // Display quality score with face metrics if available
+    if (photo.quality_score !== undefined && isFinite(photo.quality_score)) {
         const qualityPercent = Math.round(photo.quality_score * 100);
-        qualityScoreValue.textContent = `${qualityPercent}%`;
+        
+        // Build quality score display with face info if available
+        let qualityHtml = `<div style="margin-bottom: 4px;">${qualityPercent}%</div>`;
+        
+        // Add face metrics if available
+        if (photo.face && photo.face.faceCount > 0 && isFinite(photo.face.faceScore)) {
+            const faceScore = Math.round(photo.face.faceScore * 100);
+            qualityHtml += `<div style="font-size: 0.85em; opacity: 0.9;">
+                ${photo.face.faceCount} face${photo.face.faceCount > 1 ? 's' : ''} detected | Face Quality: ${faceScore}%
+            </div>`;
+            
+            // Show detailed face metrics if available
+            if (photo.face.details && photo.face.details.length > 0) {
+                const detail = photo.face.details[0]; // Show first face details
+                const metrics = [];
+                if (detail.eyesOpen !== undefined && isFinite(detail.eyesOpen)) {
+                    metrics.push(`Eyes: ${Math.round(detail.eyesOpen * 100)}%`);
+                }
+                if (detail.smile !== undefined && isFinite(detail.smile)) {
+                    metrics.push(`Smile: ${Math.round(detail.smile * 100)}%`);
+                }
+                if (detail.naturalExpression !== undefined && isFinite(detail.naturalExpression)) {
+                    metrics.push(`Natural: ${Math.round(detail.naturalExpression * 100)}%`);
+                }
+                
+                if (metrics.length > 0) {
+                    qualityHtml += `<div style="font-size: 0.8em; opacity: 0.85; margin-top: 2px;">
+                        ${metrics.join(' | ')}
+                    </div>`;
+                }
+            }
+        }
+        
+        qualityScoreValue.innerHTML = qualityHtml;
         
         // Color code quality score
         if (qualityPercent >= 70) {
@@ -886,8 +1012,6 @@ function populateImageMetadata(photo) {
         qualityScoreValue.textContent = 'N/A';
         qualityScoreValue.style.color = '#fff';
     }
-    
-    
 }
 
 // --- Folder Browser Functions ---
