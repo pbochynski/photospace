@@ -819,6 +819,16 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 const totalIndexed = await db.getPhotoCount();
                 const allNeedEmbeddings = await db.getPhotosWithoutEmbedding();
                 console.log(`📊 Total indexed: ${totalIndexed}, Need embeddings: ${allNeedEmbeddings.length}`);
+                
+                // If current folder is already processed but there are OTHER photos that need embeddings,
+                // start processing them (if auto-start is enabled)
+                if (photosNeedingEmbeddings.length === 0 && allNeedEmbeddings.length > 0) {
+                    const autoStart = await db.getSetting('autoStartEmbeddings');
+                    if (autoStart !== false && !isProcessingEmbeddings && !isEmbeddingPaused) {
+                        console.log(`🚀 Current folder already processed, but ${allNeedEmbeddings.length} other photos need embeddings`);
+                        await addPhotosToEmbeddingQueue(allNeedEmbeddings, false); // Normal priority
+                    }
+                }
             
                 // Update status briefly
                 const oldStatus = statusText.textContent;
@@ -1571,6 +1581,18 @@ async function addPhotosToEmbeddingQueue(photos, priority = false) {
     const autoStart = await db.getSetting('autoStartEmbeddings');
     if (autoStart !== false && !isProcessingEmbeddings && !isEmbeddingPaused) {
         console.log('🚀 Auto-starting embedding generation');
+        
+        // Also check for OTHER photos in database that need embeddings
+        // Add them to the queue (at lower priority) so all photos get processed
+        const allPhotosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
+        const currentQueueIds = new Set(embeddingQueue.map(p => p.file_id));
+        const remainingPhotos = allPhotosNeedingEmbeddings.filter(p => !currentQueueIds.has(p.file_id));
+        
+        if (remainingPhotos.length > 0) {
+            console.log(`📥 Adding ${remainingPhotos.length} more photos from database to queue (lower priority)`);
+            embeddingQueue.push(...remainingPhotos); // Add to END (lower priority)
+        }
+        
         startEmbeddingWorkers();
     }
 }
