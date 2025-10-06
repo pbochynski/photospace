@@ -218,6 +218,15 @@ const importResults = document.getElementById('import-results');
 const importSummary = document.getElementById('import-summary');
 const closeImportBtn = document.getElementById('close-import-btn');
 
+// Similar photos elements
+const similarPhotosPanel = document.querySelector('[data-panel-key="similar-photos"]');
+const similarPhotosContainer = document.getElementById('similar-photos-container');
+const similarReferenceName = document.getElementById('similar-reference-name');
+const clearSimilarSearchBtn = document.getElementById('clear-similar-search');
+const similarCountSelect = document.getElementById('similar-count');
+const modalFindSimilarBtn = document.getElementById('modal-find-similar-btn');
+const modalViewInFolderBtn = document.getElementById('modal-view-in-folder-btn');
+
 let embeddingWorker = null;
 let selectedFolderId = null; // null means no folder filter (all folders)
 let selectedFolderPath = null; // null means no folder filter
@@ -1248,6 +1257,414 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
     }
 }
 
+// --- Similar Photos Functions ---
+
+/**
+ * Calculate cosine similarity between two embedding vectors
+ * @param {Array<number>} embedding1 - First embedding vector
+ * @param {Array<number>} embedding2 - Second embedding vector
+ * @returns {number} - Similarity score between 0 and 1
+ */
+function cosineSimilarity(embedding1, embedding2) {
+    if (!embedding1 || !embedding2 || embedding1.length !== embedding2.length) {
+        return 0;
+    }
+    
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+    
+    for (let i = 0; i < embedding1.length; i++) {
+        dotProduct += embedding1[i] * embedding2[i];
+        norm1 += embedding1[i] * embedding1[i];
+        norm2 += embedding2[i] * embedding2[i];
+    }
+    
+    const denominator = Math.sqrt(norm1) * Math.sqrt(norm2);
+    return denominator === 0 ? 0 : dotProduct / denominator;
+}
+
+/**
+ * Find photos similar to a reference photo
+ * @param {string} referenceFileId - File ID of the reference photo
+ * @param {number} maxResults - Maximum number of similar photos to return
+ * @returns {Promise<Array>} - Array of similar photos with similarity scores
+ */
+async function findSimilarToPhoto(referenceFileId, maxResults = 20) {
+    try {
+        // Get the reference photo with its embedding
+        const referencePhoto = await db.getPhotoById(referenceFileId);
+        
+        if (!referencePhoto || !referencePhoto.embedding) {
+            throw new Error('Reference photo not found or has no embedding');
+        }
+        
+        // Get all photos with embeddings (excluding the reference photo itself)
+        const allPhotos = await db.getAllPhotosWithEmbedding();
+        const otherPhotos = allPhotos.filter(p => p.file_id !== referenceFileId);
+        
+        if (otherPhotos.length === 0) {
+            return [];
+        }
+        
+        // Calculate similarity for each photo using CLIP embeddings
+        const photosWithScores = otherPhotos.map(photo => {
+            const similarity = cosineSimilarity(referencePhoto.embedding, photo.embedding);
+            
+            return {
+                ...photo,
+                similarity
+            };
+        });
+        
+        // Sort by similarity (highest first) and take top results
+        photosWithScores.sort((a, b) => b.similarity - a.similarity);
+        
+        return photosWithScores.slice(0, maxResults);
+    } catch (error) {
+        console.error('Error finding similar photos:', error);
+        throw error;
+    }
+}
+
+/**
+ * Display similar photos in the similar photos panel
+ * @param {Array} photos - Array of photos with similarity scores
+ * @param {Object} referencePhoto - The reference photo object
+ */
+async function displaySimilarPhotos(photos, referencePhoto) {
+    // Show the panel
+    if (similarPhotosPanel) {
+        similarPhotosPanel.style.display = 'block';
+    }
+    
+    // Update reference photo name
+    if (similarReferenceName) {
+        similarReferenceName.textContent = referencePhoto.name || 'Unknown';
+    }
+    
+    // Clear and populate container
+    if (!similarPhotosContainer) return;
+    
+    if (photos.length === 0) {
+        similarPhotosContainer.innerHTML = '<p class="placeholder">No similar photos found.</p>';
+        return;
+    }
+    
+    similarPhotosContainer.innerHTML = `
+        <div class="similar-info">
+            Found ${photos.length} similar photo${photos.length !== 1 ? 's' : ''}
+        </div>
+        <div class="photo-grid" id="similar-photo-grid"></div>
+    `;
+    
+    const photoGrid = document.getElementById('similar-photo-grid');
+    
+    photos.forEach((photo, idx) => {
+        const photoItem = document.createElement('div');
+        photoItem.className = 'photo-item';
+        
+        const thumbnailSrc = `/api/thumb/${photo.file_id}`;
+        const similarityPercent = Math.round(photo.similarity * 100);
+        
+        photoItem.innerHTML = `
+            <label class="photo-checkbox-label">
+                <span class="photo-checkbox-custom"></span>
+                <img src="${thumbnailSrc}" data-file-id="${photo.file_id}" alt="${photo.name || ''}" loading="lazy">
+                <div class="photo-score">
+                    <div class="similarity-score">Similarity: ${similarityPercent}%</div>
+                    <div class="photo-path">${photo.path ? photo.path.replace('/drive/root:', '') || '/' : ''}</div>
+                    ${photo.quality_score ? `<div class="quality-info">Quality: ${Math.round(photo.quality_score * 100)}%</div>` : ''}
+                </div>
+            </label>
+        `;
+        
+        photoGrid.appendChild(photoItem);
+    });
+    
+    // Add click event listeners for full-screen view
+    photoGrid.querySelectorAll('.photo-item img').forEach((img, idx) => {
+        img.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            const modal = document.getElementById('image-modal');
+            const modalImg = document.getElementById('modal-img');
+            const fileId = img.getAttribute('data-file-id');
+            const photo = photos[idx];
+            
+            if (!photo) return;
+            
+            // Try to get full photo data from database
+            try {
+                const dbPhoto = await db.getPhotoById(fileId);
+                if (dbPhoto) {
+                    currentModalPhoto = dbPhoto;
+                    populateImageMetadata(dbPhoto);
+                } else {
+                    currentModalPhoto = photo;
+                    populateImageMetadata(photo);
+                }
+            } catch (error) {
+                console.warn('Could not fetch photo from database:', error);
+                currentModalPhoto = photo;
+                populateImageMetadata(photo);
+            }
+            
+            if (fileId) {
+                // Send auth token to service worker
+                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                    const token = await getAuthToken();
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SET_TOKEN',
+                        token: token
+                    });
+                }
+                
+                // Show modal with thumbnail first
+                modalImg.src = img.src;
+                modal.style.display = 'flex';
+                
+                // Load full-size image in background
+                await loadFullSizeImage(fileId, modalImg, img.src);
+            } else {
+                modalImg.src = img.src;
+                modal.style.display = 'flex';
+            }
+        });
+    });
+    
+    // Scroll to similar photos panel
+    if (similarPhotosPanel) {
+        similarPhotosPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+/**
+ * Handle "Find Similar Photos" button click
+ */
+async function handleFindSimilarClick() {
+    if (!currentModalPhoto || !currentModalPhoto.file_id) {
+        alert('No photo selected');
+        return;
+    }
+    
+    // Check if photo has embedding
+    if (!currentModalPhoto.embedding) {
+        alert('This photo needs to be processed first (no embedding available)');
+        return;
+    }
+    
+    try {
+        // Disable button during search
+        if (modalFindSimilarBtn) {
+            modalFindSimilarBtn.disabled = true;
+            modalFindSimilarBtn.textContent = '🔍 Searching...';
+        }
+        
+        updateStatus('Finding similar photos...', false);
+        
+        // Get max results from selector
+        const maxResults = similarCountSelect ? parseInt(similarCountSelect.value) : 20;
+        
+        // Find similar photos
+        const similarPhotos = await findSimilarToPhoto(currentModalPhoto.file_id, maxResults);
+        
+        // Update URL with query parameter
+        updateURLWithSimilarPhoto(currentModalPhoto.file_id);
+        
+        // Display results
+        await displaySimilarPhotos(similarPhotos, currentModalPhoto);
+        
+        // Close the modal
+        const modal = document.getElementById('image-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        updateStatus(`Found ${similarPhotos.length} similar photos`, false);
+        
+    } catch (error) {
+        console.error('Error finding similar photos:', error);
+        alert(`Failed to find similar photos: ${error.message}`);
+        updateStatus('Error finding similar photos', false);
+    } finally {
+        // Re-enable button
+        if (modalFindSimilarBtn) {
+            modalFindSimilarBtn.disabled = false;
+            modalFindSimilarBtn.textContent = '🔍 Find Similar Photos';
+        }
+    }
+}
+
+/**
+ * Clear similar photos search and hide panel
+ */
+function clearSimilarPhotosSearch() {
+    if (similarPhotosPanel) {
+        similarPhotosPanel.style.display = 'none';
+    }
+    if (similarPhotosContainer) {
+        similarPhotosContainer.innerHTML = '<p class="placeholder">Find similar photos using the 🔍 button in full-screen photo view.</p>';
+    }
+    if (similarReferenceName) {
+        similarReferenceName.textContent = '-';
+    }
+    
+    // Remove URL parameter
+    const url = new URL(window.location);
+    url.searchParams.delete('similar-to');
+    window.history.pushState({}, '', url);
+    
+    updateStatus('Similar photos search cleared', false);
+}
+
+/**
+ * Update URL with similar photo parameter
+ */
+function updateURLWithSimilarPhoto(fileId) {
+    const url = new URL(window.location);
+    url.searchParams.set('similar-to', fileId);
+    window.history.pushState({}, '', url);
+}
+
+/**
+ * Get similar photo file ID from URL
+ */
+function getSimilarPhotoFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('similar-to');
+}
+
+/**
+ * Restore similar photos view from URL parameter
+ */
+async function restoreSimilarPhotosFromURL() {
+    const fileId = getSimilarPhotoFromURL();
+    if (!fileId) return;
+    
+    try {
+        updateStatus('Restoring similar photos view...', false);
+        
+        // Get reference photo
+        const referencePhoto = await db.getPhotoById(fileId);
+        if (!referencePhoto || !referencePhoto.embedding) {
+            console.warn('Reference photo not found or has no embedding:', fileId);
+            // Clear invalid URL parameter
+            clearSimilarPhotosSearch();
+            return;
+        }
+        
+        // Get max results from selector (use default if not set)
+        const maxResults = similarCountSelect ? parseInt(similarCountSelect.value) : 20;
+        
+        // Find similar photos
+        const similarPhotos = await findSimilarToPhoto(fileId, maxResults);
+        
+        // Display results
+        await displaySimilarPhotos(similarPhotos, referencePhoto);
+        
+        updateStatus(`Restored similar photos view (${similarPhotos.length} photos)`, false);
+        
+    } catch (error) {
+        console.error('Error restoring similar photos from URL:', error);
+        clearSimilarPhotosSearch();
+    }
+}
+
+/**
+ * Navigate to photo's folder in browser and scroll to the photo
+ */
+async function viewPhotoInFolder() {
+    if (!currentModalPhoto || !currentModalPhoto.file_id) {
+        alert('No photo selected');
+        return;
+    }
+    
+    try {
+        // Disable button during navigation
+        if (modalViewInFolderBtn) {
+            modalViewInFolderBtn.disabled = true;
+            modalViewInFolderBtn.textContent = '📁 Loading...';
+        }
+        
+        updateStatus('Navigating to folder...', false);
+        
+        // Get photo's folder path
+        const photoPath = currentModalPhoto.path || '/drive/root:';
+        
+        // Find folder ID for the path
+        const folderId = await findFolderIdByPath(photoPath);
+        if (!folderId) {
+            throw new Error('Could not find folder for path: ' + photoPath);
+        }
+        
+        // Update browser state to this folder
+        selectedFolderId = folderId;
+        selectedFolderPath = photoPath;
+        selectedFolderDisplayName = pathToDisplayName(photoPath);
+        updateURLWithPath(photoPath);
+        updateBrowserCurrentPath();
+        
+        // Close the modal
+        const modal = document.getElementById('image-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        // Render the browser grid
+        await renderBrowserPhotoGrid(true);
+        
+        // Scroll to browser panel
+        const browserPanel = document.querySelector('[data-panel-key="browser"]');
+        if (browserPanel) {
+            browserPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        
+        // Wait a bit for the grid to render, then scroll to and highlight the photo
+        setTimeout(() => {
+            const photoElements = browserPhotoGrid.querySelectorAll('.photo-item img');
+            let targetPhotoElement = null;
+            
+            // Find the photo element with matching file_id
+            photoElements.forEach((img) => {
+                if (img.getAttribute('data-file-id') === currentModalPhoto.file_id) {
+                    targetPhotoElement = img.closest('.photo-item');
+                }
+            });
+            
+            if (targetPhotoElement) {
+                // Scroll to the photo
+                targetPhotoElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                
+                // Add highlight animation
+                targetPhotoElement.classList.add('highlight');
+                
+                // Remove highlight after animation completes
+                setTimeout(() => {
+                    targetPhotoElement.classList.remove('highlight');
+                }, 2000);
+                
+                updateStatus('Photo found in folder', false);
+            } else {
+                console.warn('Photo not found in rendered grid');
+                updateStatus('Folder opened (photo not visible)', false);
+            }
+        }, 500);
+        
+    } catch (error) {
+        console.error('Error viewing photo in folder:', error);
+        alert(`Failed to open folder: ${error.message}`);
+        updateStatus('Error opening folder', false);
+    } finally {
+        // Re-enable button
+        if (modalViewInFolderBtn) {
+            modalViewInFolderBtn.disabled = false;
+            modalViewInFolderBtn.textContent = '📁 View in Folder';
+        }
+    }
+}
+
 // Add photos to embedding queue (at beginning if workers are running)
 async function addPhotosToEmbeddingQueue(photos, priority = false) {
     if (!photos || photos.length === 0) return;
@@ -1934,6 +2351,9 @@ async function main() {
         
         // Restore folder selection from URL if present
         await restoreFiltersFromURL();
+        
+        // Restore similar photos view from URL if present
+        await restoreSimilarPhotosFromURL();
     }
 
     // STEP 4: Add event listeners now that MSAL is ready
@@ -2096,6 +2516,26 @@ async function main() {
             const resultsPanel = document.querySelector('[data-panel-key="results"]');
             if (resultsPanel) {
                 resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    }
+    
+    // Similar photos functionality event listeners
+    if (modalFindSimilarBtn) {
+        modalFindSimilarBtn.addEventListener('click', handleFindSimilarClick);
+    }
+    if (modalViewInFolderBtn) {
+        modalViewInFolderBtn.addEventListener('click', viewPhotoInFolder);
+    }
+    if (clearSimilarSearchBtn) {
+        clearSimilarSearchBtn.addEventListener('click', clearSimilarPhotosSearch);
+    }
+    if (similarCountSelect) {
+        similarCountSelect.addEventListener('change', async () => {
+            // If a similar search is currently displayed, refresh it with new count
+            const fileId = getSimilarPhotoFromURL();
+            if (fileId) {
+                await restoreSimilarPhotosFromURL();
             }
         });
     }

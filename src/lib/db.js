@@ -55,7 +55,7 @@ class PhotoDB {
                     request.onsuccess = () => {
                         const existingPhoto = request.result;
                         if (existingPhoto) {
-                            // Photo exists, update scan_id
+                            // Photo exists, preserve embedding
                             existingPhoto.scan_id = newPhoto.scan_id;
                             store.put(existingPhoto);
                         } else {

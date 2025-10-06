@@ -202,6 +202,29 @@
                 </div>
             </section>
 
+            <!-- Similar Photos Panel -->
+            <section class="panel" data-panel-key="similar-photos" style="display: none;">
+                <div class="panel-header">
+                    <h3 class="panel-title">Photos Similar To: <span id="similar-reference-name">-</span></h3>
+                    <div class="panel-tools">
+                        <button type="button" id="clear-similar-search" class="secondary-btn">✕ Clear</button>
+                        <label for="similar-count">Show:</label>
+                        <select id="similar-count">
+                            <option value="10">10 photos</option>
+                            <option value="20" selected>20 photos</option>
+                            <option value="50">50 photos</option>
+                            <option value="100">100 photos</option>
+                        </select>
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="similar-photos-container">
+                        <p class="placeholder">Find similar photos using the 🔍 button in full-screen photo view.</p>
+                    </div>
+                </div>
+            </section>
+
             <!-- Embedding Backup & Sync Panel -->
             <section class="panel" data-panel-key="backup">
                 <div class="panel-header">
@@ -262,6 +285,8 @@
                     <span class="metric-label">Quality Score:</span>
                     <span class="metric-value" id="quality-score-value">-</span>
                 </div>
+                <button class="find-similar-btn" id="modal-find-similar-btn" title="Find photos similar to this one">🔍 Find Similar Photos</button>
+                <button class="view-in-folder-btn" id="modal-view-in-folder-btn" title="Open this photo's folder in browser">📁 View in Folder</button>
             </div>
         </div>
     </div>

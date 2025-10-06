@@ -31,22 +31,21 @@ export async function pickBestPhotoByQuality(photoGroup) {
 export async function findSimilarGroups(photos, progressCallback, similarityThreshold = 0.90, timeSpanHours = 8, sortMethod = 'group-size') {
     // Validate embeddings before processing
     console.log(`🔎 findSimilarGroups: Received ${photos.length} photos`);
-    const photosWithValidEmbeddings = photos.filter(p => {
+    const photosWithValidData = photos.filter(p => {
         const hasEmbedding = p.embedding && Array.isArray(p.embedding) && p.embedding.length > 0;
+        
         if (!hasEmbedding) {
-            console.warn(`⚠️ Photo ${p.file_id} has invalid embedding:`, {
-                hasEmbedding: !!p.embedding,
-                isArray: Array.isArray(p.embedding),
-                length: p.embedding?.length || 0
+            console.warn(`⚠️ Photo ${p.file_id} has no embedding:`, {
+                hasEmbedding: !!p.embedding
             });
         }
         return hasEmbedding;
     });
     
-    console.log(`🔎 Photos with valid embeddings: ${photosWithValidEmbeddings.length}/${photos.length}`);
+    console.log(`🔎 Photos with valid embeddings: ${photosWithValidData.length}/${photos.length}`);
     
-    if (photosWithValidEmbeddings.length === 0) {
-        console.error('❌ No photos with valid embeddings found!');
+    if (photosWithValidData.length === 0) {
+        console.error('❌ No photos with valid similarity data found!');
         return [];
     }
     
@@ -57,7 +56,7 @@ export async function findSimilarGroups(photos, progressCallback, similarityThre
     
     // Debug: Check timestamps
     console.log('🕐 Checking photo timestamps...');
-    const timestampSample = photosWithValidEmbeddings.slice(0, 5).map(p => ({
+    const timestampSample = photosWithValidData.slice(0, 5).map(p => ({
         id: p.file_id?.substring(0, 8),
         photo_taken_ts: p.photo_taken_ts,
         type: typeof p.photo_taken_ts,
@@ -66,7 +65,7 @@ export async function findSimilarGroups(photos, progressCallback, similarityThre
     console.log('🕐 First 5 photo timestamps:', timestampSample);
     
     // Convert string timestamps to numeric timestamps for proper temporal clustering
-    photosWithValidEmbeddings.forEach(photo => {
+    photosWithValidData.forEach(photo => {
         if (typeof photo.photo_taken_ts === 'string') {
             const numericTs = new Date(photo.photo_taken_ts).getTime();
             if (!isNaN(numericTs)) {
@@ -76,28 +75,28 @@ export async function findSimilarGroups(photos, progressCallback, similarityThre
     });
     
     // Check for missing/invalid timestamps after conversion
-    const missingTimestamps = photosWithValidEmbeddings.filter(p => !p.photo_taken_ts || isNaN(p.photo_taken_ts));
+    const missingTimestamps = photosWithValidData.filter(p => !p.photo_taken_ts || isNaN(p.photo_taken_ts));
     if (missingTimestamps.length > 0) {
-        console.warn(`⚠️ Warning: ${missingTimestamps.length}/${photosWithValidEmbeddings.length} photos have invalid timestamps!`);
+        console.warn(`⚠️ Warning: ${missingTimestamps.length}/${photosWithValidData.length} photos have invalid timestamps!`);
     }
     
-    photosWithValidEmbeddings.sort((a, b) => a.photo_taken_ts - b.photo_taken_ts);
+    photosWithValidData.sort((a, b) => a.photo_taken_ts - b.photo_taken_ts);
 
     const sessions = [];
     if (timeSpanHours <= 0) {
         // Temporal clustering disabled - treat all photos as one session
-        sessions.push(photosWithValidEmbeddings);
-        console.log(`🔎 Temporal clustering disabled - treating all ${photosWithValidEmbeddings.length} photos as one session`);
-    } else if (photosWithValidEmbeddings.length > 0) {
-        let currentSession = [photosWithValidEmbeddings[0]];
+        sessions.push(photosWithValidData);
+        console.log(`🔎 Temporal clustering disabled - treating all ${photosWithValidData.length} photos as one session`);
+    } else if (photosWithValidData.length > 0) {
+        let currentSession = [photosWithValidData[0]];
         let sessionBreaks = [];
         
-        for (let i = 1; i < photosWithValidEmbeddings.length; i++) {
-            const timeDiff = photosWithValidEmbeddings[i].photo_taken_ts - photosWithValidEmbeddings[i - 1].photo_taken_ts;
+        for (let i = 1; i < photosWithValidData.length; i++) {
+            const timeDiff = photosWithValidData[i].photo_taken_ts - photosWithValidData[i - 1].photo_taken_ts;
             const timeDiffHours = timeDiff / (60 * 60 * 1000);
             
             if (timeDiff < TIME_SPAN) {
-                currentSession.push(photosWithValidEmbeddings[i]);
+                currentSession.push(photosWithValidData[i]);
             } else {
                 // Session break - log details
                 sessionBreaks.push({
@@ -107,7 +106,7 @@ export async function findSimilarGroups(photos, progressCallback, similarityThre
                     threshold: timeSpanHours
                 });
                 sessions.push(currentSession);
-                currentSession = [photosWithValidEmbeddings[i]];
+                currentSession = [photosWithValidData[i]];
             }
         }
         sessions.push(currentSession);
@@ -154,6 +153,7 @@ export async function findSimilarGroups(photos, progressCallback, similarityThre
             for (let j = i + 1; j < session.length; j++) {
                 if (visited[j]) continue;
                 
+                // Calculate similarity using CLIP embeddings
                 const similarity = cosineSimilarity(session[i].embedding, session[j].embedding);
                 totalComparisons++;
 

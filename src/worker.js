@@ -371,27 +371,24 @@ class ModelSingleton {
             self.postMessage({ status: 'model_loading' });
 
             // --- Load CLIP Model ---
-            // Re-introduce WebGPU detection and configuration
             let accelerator;
             if (navigator.gpu) {
                 try {
                     const adapter = await navigator.gpu.requestAdapter();
-                    // fp16 is faster and uses less memory if the GPU supports it.
                     const dtype = adapter.features.has('shader-f16') ? 'fp16' : 'fp32';
                     accelerator = { device: 'webgpu', dtype };
                     console.log(`WebGPU is available. Using device: webgpu, dtype: ${dtype}`);
                 } catch (e) {
                     console.warn("WebGPU request failed, falling back to WASM.", e);
-                    accelerator = { device: 'wasm' }; // Use 'wasm' instead of 'cpu'
+                    accelerator = { device: 'wasm' };
                 }
             } else {
                 console.warn("WebGPU not supported, using WASM.");
-                accelerator = { device: 'wasm' }; // Use 'wasm' instead of 'cpu'
+                accelerator = { device: 'wasm' };
             }
 
             const modelPath = '/models/clip-vit-base-patch16/';
 
-            // Load the CLIP model and processor with individual error handling
             try {
                 this.clipModel = await CLIPVisionModelWithProjection.from_pretrained(modelPath, accelerator);
                 this.clipProcessor = await AutoProcessor.from_pretrained(modelPath, accelerator);
@@ -410,9 +407,9 @@ class ModelSingleton {
                         detector: { 
                             enabled: true, 
                             rotation: false,
-                            maxDetected: 20,  // Allow up to 20 faces per image
-                            minConfidence: 0.5, // Minimum confidence for face detection
-                            iouThreshold: 0.4,  // Intersection over union threshold for filtering overlaps
+                            maxDetected: 20,
+                            minConfidence: 0.5,
+                            iouThreshold: 0.4,
                             return: true
                         },
                         mesh: { enabled: true },
@@ -420,7 +417,7 @@ class ModelSingleton {
                         description: { enabled: false },
                         emotion: { 
                             enabled: true,
-                            minConfidence: 0.3 // Lower threshold for emotion detection
+                            minConfidence: 0.3
                         }
                     },
                     body: { enabled: false },
