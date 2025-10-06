@@ -1,9 +1,9 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
-import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchPhotosFromSingleFolder, fetchFolderChildren } from './lib/graph.js';
+import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchFolderChildren } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
 import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } from './lib/embeddingExport.js';
-import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, validateEmbeddingFile, getEmbeddingFileMetadata } from './lib/embeddingImport.js';
+import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, getEmbeddingFileMetadata } from './lib/embeddingImport.js';
 
 // --- Debug Console Setup ---
 class DebugConsole {
@@ -177,11 +177,6 @@ const browserAddScannedBtn = document.getElementById('browser-add-scanned');
 const browserAnalyzeBtn = document.getElementById('browser-analyze');
 const browserCurrentPath = document.getElementById('browser-current-path');
 
-// Folder selector elements
-const selectedFolderInput = null;
-const browseFolderBtn = null;
-const clearFolderBtn = null;
-
 // Analysis options
 const similarityThresholdSlider = document.getElementById('similarity-threshold');
 const thresholdValueDisplay = document.getElementById('threshold-value');
@@ -223,22 +218,10 @@ const importResults = document.getElementById('import-results');
 const importSummary = document.getElementById('import-summary');
 const closeImportBtn = document.getElementById('close-import-btn');
 
-// Folder browser elements
-const folderModal = document.getElementById('folder-modal');
-const folderModalClose = document.getElementById('folder-modal-close');
-const currentPathElement = document.getElementById('current-path');
-const folderUpBtn = document.getElementById('folder-up-btn');
-const folderRefreshBtn = document.getElementById('folder-refresh-btn');
-const folderList = document.getElementById('folder-list');
-const selectFolderBtn = document.getElementById('select-folder-btn');
-const cancelFolderBtn = document.getElementById('cancel-folder-btn');
-
 let embeddingWorker = null;
 let selectedFolderId = null; // null means no folder filter (all folders)
 let selectedFolderPath = null; // null means no folder filter
 let selectedFolderDisplayName = 'All folders'; // Display for no filter
-let currentBrowsingFolderId = 'root';
-let folderHistory = []; // Stack for navigation
 let currentModalPhoto = null; // Track the photo currently displayed in modal
 
 // Embedding queue management
@@ -344,7 +327,6 @@ async function restoreFolderFromURL() {
                 selectedFolderId = folderId;
                 selectedFolderPath = pathFromURL;
                 selectedFolderDisplayName = pathToDisplayName(pathFromURL);
-                // input removed
                 updateStatus(`Restored folder filter: ${selectedFolderDisplayName}`, false);
             } else {
                 console.warn('Could not find folder for path:', pathFromURL);
@@ -364,7 +346,6 @@ function resetFolderToNoFilter() {
     selectedFolderId = null;
     selectedFolderPath = null;
     selectedFolderDisplayName = 'All folders';
-    // input removed
 }
 
 async function restoreFiltersFromURL() {
@@ -423,70 +404,6 @@ async function findFolderIdByPath(targetPath) {
 }
 
 // --- Filter Functions ---
-function clearFolderFilter() {
-    resetToNoFilter();
-    updateStatus('Folder filter cleared - will analyze all folders', false);
-}
-
-// Parse user input folder path and convert to internal format
-function parseUserFolderPath(userInput) {
-    if (!userInput || userInput.trim() === '' || userInput === 'All folders') {
-        return null; // No filter
-    }
-    
-    // Remove leading/trailing slashes and spaces
-    const cleanPath = userInput.trim().replace(/^\/+|\/+$/g, '');
-    
-    if (cleanPath === '') {
-        return '/drive/root:'; // Root folder
-    }
-    
-    // Convert user path like "Pictures/Vacation" to "/drive/root:/Pictures/Vacation"
-    return '/drive/root:/' + cleanPath;
-}
-
-// Convert internal path to user-friendly display
-function formatPathForUser(internalPath) {
-    if (!internalPath || internalPath === '/drive/root:') {
-        return ''; // Root or no filter shows as empty
-    }
-    
-    // Convert "/drive/root:/Pictures/Vacation" to "Pictures/Vacation"
-    return internalPath.replace('/drive/root:/', '');
-}
-
-// Handle folder input changes (when user types a path)
-async function handleFolderInputChange() {
-    const userInput = '';
-    
-    if (userInput === 'All folders' || userInput.trim() === '') {
-        clearFolderFilter();
-        return;
-    }
-    
-    try {
-        const internalPath = parseUserFolderPath(userInput);
-        const folderId = await findFolderIdByPath(internalPath);
-        
-        if (folderId) {
-            // Valid path found
-            selectedFolderId = folderId;
-            selectedFolderPath = internalPath;
-            selectedFolderDisplayName = internalPath ? pathToDisplayName(internalPath) : 'OneDrive (Root)';
-            updateURLWithFilters();
-            updateStatus(`Folder filter set: ${selectedFolderDisplayName}`, false);
-        } else {
-            // Invalid path - reset input and show error
-            updateStatus('Invalid folder path. Please check the path or use Browse button.', false);
-            setTimeout(() => {
-                // input removed
-            }, 100);
-        }
-    } catch (error) {
-        console.error('Error validating folder path:', error);
-        updateStatus('Error validating folder path', false);
-    }
-}
 
 function isDateFilterEnabled() {
     return dateEnabledToggle ? dateEnabledToggle.checked : true;
@@ -517,35 +434,6 @@ function getDateFilter() {
         from: fromDate ? new Date(fromDate + 'T00:00:00').getTime() : null,
         to: toDate ? new Date(toDate + 'T23:59:59').getTime() : null
     };
-}
-
-function applyFilters(photos) {
-    let filteredPhotos = [...photos];
-    
-    // Apply folder filter
-    if (selectedFolderPath) {
-        filteredPhotos = filteredPhotos.filter(photo => 
-            photo.path && photo.path.startsWith(selectedFolderPath)
-        );
-    }
-    
-    // Apply date filter
-    const dateFilter = getDateFilter();
-    if (dateFilter) {
-        filteredPhotos = filteredPhotos.filter(photo => {
-            const photoDate = photo.photo_taken_ts || photo.last_modified;
-            if (!photoDate) return false;
-            
-            const photoTime = new Date(photoDate).getTime();
-            
-            if (dateFilter.from && photoTime < dateFilter.from) return false;
-            if (dateFilter.to && photoTime > dateFilter.to) return false;
-            
-            return true;
-        });
-    }
-    
-    return filteredPhotos;
 }
 
 // --- UI Update Functions ---
@@ -1191,224 +1079,9 @@ function populateImageMetadata(photo) {
     }
 }
 
-// --- Folder Browser Functions ---
-
-async function showFolderBrowser() {
-    folderModal.style.display = 'flex';
-    
-    // Start from currently selected folder or root if none selected
-    const startFolderId = selectedFolderId || 'root';
-    currentBrowsingFolderId = startFolderId;
-    
-    // Build folder history to current location if not root
-    folderHistory = [];
-    if (selectedFolderId && selectedFolderId !== 'root' && selectedFolderPath) {
-        try {
-            // Parse the path to build history
-            const pathParts = selectedFolderPath.replace('/drive/root:', '').split('/').filter(part => part.length > 0);
-            let currentId = 'root';
-            
-            // Navigate through each path part to build history
-            for (let i = 0; i < pathParts.length - 1; i++) {
-                const partName = pathParts[i];
-                const folders = await fetchFolders(currentId);
-                const foundFolder = folders.find(folder => folder.name === partName);
-                if (foundFolder) {
-                    folderHistory.push({
-                        id: currentId,
-                        name: currentId === 'root' ? 'root' : partName,
-                        path: `/drive/root:/${pathParts.slice(0, i).join('/')}`
-                    });
-                    currentId = foundFolder.id;
-                } else {
-                    // If path is invalid, fall back to root
-                    folderHistory = [];
-                    currentBrowsingFolderId = 'root';
-                    break;
-                }
-            }
-        } catch (error) {
-            console.error('Error building folder history:', error);
-            folderHistory = [];
-            currentBrowsingFolderId = 'root';
-        }
-    }
-    
-    await loadFolders(currentBrowsingFolderId);
-}
-
-function hideFolderBrowser() {
-    folderModal.style.display = 'none';
-}
-
-async function loadFolders(folderId) {
-    folderList.innerHTML = '<div class="loading">Loading folders...</div>';
-    
-    try {
-        // Get current folder info for breadcrumb
-        const folderInfo = await getFolderInfo(folderId);
-        updateBreadcrumb(folderInfo);
-        
-        // Fetch subfolders
-        const folders = await fetchFolders(folderId);
-        
-        if (folders.length === 0) {
-            folderList.innerHTML = '<div class="loading">No subfolders found</div>';
-            return;
-        }
-        
-        folderList.innerHTML = '';
-        
-        // Add option to select the current folder (including root)
-        const currentFolderItem = document.createElement('div');
-        currentFolderItem.className = 'folder-item current-folder';
-        
-        // Highlight if this is the currently selected folder
-        if (selectedFolderId === folderId) {
-            currentFolderItem.classList.add('selected');
-        }
-        
-        currentFolderItem.innerHTML = `
-            <span class="folder-icon">📂</span>
-            <span class="folder-name">• Select this folder (${folderInfo.name === 'root' ? 'OneDrive Root' : folderInfo.name})</span>
-        `;
-        currentFolderItem.addEventListener('click', async () => {
-            // Clear previous selection
-            document.querySelectorAll('.folder-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-            
-            // Select current folder
-            currentFolderItem.classList.add('selected');
-            selectedFolderId = folderId;
-            
-            // Get the full path for current folder
-            try {
-                selectedFolderPath = await getFolderPath(folderId);
-                updateURLWithPath(selectedFolderPath);
-            } catch (error) {
-                console.error('Error getting folder path:', error);
-                selectedFolderPath = '/drive/root:';
-                updateURLWithPath(selectedFolderPath);
-            }
-            
-            // Build display path for current folder
-            const pathParts = folderHistory.map(h => h.name).filter(name => name !== 'root');
-            if (folderInfo.name !== 'root') {
-                pathParts.push(folderInfo.name);
-            }
-            selectedFolderDisplayName = 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : ' (Root)');
-        });
-        folderList.appendChild(currentFolderItem);
-        
-        // Add separator if there are subfolders
-        if (folders.length > 0) {
-            const separator = document.createElement('div');
-            separator.style.borderTop = '1px solid var(--border-color)';
-            separator.style.margin = '0.5rem 0';
-            folderList.appendChild(separator);
-        }
-        
-        folders.forEach(folder => {
-            const folderItem = document.createElement('div');
-            folderItem.className = 'folder-item';
-            folderItem.dataset.folderId = folder.id;
-            folderItem.dataset.folderName = folder.name;
-            
-            // Highlight if this is the currently selected folder
-            if (selectedFolderId === folder.id) {
-                folderItem.classList.add('selected');
-            }
-            
-            folderItem.innerHTML = `
-                <span class="folder-icon">📁</span>
-                <span class="folder-name">${folder.name}</span>
-            `;
-            
-            folderItem.addEventListener('click', async () => {
-                // Clear previous selection
-                document.querySelectorAll('.folder-item').forEach(item => {
-                    item.classList.remove('selected');
-                });
-                
-                // Select this folder
-                folderItem.classList.add('selected');
-                selectedFolderId = folder.id;
-                
-                // Get the full path for this folder
-                try {
-                    selectedFolderPath = await getFolderPath(folder.id);
-                    updateURLWithPath(selectedFolderPath);
-                } catch (error) {
-                    console.error('Error getting folder path:', error);
-                    selectedFolderPath = '/drive/root:';
-                    updateURLWithPath(selectedFolderPath);
-                }
-                
-                // Build display path for the selected folder
-                const pathParts = folderHistory.map(h => h.name).filter(name => name !== 'root');
-                if (folderInfo.name !== 'root') {
-                    pathParts.push(folderInfo.name);
-                }
-                pathParts.push(folder.name);
-                selectedFolderDisplayName = 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : '');
-            });
-            
-            folderItem.addEventListener('dblclick', () => {
-                // Navigate into folder
-                folderHistory.push({
-                    id: currentBrowsingFolderId,
-                    name: folderInfo.name,
-                    path: folderInfo.path
-                });
-                currentBrowsingFolderId = folder.id;
-                loadFolders(folder.id);
-                updateUpButton();
-            });
-            
-            folderList.appendChild(folderItem);
-        });
-        
-        updateUpButton();
-        
-    } catch (error) {
-        console.error('Error loading folders:', error);
-        folderList.innerHTML = '<div class="error-message">Error loading folders. Please try again.</div>';
-    }
-}
-
-function updateBreadcrumb(folderInfo) {
-    let pathText = 'OneDrive';
-    if (folderInfo.id !== 'root') {
-        // Build path from folder history and current folder
-        const pathParts = folderHistory.map(h => h.name).filter(name => name !== 'root');
-        pathParts.push(folderInfo.name);
-        pathText = 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : '');
-    }
-    currentPathElement.textContent = pathText;
-}
-
-function updateUpButton() {
-    folderUpBtn.disabled = folderHistory.length === 0;
-    // Also wire Browser Up to use the same navigation stack
-    const browserUp = document.getElementById('folder-up-btn');
-}
-
-function navigateUp() {
-    if (folderHistory.length > 0) {
-        const parentFolder = folderHistory.pop();
-        currentBrowsingFolderId = parentFolder.id;
-        loadFolders(parentFolder.id);
-        updateUpButton();
-    }
-}
-
-function selectCurrentFolder() {
-    // Update the input field and internal state
-    // input removed
-    updateStatus(`Selected folder: ${selectedFolderDisplayName}`, false);
-    hideFolderBrowser();
-}
+// --- Folder Browser Functions (Modal) - REMOVED ---
+// The folder browser modal was never opened (showFolderBrowser never called)
+// Folder navigation now done through the main browser with clickable breadcrumbs
 
 async function runPhotoScan() {
     // Determine folders to scan: use scannedFolders list if present, else current selection
@@ -1832,10 +1505,6 @@ async function processEmbeddingQueue() {
 
 // Old processPhotosWithWorkers function removed - now using persistent workers
 
-async function runAnalysis() {
-    return await runAnalysisForScope('current');
-}
-
 async function runAnalysisForScope(scope) {
     startAnalysisButton.disabled = true;
     updateStatus('Analyzing photos... this may take a few minutes.', true, 0, 100);
@@ -2245,7 +1914,6 @@ async function main() {
 
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
-    // input removed
     startScanButton.addEventListener('click', handleScanClick);
     
     // Auto-start embeddings checkbox
@@ -2282,7 +1950,6 @@ async function main() {
     });
     
     // Filter control event listeners
-    // input removed
     dateFromInput.addEventListener('change', async () => {
         await db.setSetting('dateFrom', dateFromInput.value || '');
         updateURLWithFilters();
@@ -2327,7 +1994,7 @@ async function main() {
             await db.setSetting('resultsSort', value);
             // Re-run analysis if results are currently displayed
             if (resultsContainer.children.length > 1) {
-                await runAnalysis();
+                await runAnalysisForScope('all');
             }
         });
     }
@@ -2344,19 +2011,6 @@ async function main() {
         }
     });
     
-    // Folder input event listeners
-    // input removed
-    
-    // Folder selector event listeners
-    // input removed
-    
-    // Folder browser event listeners
-    folderModalClose.addEventListener('click', hideFolderBrowser);
-    cancelFolderBtn.addEventListener('click', hideFolderBrowser);
-    selectFolderBtn.addEventListener('click', selectCurrentFolder);
-    folderUpBtn.addEventListener('click', navigateUp);
-    folderRefreshBtn.addEventListener('click', () => loadFolders(currentBrowsingFolderId));
-
     // Browser toolbar events
     if (browserSortSelect) {
         const savedBrowserSort = await db.getSetting('browserSort');
@@ -2421,20 +2075,6 @@ async function main() {
             }
         });
     }
-    
-    // Close folder modal on outside click
-    folderModal.addEventListener('click', (e) => {
-        if (e.target === folderModal) {
-            hideFolderBrowser();
-        }
-    });
-    
-    // Close folder modal on Escape key
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && folderModal.style.display === 'flex') {
-            hideFolderBrowser();
-        }
-    });
     
     // Backup functionality event listeners
     exportEmbeddingsBtn.addEventListener('click', handleExportEmbeddings);
@@ -2790,11 +2430,92 @@ function applyPanelExpandedState(panel, toggleBtn, expanded) {
     }
 }
 
-// Update browser current path display
+// Update browser current path display with clickable breadcrumbs
 function updateBrowserCurrentPath() {
-    if (browserCurrentPath) {
-        const displayPath = selectedFolderDisplayName || 'OneDrive (Root)';
-        browserCurrentPath.textContent = displayPath;
+    if (!browserCurrentPath) return;
+    
+    // Clear current content
+    browserCurrentPath.innerHTML = '';
+    
+    // Parse the current path
+    const path = selectedFolderPath || '/drive/root:';
+    const pathParts = path.replace('/drive/root:', '').split('/').filter(part => part.length > 0);
+    
+    // Create clickable breadcrumb for root
+    const rootLink = document.createElement('span');
+    rootLink.className = 'breadcrumb-item';
+    rootLink.textContent = 'OneDrive';
+    rootLink.style.cursor = 'pointer';
+    rootLink.style.color = 'var(--primary-color, #0078d4)';
+    rootLink.addEventListener('click', async () => {
+        selectedFolderId = 'root';
+        selectedFolderPath = '/drive/root:';
+        selectedFolderDisplayName = 'OneDrive (Root)';
+        updateURLWithPath(selectedFolderPath);
+        updateBrowserCurrentPath();
+        await renderBrowserPhotoGrid(true);
+    });
+    browserCurrentPath.appendChild(rootLink);
+    
+    // Add each path segment as clickable breadcrumb
+    for (let i = 0; i < pathParts.length; i++) {
+        // Add separator
+        const separator = document.createElement('span');
+        separator.textContent = ' / ';
+        separator.style.color = '#666';
+        browserCurrentPath.appendChild(separator);
+        
+        // Add breadcrumb item
+        const breadcrumbItem = document.createElement('span');
+        breadcrumbItem.className = 'breadcrumb-item';
+        breadcrumbItem.textContent = pathParts[i];
+        
+        // Last item is current folder (not clickable)
+        if (i === pathParts.length - 1) {
+            breadcrumbItem.style.color = '#fff';
+            breadcrumbItem.style.fontWeight = 'bold';
+        } else {
+            // Parent folders are clickable
+            breadcrumbItem.style.cursor = 'pointer';
+            breadcrumbItem.style.color = 'var(--primary-color, #0078d4)';
+            
+            // Create click handler with closure to capture correct path
+            const targetPath = '/drive/root:/' + pathParts.slice(0, i + 1).join('/');
+            breadcrumbItem.addEventListener('click', async () => {
+                try {
+                    // Find folder ID for this path
+                    const folderId = await findFolderIdByPath(targetPath);
+                    if (folderId) {
+                        selectedFolderId = folderId;
+                        selectedFolderPath = targetPath;
+                        selectedFolderDisplayName = pathToDisplayName(targetPath);
+                        updateURLWithPath(selectedFolderPath);
+                        updateBrowserCurrentPath();
+                        await renderBrowserPhotoGrid(true);
+                    }
+                } catch (error) {
+                    console.error('Error navigating to breadcrumb:', error);
+                }
+            });
+            
+            // Add hover effect
+            breadcrumbItem.addEventListener('mouseenter', () => {
+                breadcrumbItem.style.textDecoration = 'underline';
+            });
+            breadcrumbItem.addEventListener('mouseleave', () => {
+                breadcrumbItem.style.textDecoration = 'none';
+            });
+        }
+        
+        browserCurrentPath.appendChild(breadcrumbItem);
+    }
+    
+    // If at root with no subfolders, show "(Root)"
+    if (pathParts.length === 0) {
+        const rootLabel = document.createElement('span');
+        rootLabel.textContent = ' (Root)';
+        rootLabel.style.color = '#999';
+        browserCurrentPath.appendChild(rootLabel);
     }
 }
 
