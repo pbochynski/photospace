@@ -6,26 +6,6 @@ const STARTING_FOLDER_PATH = '/';
 // The number of parallel requests to make to the Graph API.
 const MAX_CONCURRENCY = 5;
 
-async function fetchWithRetry(url, options) {
-    try {
-        const response = await fetch(url, options);
-        if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After') || 2;
-            console.warn(`Throttled by Graph API. Retrying in ${retryAfter} seconds.`);
-            await new Promise(res => setTimeout(res, retryAfter * 1000));
-            return fetchWithRetry(url, options);
-        }
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error.message || `HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    } catch (error) {
-        console.error("Fetch failed:", error);
-        throw error;
-    }
-}
-
 // Helper: fetch with auto token refresh on 401/403
 async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
     let token = await getAuthToken();

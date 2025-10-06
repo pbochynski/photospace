@@ -566,8 +566,8 @@ function displayResults(groups) {
         });
     });
 
-    // Add event listeners for image click to show modal
-    document.querySelectorAll('.photo-item img').forEach(img => {
+    // Add event listeners for image click to show modal (only for results, not browser)
+    resultsContainer.querySelectorAll('.photo-item img').forEach(img => {
         img.addEventListener('click', async (e) => {
             e.stopPropagation(); // Prevent event bubbling
             e.preventDefault(); // Prevent default label/checkbox toggle
@@ -692,6 +692,26 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 const newPhotosCount = photos.length - existingPhotosMap.size;
                 console.log(`✅ Auto-indexed ${photos.length} photos (${newPhotosCount} new, ${existingPhotosMap.size} already indexed)`);
                 
+                // Clean up photos that no longer exist in OneDrive (deleted photos)
+                // Get all photos in IndexedDB for the current folder
+                const currentFolderPath = await getFolderPath(folderId);
+                const dbPhotosInFolder = await db.getAllPhotosFromFolder(currentFolderPath);
+                
+                // Filter to only photos directly in this folder (not subfolders)
+                const dbPhotosDirectlyInFolder = dbPhotosInFolder.filter(p => p.path === currentFolderPath);
+                
+                // Find photos that exist in DB but NOT in OneDrive response
+                const onedriveFileIds = new Set(photos.map(p => p.file_id));
+                const photosToDelete = dbPhotosDirectlyInFolder.filter(p => !onedriveFileIds.has(p.file_id));
+                
+                let deletedCount = 0;
+                if (photosToDelete.length > 0) {
+                    const deletedIds = photosToDelete.map(p => p.file_id);
+                    await db.deletePhotos(deletedIds);
+                    deletedCount = photosToDelete.length;
+                    console.log(`🗑️ Removed ${deletedCount} deleted photos from database`);
+                }
+                
                 // Add ALL photos that need embeddings to the queue (both new and existing)
                 // Filter: embedding_status === 0 means they need embeddings
                 const photosNeedingEmbeddings = photosToIndex.filter(p => p.embedding_status === 0);
@@ -720,7 +740,10 @@ async function renderBrowserPhotoGrid(forceReload = false) {
             
                 // Update status briefly
                 const oldStatus = statusText.textContent;
-                updateStatus(`Auto-indexed ${photos.length} photos (${newPhotosCount} new, ${allNeedEmbeddings.length} total need embeddings)`, false);
+                const statusMsg = deletedCount > 0 
+                    ? `Auto-indexed ${photos.length} photos (${newPhotosCount} new, ${deletedCount} deleted, ${allNeedEmbeddings.length} need embeddings)`
+                    : `Auto-indexed ${photos.length} photos (${newPhotosCount} new, ${allNeedEmbeddings.length} need embeddings)`;
+                updateStatus(statusMsg, false);
                 setTimeout(() => {
                     if (statusText.textContent.includes('Auto-indexed')) {
                         updateStatus(oldStatus, false);
@@ -794,7 +817,8 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 const fileId = img.getAttribute('data-file-id');
                 
                 // Get photo data from sortedPhotos array
-                const photo = sortedPhotos[idx - folders.length]; // Subtract folder count
+                // Note: idx already corresponds to sortedPhotos because querySelectorAll only finds img elements (not folders)
+                const photo = sortedPhotos[idx];
                 
                 if (!photo) {
                     console.error('Photo data not found for index:', idx);
