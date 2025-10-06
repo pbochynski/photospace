@@ -2274,6 +2274,11 @@ async function main() {
     // Analysis button: analyze all indexed photos
     startAnalysisButton.addEventListener('click', async () => {
         await runAnalysisForScope('all');
+        // Scroll to results section
+        const resultsPanel = document.querySelector('[data-panel-key="results"]');
+        if (resultsPanel) {
+            resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     });
     
     // Filter control event listeners
@@ -2409,6 +2414,11 @@ async function main() {
     if (browserAnalyzeBtn) {
         browserAnalyzeBtn.addEventListener('click', async () => {
             await runAnalysisForScope('current');
+            // Scroll to results section
+            const resultsPanel = document.querySelector('[data-panel-key="results"]');
+            if (resultsPanel) {
+                resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         });
     }
     
