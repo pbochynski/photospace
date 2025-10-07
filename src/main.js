@@ -167,6 +167,7 @@ const progressBar = document.getElementById('progress-bar');
 const startScanButton = document.getElementById('start-scan-button');
 const autoStartEmbeddingsCheckbox = document.getElementById('auto-start-embeddings-checkbox');
 const pauseResumeEmbeddingsBtn = document.getElementById('pause-resume-embeddings');
+const clearDatabaseButton = document.getElementById('clear-database-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
 const browserPhotoGrid = document.getElementById('browser-photo-grid');
@@ -2359,6 +2360,81 @@ async function main() {
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
     startScanButton.addEventListener('click', handleScanClick);
+    
+    // Clear database button
+    if (clearDatabaseButton) {
+        clearDatabaseButton.addEventListener('click', async () => {
+            const photoCount = await db.getPhotoCount();
+            
+            if (photoCount === 0) {
+                alert('Database is already empty.');
+                return;
+            }
+            
+            const confirmation = confirm(
+                `⚠️ WARNING: This will permanently delete all ${photoCount} indexed photos and embeddings from your local database.\n\n` +
+                `Your photos on OneDrive will NOT be affected.\n\n` +
+                `Are you sure you want to continue?`
+            );
+            
+            if (!confirmation) return;
+            
+            // Double confirmation for safety
+            const doubleConfirmation = confirm(
+                `Are you absolutely sure? This action cannot be undone.\n\n` +
+                `Type "yes" in the next prompt to confirm.`
+            );
+            
+            if (!doubleConfirmation) return;
+            
+            const finalConfirm = prompt('Type "yes" to confirm database clear:');
+            
+            if (finalConfirm !== 'yes') {
+                alert('Database clear cancelled.');
+                return;
+            }
+            
+            try {
+                clearDatabaseButton.disabled = true;
+                clearDatabaseButton.textContent = '⏳ Clearing...';
+                updateStatus('Clearing database...', false);
+                
+                // Stop any running workers
+                if (isProcessingEmbeddings) {
+                    pauseEmbeddingWorkers();
+                }
+                
+                // Clear the queue
+                embeddingQueue = [];
+                updatePauseResumeButton();
+                
+                // Clear all photos from database
+                await db.clearAllPhotos();
+                
+                // Clear results display
+                resultsContainer.innerHTML = '<p class="placeholder">Analysis results will appear here. Groups with the most similar photos will be shown first.</p>';
+                
+                // Clear similar photos panel
+                clearSimilarPhotosSearch();
+                
+                // Clear browser grid
+                if (browserPhotoGrid) {
+                    browserPhotoGrid.innerHTML = '<div class="empty-note">Database cleared. Browse folders to re-index photos.</div>';
+                }
+                
+                updateStatus(`Database cleared successfully. ${photoCount} photos removed.`, false);
+                alert(`Database cleared successfully!\n\n${photoCount} photos and embeddings removed from local database.`);
+                
+            } catch (error) {
+                console.error('Failed to clear database:', error);
+                updateStatus(`Error clearing database: ${error.message}`, false);
+                alert(`Failed to clear database: ${error.message}`);
+            } finally {
+                clearDatabaseButton.disabled = false;
+                clearDatabaseButton.textContent = '🗑️ Clear All Photos from Database';
+            }
+        });
+    }
     
     // Auto-start embeddings checkbox
     if (autoStartEmbeddingsCheckbox) {

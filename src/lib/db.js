@@ -178,6 +178,17 @@ class PhotoDB {
         });
     }
 
+    async clearAllPhotos() {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onerror = (event) => reject(event.target.error);
+            const store = tx.objectStore('photos');
+            store.clear();
+        });
+    }
+
     // Get all photos with embeddings for export
     async getEmbeddingExportData() {
         const tx = this.db.transaction('photos', 'readonly');
