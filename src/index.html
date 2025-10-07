@@ -109,6 +109,12 @@
                                     </label>
                                     <small class="threshold-help">Automatically starts processing when new photos are indexed</small>
                                 </div>
+                                <div style="margin-top: 12px;">
+                                    <label for="server-url-input" style="display: block; margin-bottom: 4px; font-weight: 500;">Embedding Server URL (optional):</label>
+                                    <input type="text" id="server-url-input" placeholder="http://localhost:3001/process-image" 
+                                           style="width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
+                                    <small class="threshold-help">Leave empty for local processing. If set, uses external server for faster processing (requires Node.js server running)</small>
+                                </div>
                                 <button id="pause-resume-embeddings" class="secondary-btn" style="margin-top: 8px;">⏸️ Pause Embedding Workers</button>
                             </div>
                         </div>

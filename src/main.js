@@ -1862,6 +1862,15 @@ async function processEmbeddingQueue() {
     let processedCount = 0;
     const totalToProcess = embeddingQueue.length;
     
+    // Get server URL setting
+    const serverUrl = await db.getSetting('serverUrl');
+    const useServerProcessing = serverUrl && serverUrl.trim().length > 0;
+    if (useServerProcessing) {
+        console.log(`🌐 Using server-side processing: ${serverUrl}`);
+    } else {
+        console.log(`💻 Using local processing (no server URL configured)`);
+    }
+    
     // Send auth token to service worker
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
         try {
@@ -1921,7 +1930,11 @@ async function processEmbeddingQueue() {
             };
             
             availableWorker.worker.addEventListener('message', handleMessage);
-            availableWorker.worker.postMessage(photo);
+            // Send photo data with optional server URL
+            availableWorker.worker.postMessage({
+                ...photo,
+                serverUrl: useServerProcessing ? serverUrl : null
+            });
         });
         
         // Don't wait for this promise, continue sending work to other workers
@@ -2443,6 +2456,27 @@ async function main() {
             const enabled = autoStartEmbeddingsCheckbox.checked;
             await db.setSetting('autoStartEmbeddings', enabled);
             console.log(`Auto-start embeddings: ${enabled ? 'enabled' : 'disabled'}`);
+        });
+    }
+    
+    // Server URL input
+    const serverUrlInput = document.getElementById('server-url-input');
+    if (serverUrlInput) {
+        // Load saved server URL
+        const savedServerUrl = await db.getSetting('serverUrl');
+        if (savedServerUrl) {
+            serverUrlInput.value = savedServerUrl;
+        }
+        
+        // Save server URL on change (debounced)
+        let serverUrlTimeout;
+        serverUrlInput.addEventListener('input', () => {
+            clearTimeout(serverUrlTimeout);
+            serverUrlTimeout = setTimeout(async () => {
+                const url = serverUrlInput.value.trim();
+                await db.setSetting('serverUrl', url);
+                console.log(`Server URL ${url ? 'set to: ' + url : 'cleared (using local processing)'}`);
+            }, 500); // 500ms debounce
         });
     }
     

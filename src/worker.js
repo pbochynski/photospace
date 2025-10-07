@@ -462,16 +462,15 @@ self.onmessage = async (event) => {
         }
         return;
     }
-    const { file_id, thumbnail_url } = event.data;
+    const { file_id, thumbnail_url, serverUrl } = event.data;
     
     try {
-        console.log(`Starting processing for file: ${file_id}, has thumbnail_url: ${!!thumbnail_url}`);
+        console.log(`Starting processing for file: ${file_id}, has thumbnail_url: ${!!thumbnail_url}, server URL: ${serverUrl || 'not configured'}`);
         
-        // If thumbnail_url is available, try using Node.js server first
-        if (thumbnail_url) {
-            console.log(`Thumbnail URL available, attempting to use Node.js server for: ${file_id}`);
+        // If serverUrl and thumbnail_url are available, try using Node.js server first
+        if (serverUrl && thumbnail_url) {
+            console.log(`Attempting server-side processing for: ${file_id} at ${serverUrl}`);
             try {
-                const serverUrl = 'http://localhost:3001/process-image';
                 const serverResponse = await fetch(serverUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -483,7 +482,7 @@ self.onmessage = async (event) => {
                 
                 if (serverResponse.ok) {
                     const result = await serverResponse.json();
-                    console.log(`Successfully processed ${file_id} using Node.js server (${result.processingTime}ms)`);
+                    console.log(`✅ Successfully processed ${file_id} using server (${result.processingTime}ms)`);
                     
                     // Send result back to main thread
                     self.postMessage({
@@ -494,11 +493,13 @@ self.onmessage = async (event) => {
                     });
                     return; // Exit early, processing complete
                 } else {
-                    console.warn(`Node.js server returned error ${serverResponse.status}, falling back to client-side processing`);
+                    console.warn(`⚠️ Server returned error ${serverResponse.status}, falling back to client-side processing`);
                 }
             } catch (serverError) {
-                console.warn(`Failed to connect to Node.js server, falling back to client-side processing:`, serverError.message);
+                console.warn(`⚠️ Failed to connect to server, falling back to client-side processing:`, serverError.message);
             }
+        } else if (!serverUrl && thumbnail_url) {
+            console.log(`💻 No server URL configured, using client-side processing for: ${file_id}`);
         }
         
         // Fallback: Use client-side processing (original method)
