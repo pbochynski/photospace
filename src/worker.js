@@ -462,16 +462,53 @@ self.onmessage = async (event) => {
         }
         return;
     }
-
-    const { file_id } = event.data;
+    const { file_id, thumbnail_url } = event.data;
+    
     try {
-        console.log(`Starting processing for file: ${file_id}`);
-        const { clipModel, clipProcessor, humanInstance } = await ModelSingleton.getInstance();
-        const thumbnail_url = `/api/thumb/${file_id}`;
+        console.log(`Starting processing for file: ${file_id}, has thumbnail_url: ${!!thumbnail_url}`);
         
-        console.log(`Fetching thumbnail for: ${file_id}`);
+        // If thumbnail_url is available, try using Node.js server first
+        if (thumbnail_url) {
+            console.log(`Thumbnail URL available, attempting to use Node.js server for: ${file_id}`);
+            try {
+                const serverUrl = 'http://localhost:3001/process-image';
+                const serverResponse = await fetch(serverUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        thumbnailUrl: thumbnail_url, 
+                        fileId: file_id 
+                    })
+                });
+                
+                if (serverResponse.ok) {
+                    const result = await serverResponse.json();
+                    console.log(`Successfully processed ${file_id} using Node.js server (${result.processingTime}ms)`);
+                    
+                    // Send result back to main thread
+                    self.postMessage({
+                        status: 'complete',
+                        file_id: file_id,
+                        embedding: result.embedding,
+                        qualityMetrics: result.qualityMetrics
+                    });
+                    return; // Exit early, processing complete
+                } else {
+                    console.warn(`Node.js server returned error ${serverResponse.status}, falling back to client-side processing`);
+                }
+            } catch (serverError) {
+                console.warn(`Failed to connect to Node.js server, falling back to client-side processing:`, serverError.message);
+            }
+        }
+        
+        // Fallback: Use client-side processing (original method)
+        console.log(`Using client-side processing for: ${file_id}`);
+        const { clipModel, clipProcessor, humanInstance } = await ModelSingleton.getInstance();
+        const thumbnailServiceUrl = `/api/thumb/${file_id}`;
+        
+        console.log(`Fetching thumbnail via service worker for: ${file_id}`);
         // Use fetch() to properly work with service worker, then convert to RawImage
-        const response = await fetch(thumbnail_url);
+        const response = await fetch(thumbnailServiceUrl);
         
         if (!response.ok) {
             console.error(`Fetch failed: ${response.status} ${response.statusText} for ${file_id}`);

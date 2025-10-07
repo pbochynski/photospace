@@ -208,7 +208,8 @@ class PhotoDB {
                     quality_score: photo.quality_score,
                     photo_taken_ts: photo.photo_taken_ts,
                     name: photo.name,
-                    path: photo.path
+                    path: photo.path,
+                    thumbnail_url: photo.thumbnail_url
                 }));
                 resolve(exportData);
             };
@@ -250,6 +251,9 @@ class PhotoDB {
                             existingPhoto.exposure = embeddingData.exposure;
                             existingPhoto.face = embeddingData.face; // Import face metrics
                             existingPhoto.quality_score = embeddingData.quality_score;
+                            if (embeddingData.thumbnail_url) {
+                                existingPhoto.thumbnail_url = embeddingData.thumbnail_url;
+                            }
                             
                             store.put(existingPhoto);
                             if (existingPhoto.embedding) {
@@ -265,6 +269,7 @@ class PhotoDB {
                             name: embeddingData.name,
                             path: embeddingData.path,
                             photo_taken_ts: embeddingData.photo_taken_ts,
+                            thumbnail_url: embeddingData.thumbnail_url || null,
                             embedding: embeddingData.embedding,
                             embedding_status: 1,
                             sharpness: embeddingData.sharpness,

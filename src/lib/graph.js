@@ -47,7 +47,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
     if (!token) throw new Error("Authentication token not available.");
 
     let photoCount = 0;
-    let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
+    let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
     
     while (url) {
         console.log(`Processing single folder ID: ${folderId}`);
@@ -69,6 +69,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
                     path: fullPath,
                     last_modified: item.lastModifiedDateTime,
                     photo_taken_ts: item.photo.takenDateTime,
+                    thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
                     scan_id: scanId
                 };
 
@@ -114,8 +115,8 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
 
         const processFolder = async (folderId) => {
             try {
-                // Use folder ID instead of path for more reliable access
-                let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
+                // Use folder ID instead of path for more reliable access, with thumbnail expansion
+                let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
                 
                 // Get the folder path to track what we're scanning
                 const folderPath = await getFolderPath(folderId);
@@ -131,13 +132,14 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                         if (item.folder) {
                             foldersToProcess.push(item.id);
                         } 
-                        // If it's a photo with a thumbnail, process it
+                        // If it's a photo, process it
                         else if (item.photo) {
                             photosInPage.push({
                                 file_id: item.id,
                                 name: item.name,
                                 path: item.parentReference?.path,
                                 photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
+                                thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
                                 embedding_status: 0,
                                 embedding: null,
                                 scan_id: scanId
@@ -239,7 +241,7 @@ export async function fetchFolders(folderId = 'root') {
  */
 export async function fetchFolderChildren(folderId = 'root') {
     try {
-        let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$select=id,name,folder,photo,parentReference,lastModifiedDateTime,createdDateTime,size&$orderby=name`;
+        let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$select=id,name,folder,photo,parentReference,lastModifiedDateTime,createdDateTime,size&$expand=thumbnails&$orderby=name`;
         const folders = [];
         const photos = [];
 
@@ -261,7 +263,8 @@ export async function fetchFolderChildren(folderId = 'root') {
                         size: item.size,
                         path: item.parentReference?.path || '/drive/root:',
                         last_modified: item.lastModifiedDateTime,
-                        photo_taken_ts: item.photo.takenDateTime || item.createdDateTime
+                        photo_taken_ts: item.photo.takenDateTime || item.createdDateTime,
+                        thumbnail_url: item.thumbnails?.[0]?.large?.url || null
                     });
                 }
             }

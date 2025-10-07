@@ -688,6 +688,7 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                         path: photo.path || '/drive/root:',
                         last_modified: photo.last_modified || new Date().toISOString(),
                         photo_taken_ts: photoTakenTs,
+                        thumbnail_url: photo.thumbnail_url || null,
                         // Only set status to 0 if photo is new or doesn't have embedding
                         embedding_status: existing ? existing.embedding_status : 0,
                         embedding: existing ? existing.embedding : null,
@@ -1920,7 +1921,7 @@ async function processEmbeddingQueue() {
             };
             
             availableWorker.worker.addEventListener('message', handleMessage);
-            availableWorker.worker.postMessage({ file_id: photo.file_id });
+            availableWorker.worker.postMessage(photo);
         });
         
         // Don't wait for this promise, continue sending work to other workers
