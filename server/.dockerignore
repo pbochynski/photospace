@@ -5,5 +5,10 @@ npm-debug.log
 *.md
 !README.md
 models_cache
+models
 .DS_Store
+.env
+.env.local
+*.log
+example-usage.js
 
