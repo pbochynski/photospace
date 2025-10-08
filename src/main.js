@@ -1,7 +1,7 @@
 import { msalInstance, login, getAuthToken } from './lib/auth.js';
 import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchFolderChildren } from './lib/graph.js';
 import { db } from './lib/db.js';
-import { findSimilarGroups, pickBestPhotoByQuality } from './lib/analysis.js';
+import { findSimilarGroups, pickBestPhotoByQuality, findPhotoSeries } from './lib/analysis.js';
 import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } from './lib/embeddingExport.js';
 import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, getEmbeddingFileMetadata } from './lib/embeddingImport.js';
 
@@ -170,6 +170,17 @@ const pauseResumeEmbeddingsBtn = document.getElementById('pause-resume-embedding
 const clearDatabaseButton = document.getElementById('clear-database-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
 const resultsContainer = document.getElementById('results-container');
+
+// Series analysis elements
+const startSeriesAnalysisButton = document.getElementById('start-series-analysis-button');
+const seriesResultsContainer = document.getElementById('series-results-container');
+const seriesMinGroupSizeSlider = document.getElementById('series-min-group-size');
+const seriesMinGroupSizeValueDisplay = document.getElementById('series-min-group-size-value');
+const seriesMinDensitySlider = document.getElementById('series-min-density');
+const seriesMinDensityValueDisplay = document.getElementById('series-min-density-value');
+const seriesTimeGapSlider = document.getElementById('series-time-gap');
+const seriesTimeGapValueDisplay = document.getElementById('series-time-gap-value');
+const seriesResultsSortSelect = document.getElementById('series-results-sort');
 const browserPhotoGrid = document.getElementById('browser-photo-grid');
 const browserSortSelect = document.getElementById('browser-sort');
 const browserRefreshBtn = document.getElementById('browser-refresh');
@@ -631,6 +642,150 @@ function displayResults(groups) {
         });
     });
 
+}
+
+// Display series analysis results
+function displaySeriesResults(seriesGroups) {
+    seriesResultsContainer.innerHTML = '<h2>Large Photo Series</h2>';
+    if (seriesGroups.length === 0) {
+        seriesResultsContainer.innerHTML += '<p>No large photo series found with current criteria.</p>';
+        return;
+    }
+
+    seriesGroups.forEach((series, seriesIdx) => {
+        // Remove empty series
+        if (!series.photos || series.photos.length === 0) return;
+
+        const seriesElement = document.createElement('div');
+        seriesElement.className = 'similarity-group'; // Reuse existing styles
+
+        const startDate = new Date(series.startTime).toLocaleString();
+        const endDate = new Date(series.endTime).toLocaleString();
+        const durationMinutes = Math.round(series.timeSpanMinutes);
+        const durationHours = (series.timeSpanMinutes / 60).toFixed(1);
+        const durationDisplay = durationMinutes < 60 
+            ? `${durationMinutes} min` 
+            : `${durationHours} hours`;
+        
+        seriesElement.innerHTML = `
+            <div class="group-header">
+                <h3>${series.photoCount} photos in ${durationDisplay}</h3>
+                <p>Density: ${series.density.toFixed(2)} photos/min • Avg interval: ${series.avgTimeBetweenPhotos.toFixed(2)} min</p>
+                <p style="font-size: 0.9rem; color: #aaa;">From: ${startDate} → To: ${endDate}</p>
+                <button class="delete-selected-btn" data-series-idx="${seriesIdx}">Delete Selected Photos</button>
+            </div>
+            <div class="photo-grid"></div>
+        `;
+        const photoGrid = seriesElement.querySelector('.photo-grid');
+
+        series.photos.forEach((p, idx) => {
+            const photoItem = document.createElement('div');
+            photoItem.className = 'photo-item';
+            
+            // Use service worker thumbnail endpoint
+            const thumbnailSrc = `/api/thumb/${p.file_id}`;
+            
+            photoItem.innerHTML = `
+                <label class="photo-checkbox-label">
+                    <input type="checkbox" class="photo-checkbox" data-series-idx="${seriesIdx}" data-photo-idx="${idx}">
+                    <span class="photo-checkbox-custom"></span>
+                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
+                    <div class="photo-score">
+                        <div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}</div>
+                        <div class="photo-time">${new Date(p.photo_taken_ts).toLocaleTimeString()}</div>
+                        ${p.quality_score ? `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>` : ''}
+                    </div>
+                </label>
+            `;
+            photoGrid.appendChild(photoItem);
+        });
+
+        seriesResultsContainer.appendChild(seriesElement);
+    });
+
+    // Add event listeners for delete buttons
+    document.querySelectorAll('.delete-selected-btn[data-series-idx]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const seriesIdx = parseInt(btn.getAttribute('data-series-idx'));
+            const series = seriesGroups[seriesIdx];
+            const checkboxes = seriesResultsContainer.querySelectorAll(`.photo-checkbox[data-series-idx="${seriesIdx}"]`);
+            const selectedPhotos = [];
+            checkboxes.forEach((cb, idx) => {
+                if (cb.checked) selectedPhotos.push(series.photos[idx]);
+            });
+            if (selectedPhotos.length === 0) {
+                alert('No photos selected for deletion.');
+                return;
+            }
+            if (!confirm(`Delete ${selectedPhotos.length} selected photo(s)? This cannot be undone.`)) return;
+            // Call delete logic (OneDrive API)
+            updateStatus('Deleting selected photos...', true);
+            try {
+                const token = await getAuthToken();
+                for (const photo of selectedPhotos) {
+                    console.log(`Deleting photo: ${photo.name} (${photo.file_id})`);
+                    await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${photo.file_id}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${token}` }
+                    });
+                    console.log(`Successfully deleted photo: ${photo.name} (${photo.file_id})`);
+                    // Remove from local DB
+                    await db.deletePhotos([photo.file_id]);
+                }
+                // Remove deleted photos from series
+                series.photos = series.photos.filter((p, idx) => !checkboxes[idx].checked);
+                // Remove empty series
+                const filteredSeries = seriesGroups.filter(s => s.photos && s.photos.length > 0);
+                displaySeriesResults(filteredSeries);
+                updateStatus('Selected photos deleted.', false);
+            } catch (err) {
+                updateStatus('Error deleting photos: ' + err.message, false);
+            }
+        });
+    });
+
+    // Add event listeners for image click to show modal
+    seriesResultsContainer.querySelectorAll('.photo-item img').forEach(img => {
+        img.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const modal = document.getElementById('image-modal');
+            const modalImg = document.getElementById('modal-img');
+            
+            // Get the file ID and photo data
+            const fileId = img.getAttribute('data-file-id');
+            const seriesIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-series-idx'));
+            const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
+            const photo = seriesGroups[seriesIdx].photos[photoIdx];
+            
+            // Store current photo for modal actions
+            currentModalPhoto = photo;
+            
+            // Populate metadata overlay
+            populateImageMetadata(photo);
+            
+            if (fileId) {
+                // Send auth token to service worker
+                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                    const token = await getAuthToken();
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SET_TOKEN',
+                        token: token
+                    });
+                }
+                
+                // Show modal with thumbnail
+                modalImg.src = img.src;
+                modal.style.display = 'flex';
+                
+                // Load full-size image in background
+                await loadFullSizeImage(fileId, modalImg, img.src);
+            } else {
+                modalImg.src = img.src;
+                modal.style.display = 'flex';
+            }
+        });
+    });
 }
 
 // Render photos for the currently selected folder in the browser panel
@@ -2096,6 +2251,109 @@ async function runAnalysisForScope(scope) {
     }
 }
 
+async function runSeriesAnalysisForScope(scope) {
+    startSeriesAnalysisButton.disabled = true;
+    updateStatus('Analyzing photos for large series... this may take a moment.', true, 0, 100);
+    
+    try {
+        let allPhotos;
+        let scopeDescription;
+        
+        if (scope === 'all') {
+            // Get ALL photos from IndexedDB (embeddings not required!)
+            allPhotos = await db.getAllPhotos();
+            scopeDescription = 'all indexed photos';
+        } else {
+            // Get photos from current folder only
+            const currentPath = selectedFolderPath || '/drive/root:';
+            allPhotos = await db.getAllPhotosFromFolder(currentPath);
+            scopeDescription = `current folder: ${pathToDisplayName(currentPath)}`;
+        }
+        
+        console.log(`📊 Series analysis scope: ${scopeDescription}, found ${allPhotos.length} photos`);
+        
+        if(allPhotos.length === 0) {
+            updateStatus(`No photos found in ${scopeDescription}. Please scan photos first.`, false);
+            startSeriesAnalysisButton.disabled = false;
+            return;
+        }
+
+        // Apply date filter
+        const dateFilter = getDateFilter();
+        let filteredPhotos = allPhotos;
+        
+        if (dateFilter) {
+            console.log(`📅 Date filter active: ${new Date(dateFilter.from).toLocaleDateString()} to ${new Date(dateFilter.to).toLocaleDateString()}`);
+            const beforeFilter = filteredPhotos.length;
+            filteredPhotos = filteredPhotos.filter(photo => {
+                const photoDate = photo.photo_taken_ts || photo.last_modified;
+                if (!photoDate) return false;
+                
+                const photoTime = new Date(photoDate).getTime();
+                
+                if (dateFilter.from && photoTime < dateFilter.from) return false;
+                if (dateFilter.to && photoTime > dateFilter.to) return false;
+                
+                return true;
+            });
+            console.log(`📅 Date filter: ${beforeFilter} photos → ${filteredPhotos.length} photos (filtered out ${beforeFilter - filteredPhotos.length})`);
+        }
+        
+        if(filteredPhotos.length === 0) {
+            updateStatus(`No photos match the current date filter in ${scopeDescription}. Try adjusting the date range.`, false);
+            startSeriesAnalysisButton.disabled = false;
+            return;
+        }
+
+        // Get analysis settings
+        const minGroupSize = await getSeriesMinGroupSize();
+        const minDensity = await getSeriesMinDensity();
+        const maxTimeGap = await getSeriesMaxTimeGap();
+        const sortMethod = await getSeriesSortMethod();
+        
+        // Show filter summary
+        let filterSummary = `Analyzing ${filteredPhotos.length} photos from ${scopeDescription}`;
+        if (dateFilter) {
+            const fromStr = dateFilter.from ? new Date(dateFilter.from).toLocaleDateString() : 'start';
+            const toStr = dateFilter.to ? new Date(dateFilter.to).toLocaleDateString() : 'end';
+            filterSummary += ` (filtered by date: ${fromStr} to ${toStr})`;
+        }
+        filterSummary += ` • Min size: ${minGroupSize}, Min density: ${minDensity} photos/min`;
+        
+        updateStatus(filterSummary, true, 25, 100);
+
+        // Run series analysis
+        const seriesGroups = await findPhotoSeries(filteredPhotos, {
+            minGroupSize,
+            minDensity,
+            maxTimeGap,
+            sortMethod
+        }, (progress) => {
+            updateStatus(`Finding series... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.75), 100);
+        });
+        
+        console.log(`📊 Found ${seriesGroups.length} large photo series`);
+
+        // Display results immediately
+        displaySeriesResults(seriesGroups);
+        
+        // Show final status
+        updateStatus(`Series analysis complete! Found ${seriesGroups.length} large photo series.`, false);
+        startSeriesAnalysisButton.disabled = false;
+
+        // Scroll to results
+        const seriesResultsPanel = document.querySelector('[data-panel-key="series-results"]');
+        if (seriesResultsPanel) {
+            seriesResultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+    } catch (error) {
+        console.error('Series analysis failed:', error);
+        updateStatus(`Error during series analysis: ${error.message}`, false);
+        startSeriesAnalysisButton.disabled = false;
+    }
+}
+
 // --- Analysis Settings Functions ---
 async function initializeAnalysisSettingsWithRetry(maxRetries = 10, delay = 100) {
     for (let i = 0; i < maxRetries; i++) {
@@ -2226,6 +2484,60 @@ async function initializeAnalysisSettings() {
         }
         
         console.log(`Worker count initialized to: ${validWorkerCount}`);
+        
+        // Initialize series analysis settings
+        if (seriesMinGroupSizeSlider && seriesMinGroupSizeValueDisplay) {
+            const savedSeriesMinGroupSize = await db.getSetting('seriesMinGroupSize');
+            const seriesMinGroupSize = savedSeriesMinGroupSize !== null ? Number(savedSeriesMinGroupSize) : 20;
+            const validSeriesMinGroupSize = (!isNaN(seriesMinGroupSize) && seriesMinGroupSize >= 5 && seriesMinGroupSize <= 100) ? seriesMinGroupSize : 20;
+            
+            seriesMinGroupSizeSlider.value = validSeriesMinGroupSize;
+            seriesMinGroupSizeValueDisplay.textContent = `${validSeriesMinGroupSize} photos`;
+            
+            if (savedSeriesMinGroupSize === null) {
+                await db.setSetting('seriesMinGroupSize', validSeriesMinGroupSize);
+            }
+        }
+        
+        if (seriesMinDensitySlider && seriesMinDensityValueDisplay) {
+            const savedSeriesMinDensity = await db.getSetting('seriesMinDensity');
+            const seriesMinDensity = savedSeriesMinDensity !== null ? Number(savedSeriesMinDensity) : 3;
+            const validSeriesMinDensity = (!isNaN(seriesMinDensity) && seriesMinDensity >= 0.5 && seriesMinDensity <= 10) ? seriesMinDensity : 3;
+            
+            seriesMinDensitySlider.value = validSeriesMinDensity;
+            seriesMinDensityValueDisplay.textContent = `${validSeriesMinDensity.toFixed(1)} photos/min`;
+            
+            if (savedSeriesMinDensity === null) {
+                await db.setSetting('seriesMinDensity', validSeriesMinDensity);
+            }
+        }
+        
+        if (seriesTimeGapSlider && seriesTimeGapValueDisplay) {
+            const savedSeriesTimeGap = await db.getSetting('seriesMaxTimeGap');
+            const seriesTimeGap = savedSeriesTimeGap !== null ? Number(savedSeriesTimeGap) : 5;
+            const validSeriesTimeGap = (!isNaN(seriesTimeGap) && seriesTimeGap >= 1 && seriesTimeGap <= 60) ? seriesTimeGap : 5;
+            
+            seriesTimeGapSlider.value = validSeriesTimeGap;
+            seriesTimeGapValueDisplay.textContent = `${validSeriesTimeGap} minutes`;
+            
+            if (savedSeriesTimeGap === null) {
+                await db.setSetting('seriesMaxTimeGap', validSeriesTimeGap);
+            }
+        }
+        
+        if (seriesResultsSortSelect) {
+            const savedSeriesSort = await db.getSetting('seriesResultsSort');
+            const seriesSort = savedSeriesSort !== null ? savedSeriesSort : 'series-size';
+            
+            seriesResultsSortSelect.value = seriesSort;
+            
+            if (savedSeriesSort === null) {
+                await db.setSetting('seriesResultsSort', seriesSort);
+            }
+        }
+        
+        console.log('Series analysis settings initialized');
+        
         return true;
     } catch (error) {
         console.error('Error initializing analysis settings:', error);
@@ -2307,6 +2619,47 @@ async function getMinGroupSize() {
     } catch (error) {
         console.error('Error getting min group size:', error);
         return 3;
+    }
+}
+
+// Series analysis settings getters
+async function getSeriesMinGroupSize() {
+    try {
+        const minGroupSize = await db.getSetting('seriesMinGroupSize');
+        return minGroupSize !== null ? minGroupSize : 20;
+    } catch (error) {
+        console.error('Error getting series min group size:', error);
+        return 20;
+    }
+}
+
+async function getSeriesMinDensity() {
+    try {
+        const minDensity = await db.getSetting('seriesMinDensity');
+        return minDensity !== null ? minDensity : 3;
+    } catch (error) {
+        console.error('Error getting series min density:', error);
+        return 3;
+    }
+}
+
+async function getSeriesMaxTimeGap() {
+    try {
+        const maxTimeGap = await db.getSetting('seriesMaxTimeGap');
+        return maxTimeGap !== null ? maxTimeGap : 5;
+    } catch (error) {
+        console.error('Error getting series max time gap:', error);
+        return 5;
+    }
+}
+
+async function getSeriesSortMethod() {
+    try {
+        const sortMethod = await db.getSetting('seriesResultsSort');
+        return sortMethod !== null ? sortMethod : 'series-size';
+    } catch (error) {
+        console.error('Error getting series sort method:', error);
+        return 'series-size';
     }
 }
 
@@ -2556,6 +2909,55 @@ async function main() {
             console.error('Error saving worker count:', error);
         }
     });
+    
+    // Series analysis event listeners
+    if (startSeriesAnalysisButton) {
+        startSeriesAnalysisButton.addEventListener('click', async () => {
+            await runSeriesAnalysisForScope('all');
+            // Scroll to results section
+            const seriesResultsPanel = document.querySelector('[data-panel-key="series-results"]');
+            if (seriesResultsPanel) {
+                seriesResultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    }
+    
+    if (seriesMinGroupSizeSlider) {
+        seriesMinGroupSizeSlider.addEventListener('input', async (e) => {
+            const value = parseInt(e.target.value);
+            seriesMinGroupSizeValueDisplay.textContent = `${value} photos`;
+            await db.setSetting('seriesMinGroupSize', value);
+        });
+    }
+    
+    if (seriesMinDensitySlider) {
+        seriesMinDensitySlider.addEventListener('input', async (e) => {
+            const value = parseFloat(e.target.value);
+            seriesMinDensityValueDisplay.textContent = `${value.toFixed(1)} photos/min`;
+            await db.setSetting('seriesMinDensity', value);
+        });
+    }
+    
+    if (seriesTimeGapSlider) {
+        seriesTimeGapSlider.addEventListener('input', async (e) => {
+            const value = parseInt(e.target.value);
+            seriesTimeGapValueDisplay.textContent = `${value} minutes`;
+            await db.setSetting('seriesMaxTimeGap', value);
+        });
+    }
+    
+    if (seriesResultsSortSelect) {
+        const savedSeriesSort = await db.getSetting('seriesResultsSort');
+        if (savedSeriesSort) seriesResultsSortSelect.value = savedSeriesSort;
+        seriesResultsSortSelect.addEventListener('change', async (e) => {
+            const value = e.target.value;
+            await db.setSetting('seriesResultsSort', value);
+            // Re-run analysis if results are currently displayed
+            if (seriesResultsContainer.children.length > 1) {
+                await runSeriesAnalysisForScope('all');
+            }
+        });
+    }
     
     // Browser toolbar events
     if (browserSortSelect) {

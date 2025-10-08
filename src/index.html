@@ -130,6 +130,32 @@
                 </div>
             </section>
 
+            <!-- Global Date Filter Panel -->
+            <section class="panel" data-panel-key="date-filter">
+                <div class="panel-header">
+                    <h3 class="panel-title">📅 Date Range Filter</h3>
+                    <div class="panel-tools">
+                        <label class="switch-label">
+                            <input type="checkbox" id="date-enabled-toggle" checked>
+                            <span class="switch"></span>
+                            <span class="switch-text">Enabled</span>
+                        </label>
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="date-filter-panel">
+                        <div class="date-range-group">
+                            <input type="date" id="date-from" placeholder="From date">
+                            <span>to</span>
+                            <input type="date" id="date-to" placeholder="To date">
+                        </div>
+                        <small class="threshold-help">Toggle OFF to temporarily search all dates without losing your
+                            selected range. Applies to both similarity and series analysis.</small>
+                    </div>
+                </div>
+            </section>
+
             <!-- Similarity Analysis Panel -->
             <section class="panel" data-panel-key="analysis">
                 <div class="panel-header">
@@ -140,23 +166,6 @@
                 </div>
                 <div class="panel-body">
                     <div class="analysis-options">
-                        <div id="date-filter-panel">
-                            <div class="date-filter-header">
-                                <label for="date-range-inputs">Date Range Filter</label>
-                                <label class="switch-label">
-                                    <input type="checkbox" id="date-enabled-toggle" checked>
-                                    <span class="switch"></span>
-                                    <span class="switch-text">Enabled</span>
-                                </label>
-                            </div>
-                            <div class="date-range-group">
-                                <input type="date" id="date-from" placeholder="From date">
-                                <span>to</span>
-                                <input type="date" id="date-to" placeholder="To date">
-                            </div>
-                            <small class="threshold-help">Toggle OFF to temporarily search all dates without losing your
-                                selected range</small>
-                        </div>
 
                         <label for="similarity-threshold">Similarity Threshold:</label>
                         <div class="threshold-input-group">
@@ -186,6 +195,47 @@
                         <div class="analysis-action">
                             <button id="start-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
                             <small class="threshold-help">Analyzes all photos that have been indexed and processed with embeddings</small>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+            <!-- Large Photo Series Panel -->
+            <section class="panel" data-panel-key="series">
+                <div class="panel-header">
+                    <h3 class="panel-title">Large Photo Series</h3>
+                    <div class="panel-tools">
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="analysis-options">
+                        <label for="series-min-group-size">Minimum Group Size:</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="series-min-group-size" min="5" max="100" step="5" value="20">
+                            <span id="series-min-group-size-value">20 photos</span>
+                            <small class="threshold-help">Only show series with at least this many photos</small>
+                        </div>
+
+                        <label for="series-min-density">Minimum Density:</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="series-min-density" min="0.5" max="10" step="0.5" value="3">
+                            <span id="series-min-density-value">3.0 photos/min</span>
+                            <small class="threshold-help">Minimum photos per minute to consider as a series</small>
+                        </div>
+
+                        <label for="series-time-gap">Maximum Time Gap:</label>
+                        <div class="threshold-input-group">
+                            <input type="range" id="series-time-gap" min="1" max="60" step="1" value="5">
+                            <span id="series-time-gap-value">5 minutes</span>
+                            <small class="threshold-help">Maximum time gap between photos to stay in same series</small>
+                        </div>
+                        
+                        <!-- Series Analysis Actions -->
+                        <div class="analysis-action">
+                            <button id="start-series-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
+                            <small class="threshold-help">Finds large photo series based on time density. Works without embeddings.</small>
                         </div>
 
                     </div>
@@ -234,6 +284,29 @@
                 <div class="panel-body">
                     <div id="similar-photos-container">
                         <p class="placeholder">Find similar photos using the 🔍 button in full-screen photo view.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Series Results Panel -->
+            <section class="panel" data-panel-key="series-results">
+                <div class="panel-header">
+                    <h3 class="panel-title">Large Photo Series Results</h3>
+                    <div class="panel-tools">
+                        <label for="series-results-sort">Sort:</label>
+                        <select id="series-results-sort">
+                            <option value="series-size">Series Size (Largest First)</option>
+                            <option value="density">Density (Highest First)</option>
+                            <option value="date-desc">Date (Newest First)</option>
+                            <option value="date-asc">Date (Oldest First)</option>
+                        </select>
+                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div id="series-results-container">
+                        <p class="placeholder">Series analysis results will appear here. Large photo series taken in short time windows will be shown.</p>
+                        <!-- Results will be dynamically inserted here -->
                     </div>
                 </div>
             </section>

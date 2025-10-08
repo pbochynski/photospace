@@ -737,6 +737,13 @@ button:disabled {
   opacity: 0.9;
 }
 
+.photo-time {
+  font-weight: normal;
+  opacity: 0.8;
+  font-size: 0.7rem;
+  margin-top: 0.15rem;
+}
+
 .quality-info {
   color: var(--success-color);
   font-weight: bold;
