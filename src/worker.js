@@ -462,47 +462,12 @@ self.onmessage = async (event) => {
         }
         return;
     }
-    const { file_id, thumbnail_url, serverUrl } = event.data;
+    const { file_id } = event.data;
     
     try {
-        console.log(`Starting processing for file: ${file_id}, has thumbnail_url: ${!!thumbnail_url}, server URL: ${serverUrl || 'not configured'}`);
+        console.log(`Starting client-side processing for file: ${file_id}`);
         
-        // If serverUrl and thumbnail_url are available, try using Node.js server first
-        if (serverUrl && thumbnail_url) {
-            console.log(`Attempting server-side processing for: ${file_id} at ${serverUrl}`);
-            try {
-                const serverResponse = await fetch(serverUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        thumbnailUrl: thumbnail_url, 
-                        fileId: file_id 
-                    })
-                });
-                
-                if (serverResponse.ok) {
-                    const result = await serverResponse.json();
-                    console.log(`✅ Successfully processed ${file_id} using server (${result.processingTime}ms)`);
-                    
-                    // Send result back to main thread
-                    self.postMessage({
-                        status: 'complete',
-                        file_id: file_id,
-                        embedding: result.embedding,
-                        qualityMetrics: result.qualityMetrics
-                    });
-                    return; // Exit early, processing complete
-                } else {
-                    console.warn(`⚠️ Server returned error ${serverResponse.status}, falling back to client-side processing`);
-                }
-            } catch (serverError) {
-                console.warn(`⚠️ Failed to connect to server, falling back to client-side processing:`, serverError.message);
-            }
-        } else if (!serverUrl && thumbnail_url) {
-            console.log(`💻 No server URL configured, using client-side processing for: ${file_id}`);
-        }
-        
-        // Fallback: Use client-side processing (original method)
+        // Use client-side processing
         console.log(`Using client-side processing for: ${file_id}`);
         const { clipModel, clipProcessor, humanInstance } = await ModelSingleton.getInstance();
         const thumbnailServiceUrl = `/api/thumb/${file_id}`;

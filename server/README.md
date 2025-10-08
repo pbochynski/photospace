@@ -60,7 +60,57 @@ Response:
 }
 ```
 
-#### Process Image
+#### Get Folder Children with Embeddings (NEW!)
+```http
+GET /children/:folderId
+Authorization: Bearer <OneDrive_Access_Token>
+```
+
+This endpoint proxies Microsoft Graph API and automatically generates embeddings for all photos in the response. It replaces the need to call Graph API directly and then process images separately.
+
+**Benefits:**
+- Single request instead of 1 + N requests (N = number of photos)
+- Automatic 429 throttling handling
+- Photos are returned with embeddings already calculated
+
+Example:
+```bash
+curl -X GET http://localhost:3001/children/root \
+  -H "Authorization: Bearer YOUR_ONEDRIVE_TOKEN"
+```
+
+Response (same as Graph API, but photos include embeddings):
+```json
+{
+  "value": [
+    {
+      "id": "folder1",
+      "name": "Vacation 2025",
+      "folder": { "childCount": 42 },
+      ...
+    },
+    {
+      "id": "photo1",
+      "name": "IMG_1234.jpg",
+      "photo": { "takenDateTime": "2025-01-15T10:30:00Z" },
+      "thumbnails": [...],
+      "embedding": [0.123, 0.456, ...],  // ← Added by server
+      "qualityScore": 0.82,               // ← Added by server
+      "qualityMetrics": {                 // ← Added by server
+        "sharpness": 25.3,
+        "exposure": {...}
+      }
+    }
+  ],
+  "@odata.nextLink": "..."
+}
+```
+
+Response Headers:
+- `X-Embeddings-Processed: true` - Indicates embeddings were generated
+- `X-Processing-Time-Ms: 5420` - Total processing time in milliseconds
+
+#### Process Single Image
 ```http
 POST /process-image
 Content-Type: application/json
@@ -97,33 +147,47 @@ Response:
 
 ## Integration with Frontend
 
-### 1. Configure Server URL
+### Option 1: Use /children Endpoint (Recommended)
 
-In your frontend application, set the embedding server URL:
-
-```javascript
-// In main.js or config
-const EMBEDDING_SERVER_URL = 'http://localhost:3001';
-```
-
-### 2. Fetch Photos with Thumbnail URLs
-
-Modify OneDrive API calls to include thumbnails:
+This is the simplest integration - replace Graph API calls with the embedding server:
 
 ```javascript
-// In graph.js
-const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+// In graph.js - BEFORE:
+// const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+// const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
 
-// Store thumbnail URL in database
-const photo = {
-  file_id: item.id,
-  name: item.name,
-  thumbnailUrl: item.thumbnails?.[0]?.large?.url,
-  // ... other fields
-};
+// AFTER:
+const EMBEDDING_SERVER_URL = process.env.EMBEDDING_SERVER_URL || 'http://localhost:3001';
+const token = await getAuthToken();
+const response = await fetch(`${EMBEDDING_SERVER_URL}/children/${folderId}`, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const data = await response.json();
+
+// Now data.value contains items with embeddings already calculated!
+for (const item of data.value) {
+  if (item.photo && item.embedding) {
+    // Save photo with embedding to database
+    await db.addOrUpdatePhoto({
+      file_id: item.id,
+      name: item.name,
+      embedding: item.embedding,
+      qualityScore: item.qualityScore,
+      qualityMetrics: item.qualityMetrics,
+      // ... other fields
+    });
+  }
+}
 ```
 
-### 3. Process Images via Server
+**Benefits:**
+- Single request per folder instead of 1 + N requests
+- Automatic handling of 429 throttling
+- No need to manage separate embedding generation
+
+### Option 2: Use /process-image Endpoint
+
+Process images individually (useful for re-processing or background jobs):
 
 ```javascript
 async function processImageViaServer(thumbnailUrl, fileId) {
@@ -144,12 +208,35 @@ async function processImageViaServer(thumbnailUrl, fileId) {
 }
 ```
 
+### Configuration
+
+Set the embedding server URL based on your environment:
+
+```javascript
+// config.js
+export const EMBEDDING_SERVER_URL = 
+  process.env.NODE_ENV === 'production'
+    ? 'https://photospace-embeddings.c-1f226cf.kyma.ondemand.com'
+    : 'http://localhost:3001';
+```
+
 ## Performance
 
+### /children Endpoint
+- **First request per folder**: ~3-10 seconds (depending on number of photos)
+- **Processing rate**: ~1-2 seconds per photo
+- **Parallel processing**: All photos in a folder processed concurrently
+- **Example**: Folder with 10 photos takes ~10-15 seconds total
+
+### /process-image Endpoint
 - **First request**: ~5-10 seconds (model loading)
 - **Subsequent requests**: ~1-2 seconds per image
 - **Concurrent processing**: Handles multiple requests simultaneously
+
+### Resource Usage
 - **Memory usage**: ~2-3 GB (CLIP model + Human library)
+- **CPU**: Scales with number of concurrent requests
+- **Disk cache**: ~200MB for models (persistent)
 
 ## Differences from Client-Side Worker
 

@@ -349,6 +349,254 @@ app.get('/health', (req, res) => {
     });
 });
 
+// Helper: fetch with auto token refresh and throttling handling
+async function fetchGraphWithRetry(url, token, retry = true) {
+    let options = {
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    };
+    
+    let response = await fetch(url, options);
+    
+    // Handle unauthorized - client should refresh token
+    if ((response.status === 401 || response.status === 403) && retry) {
+        return { error: 'unauthorized', status: response.status };
+    }
+    
+    // Handle throttling
+    if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '2');
+        console.warn(`Throttled by Graph API. Waiting ${retryAfter} seconds before retry.`);
+        await new Promise(res => setTimeout(res, retryAfter * 1000));
+        return fetchGraphWithRetry(url, token, false); // Retry once
+    }
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        return { 
+            error: errorText || `HTTP error! status: ${response.status}`, 
+            status: response.status 
+        };
+    }
+    
+    return { data: await response.json(), status: response.status };
+}
+
+// Helper: fetch with retry for throttling
+async function fetchWithThrottleRetry(url, maxRetries = 3) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        const response = await fetch(url);
+        
+        // Handle throttling
+        if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('Retry-After') || '2');
+            console.warn(`Throttled fetching ${url}. Waiting ${retryAfter} seconds (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(res => setTimeout(res, retryAfter * 1000));
+            continue;
+        }
+        
+        return response;
+    }
+    
+    // Final attempt without retry
+    return await fetch(url);
+}
+
+/**
+ * Generate embedding and quality metrics from image buffer and RawImage
+ * @param {Buffer} imageBuffer - Image data as buffer
+ * @param {RawImage} rawImage - Image as RawImage object
+ * @param {boolean} includeFaceDetection - Whether to include face detection (slower)
+ * @returns {Promise<Object>} - Embedding and quality metrics
+ */
+async function generateEmbeddingFromImage(imageBuffer, rawImage, includeFaceDetection = false) {
+    // Ensure models are loaded
+    if (!modelsLoaded) {
+        await loadModels();
+    }
+    
+    // Calculate quality metrics
+    const sharpness = estimateSharpness(rawImage);
+    const exposureMetrics = estimateExposure(rawImage);
+    
+    // Analyze face quality (optional, slower)
+    let faceMetrics = null;
+    if (includeFaceDetection && humanInstance) {
+        try {
+            // Convert image buffer to TensorFlow tensor
+            const tensor = humanInstance.tf.tidy(() => {
+                const decode = humanInstance.tf.node.decodeImage(imageBuffer, 3);
+                let expand;
+                if (decode.shape[2] === 4) {
+                    // RGBA to RGB conversion
+                    const channels = humanInstance.tf.split(decode, 4, 2);
+                    const rgb = humanInstance.tf.stack([channels[0], channels[1], channels[2]], 2);
+                    expand = humanInstance.tf.reshape(rgb, [1, decode.shape[0], decode.shape[1], 3]);
+                } else {
+                    expand = humanInstance.tf.expandDims(decode, 0);
+                }
+                return humanInstance.tf.cast(expand, 'float32');
+            });
+            
+            faceMetrics = await analyzeFaceQuality(tensor, humanInstance);
+            humanInstance.tf.dispose(tensor);
+        } catch (faceError) {
+            console.warn(`Face detection failed:`, faceError.message);
+        }
+    }
+    
+    const qualityScore = calculateQualityScore(sharpness, exposureMetrics, faceMetrics);
+    
+    // Generate embedding
+    const image_inputs = await clipProcessor(rawImage);
+    const { image_embeds } = await clipModel(image_inputs);
+    const normalized_embeds = image_embeds.normalize();
+    const embedding = normalized_embeds.tolist()[0];
+    
+    return {
+        embedding,
+        qualityScore,
+        qualityMetrics: {
+            sharpness,
+            exposure: exposureMetrics,
+            face: faceMetrics
+        }
+    };
+}
+
+/**
+ * Fetch image from URL and prepare for processing
+ * @param {string} thumbnailUrl - URL of the thumbnail
+ * @returns {Promise<Object>} - { imageBlob, imageBuffer, rawImage }
+ */
+async function fetchAndPrepareImage(thumbnailUrl) {
+    const imageResponse = await fetchWithThrottleRetry(thumbnailUrl);
+    if (!imageResponse.ok) {
+        throw new Error(`Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
+    }
+    
+    const imageBlob = await imageResponse.blob();
+    const imageBuffer = Buffer.from(await imageBlob.arrayBuffer());
+    const rawImage = await RawImage.fromBlob(imageBlob);
+    
+    return { imageBlob, imageBuffer, rawImage };
+}
+
+/**
+ * Process photo and add embedding (used by /children endpoint)
+ * @param {Object} photo - Photo item from Graph API
+ * @param {string} thumbnailUrl - URL of the thumbnail
+ * @returns {Promise<Object>} - Photo with embedding added
+ */
+async function processPhotoForEmbedding(photo, thumbnailUrl) {
+    try {
+        const { imageBuffer, rawImage } = await fetchAndPrepareImage(thumbnailUrl);
+        const result = await generateEmbeddingFromImage(imageBuffer, rawImage, false);
+        
+        return {
+            ...photo,
+            ...result
+        };
+    } catch (error) {
+        console.error(`Error processing photo ${photo.name}:`, error.message);
+        return { ...photo, embedding: null, embeddingError: error.message };
+    }
+}
+
+// Proxy endpoint for Microsoft Graph /children with automatic embedding generation
+app.get('/children/:folderId', async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+        const { folderId } = req.params;
+        const authHeader = req.headers.authorization;
+        
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ 
+                error: 'Missing or invalid Authorization header. Expected: Bearer <token>' 
+            });
+        }
+        
+        const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+        
+        // Build Graph API URL with query parameters
+        const graphUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+        
+        console.log(`Proxying request to Graph API for folder: ${folderId}`);
+        
+        // Fetch from Graph API with retry/throttling handling
+        const result = await fetchGraphWithRetry(graphUrl, token);
+        
+        if (result.error) {
+            if (result.status === 401 || result.status === 403) {
+                return res.status(result.status).json({ 
+                    error: 'Unauthorized. Token may be expired.' 
+                });
+            }
+            return res.status(result.status || 500).json({ 
+                error: result.error 
+            });
+        }
+        
+        const graphData = result.data;
+        
+        // Process photos and generate embeddings
+        console.log(`Processing ${graphData.value.length} items from Graph API response`);
+        
+        // Process photos with controlled concurrency to avoid overwhelming the service
+        const processedItems = [];
+        const BATCH_SIZE = 5; // Process 5 photos at a time
+        
+        for (let i = 0; i < graphData.value.length; i += BATCH_SIZE) {
+            const batch = graphData.value.slice(i, i + BATCH_SIZE);
+            
+            const batchResults = await Promise.all(
+                batch.map(async (item) => {
+                    // Only process photos, return folders as-is
+                    if (item.photo && item.thumbnails && item.thumbnails.length > 0) {
+                        const thumbnailUrl = item.thumbnails[0]?.large?.url || 
+                                            item.thumbnails[0]?.medium?.url || 
+                                            item.thumbnails[0]?.small?.url;
+                        
+                        if (thumbnailUrl) {
+                            console.log(`Processing photo: ${item.name}`);
+                            return await processPhotoForEmbedding(item, thumbnailUrl);
+                        }
+                    }
+                    
+                    // Return non-photo items unchanged
+                    return item;
+                })
+            );
+            
+            processedItems.push(...batchResults);
+        }
+        
+        // Replace original items with processed items
+        const responseData = {
+            ...graphData,
+            value: processedItems
+        };
+        
+        const processingTime = Date.now() - startTime;
+        console.log(`Completed processing folder ${folderId} in ${processingTime}ms`);
+        
+        // Add custom header to indicate embeddings were processed
+        res.setHeader('X-Embeddings-Processed', 'true');
+        res.setHeader('X-Processing-Time-Ms', processingTime.toString());
+        
+        res.json(responseData);
+        
+    } catch (error) {
+        console.error('Error in /children endpoint:', error);
+        res.status(500).json({ 
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 // Process image endpoint
 app.post('/process-image', async (req, res) => {
     const startTime = Date.now();
@@ -364,86 +612,28 @@ app.post('/process-image', async (req, res) => {
         
         console.log(`Processing image: ${fileId}`);
         
-        // Ensure models are loaded
-        if (!modelsLoaded) {
-            await loadModels();
-        }
-        
-        // Fetch image from URL
+        // Fetch and prepare image
         console.log(`Fetching image from: ${thumbnailUrl}`);
-        const imageResponse = await fetch(thumbnailUrl);
-        if (!imageResponse.ok) {
-            throw new Error(`Failed to fetch image: ${imageResponse.status} ${imageResponse.statusText}`);
-        }
-        
-        const imageBlob = await imageResponse.blob();
+        const { imageBlob, imageBuffer, rawImage } = await fetchAndPrepareImage(thumbnailUrl);
         console.log(`Image fetched, size: ${imageBlob.size} bytes`);
+        console.log(`RawImage created: ${rawImage.width}x${rawImage.height}`);
         
-        // Convert Blob to RawImage (same method as worker.js)
-        const image = await RawImage.fromBlob(imageBlob);
-        console.log(`RawImage created: ${image.width}x${image.height}`);
-        
-        // Calculate quality metrics
-        const sharpness = estimateSharpness(image);
-        const exposureMetrics = estimateExposure(image);
-        
-        // Analyze face quality
-        let faceMetrics = null;
-        if (humanInstance) {
-            try {
-                // Fetch the image again as a buffer for Human library tensor conversion
-                const imageResponse2 = await fetch(thumbnailUrl);
-                const imageBuffer = Buffer.from(await imageResponse2.arrayBuffer());
-                
-                // Convert image buffer to TensorFlow tensor (Human library in Node.js requires tensor input)
-                const tensor = humanInstance.tf.tidy(() => {
-                    const decode = humanInstance.tf.node.decodeImage(imageBuffer, 3);
-                    let expand;
-                    if (decode.shape[2] === 4) {
-                        // RGBA to RGB conversion
-                        const channels = humanInstance.tf.split(decode, 4, 2);
-                        const rgb = humanInstance.tf.stack([channels[0], channels[1], channels[2]], 2);
-                        expand = humanInstance.tf.reshape(rgb, [1, decode.shape[0], decode.shape[1], 3]);
-                    } else {
-                        expand = humanInstance.tf.expandDims(decode, 0);
-                    }
-                    return humanInstance.tf.cast(expand, 'float32');
-                });
-                
-                console.log(`Tensor created for face detection: ${tensor.shape}`);
-                
-                // Pass tensor to face analysis
-                faceMetrics = await analyzeFaceQuality(tensor, humanInstance);
-                
-                // Dispose tensor after use
-                humanInstance.tf.dispose(tensor);
-            } catch (faceError) {
-                console.warn(`Face detection failed: ${faceError.message}`);
-                console.error(faceError);
-            }
-        }
-        
-        const qualityScore = calculateQualityScore(sharpness, exposureMetrics, faceMetrics);
-        
-        // Generate embedding
+        // Generate embedding and quality metrics (with face detection enabled)
         console.log(`Generating embedding...`);
-        const image_inputs = await clipProcessor(image);
-        const { image_embeds } = await clipModel(image_inputs);
-        const normalized_embeds = image_embeds.normalize();
-        const embedding = normalized_embeds.tolist()[0];
-        console.log(`Embedding generated, length: ${embedding.length}`);
+        const result = await generateEmbeddingFromImage(imageBuffer, rawImage, true);
+        console.log(`Embedding generated, length: ${result.embedding.length}`);
         
         const processingTime = Date.now() - startTime;
         console.log(`Processing complete for ${fileId} in ${processingTime}ms`);
         
         res.json({
             fileId,
-            embedding,
+            embedding: result.embedding,
             qualityMetrics: {
-                sharpness,
-                exposure: exposureMetrics,
-                face: faceMetrics,
-                qualityScore
+                sharpness: result.qualityMetrics.sharpness,
+                exposure: result.qualityMetrics.exposure,
+                face: result.qualityMetrics.face,
+                qualityScore: result.qualityScore
             },
             processingTime
         });
@@ -462,8 +652,9 @@ app.listen(PORT, async () => {
     console.log(`\n🚀 Photospace Embedding Server`);
     console.log(`📡 Server listening on http://localhost:${PORT}`);
     console.log(`\nEndpoints:`);
-    console.log(`  GET  /health          - Health check`);
-    console.log(`  POST /process-image   - Process image and generate embeddings`);
+    console.log(`  GET  /health                    - Health check`);
+    console.log(`  GET  /children/:folderId        - Proxy Graph API with embeddings`);
+    console.log(`  POST /process-image             - Process image and generate embeddings`);
     console.log(`\n📥 Loading models in background...`);
     console.log(`   (First run: ~3-5 min to download from Hugging Face)`);
     console.log(`   (Subsequent runs: instant from cache)`);

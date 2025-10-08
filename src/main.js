@@ -689,9 +689,10 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                         last_modified: photo.last_modified || new Date().toISOString(),
                         photo_taken_ts: photoTakenTs,
                         thumbnail_url: photo.thumbnail_url || null,
-                        // Only set status to 0 if photo is new or doesn't have embedding
-                        embedding_status: existing ? existing.embedding_status : 0,
-                        embedding: existing ? existing.embedding : null,
+                        // Use embedding from server if available, otherwise use existing or null
+                        embedding_status: photo.embedding ? 1 : (existing ? existing.embedding_status : 0),
+                        embedding: photo.embedding || (existing ? existing.embedding : null),
+                        quality_score: photo.quality_score || (existing ? existing.quality_score : null),
                         scan_id: scanId
                     };
                 });
@@ -1862,14 +1863,7 @@ async function processEmbeddingQueue() {
     let processedCount = 0;
     const totalToProcess = embeddingQueue.length;
     
-    // Get server URL setting
-    const serverUrl = await db.getSetting('serverUrl');
-    const useServerProcessing = serverUrl && serverUrl.trim().length > 0;
-    if (useServerProcessing) {
-        console.log(`🌐 Using server-side processing: ${serverUrl}`);
-    } else {
-        console.log(`💻 Using local processing (no server URL configured)`);
-    }
+    console.log(`💻 Using client-side processing for ${totalToProcess} photos`);
     
     // Send auth token to service worker
     if (navigator.serviceWorker && navigator.serviceWorker.controller) {
@@ -1884,7 +1878,7 @@ async function processEmbeddingQueue() {
         }
     }
     
-    // Process photos using persistent workers
+    // Process photos using persistent workers (client-side only)
     while (embeddingQueue.length > 0 && !isEmbeddingPaused) {
         // Find an available worker
         const availableWorker = embeddingWorkers.find(w => w.ready && !w.busy);
@@ -1930,11 +1924,8 @@ async function processEmbeddingQueue() {
             };
             
             availableWorker.worker.addEventListener('message', handleMessage);
-            // Send photo data with optional server URL
-            availableWorker.worker.postMessage({
-                ...photo,
-                serverUrl: useServerProcessing ? serverUrl : null
-            });
+            // Send photo data to worker (client-side processing only)
+            availableWorker.worker.postMessage(photo);
         });
         
         // Don't wait for this promise, continue sending work to other workers

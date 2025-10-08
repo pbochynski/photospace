@@ -36,6 +36,37 @@ async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
     return response.json();
 }
 
+// Helper: fetch children with optional embedding server proxy
+async function fetchChildrenWithEmbeddings(folderId, getAuthToken) {
+    const serverUrl = await db.getSetting('serverUrl');
+    const token = await getAuthToken();
+    
+    // If server URL is configured, use the embedding server proxy
+    if (serverUrl && serverUrl.trim().length > 0) {
+        // Extract base URL (remove any /process-image or other paths)
+        const baseUrl = serverUrl.replace(/\/process-image.*$/, '').replace(/\/$/, '');
+        const proxyUrl = `${baseUrl}/children/${folderId}`;
+        
+        console.log(`Using embedding server proxy: ${proxyUrl}`);
+        
+        const response = await fetch(proxyUrl, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Embedding server error: ${response.status} ${errorText}`);
+        }
+        
+        return await response.json();
+    } else {
+        console.log(`Using direct Graph API call for folder ${folderId}`);
+        // Use direct Graph API call
+        const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+        return await fetchWithAutoRefresh(url, {}, getAuthToken);
+    }
+}
+
 /**
  * Fetch photos from a single folder only (non-recursive)
  * @param {number} scanId - The scan ID to associate with photos
@@ -47,11 +78,13 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
     if (!token) throw new Error("Authentication token not available.");
 
     let photoCount = 0;
-    let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+    let hasNextPage = true;
     
-    while (url) {
+    while (hasNextPage) {
         console.log(`Processing single folder ID: ${folderId}`);
-        const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
+        
+        // Use embedding server proxy if configured
+        const response = await fetchChildrenWithEmbeddings(folderId, getAuthToken);
         
         const photosInPage = [];
         for (const item of response.value) {
@@ -70,7 +103,11 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
                     last_modified: item.lastModifiedDateTime,
                     photo_taken_ts: item.photo.takenDateTime,
                     thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
-                    scan_id: scanId
+                    scan_id: scanId,
+                    // Include embedding and quality metrics if returned by server
+                    embedding: item.embedding || null,
+                    embedding_status: item.embedding ? 2 : 0, // 2 = complete, 0 = pending
+                    quality_score: item.qualityScore || null
                 };
 
                 photosInPage.push(photoMetadata);
@@ -83,8 +120,8 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
             await db.addOrUpdatePhotos(photosInPage);
         }
 
-        // Check for next page
-        url = response['@odata.nextLink'] || null;
+        // Check for next page (Note: embedding server doesn't handle pagination yet)
+        hasNextPage = false; // For now, single page only
     }
 
     console.log(`Processed ${photoCount} photos from folder ${folderId}`);
@@ -115,47 +152,46 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
 
         const processFolder = async (folderId) => {
             try {
-                // Use folder ID instead of path for more reliable access, with thumbnail expansion
-                let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
-                
                 // Get the folder path to track what we're scanning
                 const folderPath = await getFolderPath(folderId);
                 scannedFolderPaths.push(folderPath);
                 
-                while (url) {
-                    console.log(`Processing folder ID: ${folderId}`);
-                    const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
-                    
-                    const photosInPage = [];
-                    for (const item of response.value) {
-                        // If it's a folder, add it to the queue for later processing
-                        if (item.folder) {
-                            foldersToProcess.push(item.id);
-                        } 
-                        // If it's a photo, process it
-                        else if (item.photo) {
-                            photosInPage.push({
-                                file_id: item.id,
-                                name: item.name,
-                                path: item.parentReference?.path,
-                                photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
-                                thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
-                                embedding_status: 0,
-                                embedding: null,
-                                scan_id: scanId
-                            });
-                        }
+                console.log(`Processing folder ID: ${folderId}`);
+                
+                // Use embedding server proxy if configured
+                const response = await fetchChildrenWithEmbeddings(folderId, getAuthToken);
+                
+                const photosInPage = [];
+                for (const item of response.value) {
+                    // If it's a folder, add it to the queue for later processing
+                    if (item.folder) {
+                        foldersToProcess.push(item.id);
+                    } 
+                    // If it's a photo, process it
+                    else if (item.photo) {
+                        photosInPage.push({
+                            file_id: item.id,
+                            name: item.name,
+                            path: item.parentReference?.path,
+                            photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
+                            thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
+                            // Include embedding and quality metrics if returned by server
+                            embedding: item.embedding || null,
+                            embedding_status: item.embedding ? 2 : 0, // 2 = complete, 0 = pending
+                            quality_score: item.qualityScore || null,
+                            scan_id: scanId
+                        });
                     }
-
-                    // Batch-add photos to the database to improve performance
-                    if (photosInPage.length > 0) {
-                        await db.addOrUpdatePhotos(photosInPage);
-                        totalPhotoCount = await db.getPhotoCount();
-                        progressCallback({ count: totalPhotoCount });
-                    }
-                    
-                    url = response['@odata.nextLink'];
                 }
+
+                // Batch-add photos to the database to improve performance
+                if (photosInPage.length > 0) {
+                    await db.addOrUpdatePhotos(photosInPage);
+                    totalPhotoCount = await db.getPhotoCount();
+                    progressCallback({ count: totalPhotoCount });
+                }
+                
+                // Note: Pagination support can be added later if needed
                 // TODO clean up photos from this folder that were not updated in this scan
                 
             } catch (error) {
@@ -241,36 +277,39 @@ export async function fetchFolders(folderId = 'root') {
  */
 export async function fetchFolderChildren(folderId = 'root') {
     try {
-        let url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$select=id,name,folder,photo,parentReference,lastModifiedDateTime,createdDateTime,size&$expand=thumbnails&$orderby=name`;
+        console.log(`Fetching folder children for folder ${folderId}`);
         const folders = [];
         const photos = [];
 
-        while (url) {
-            const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
-            for (const item of response.value) {
-                if (item.folder) {
-                    folders.push({
-                        id: item.id,
-                        name: item.name,
-                        isFolder: true,
-                        parentId: item.parentReference?.id || null,
-                        path: item.parentReference?.path || ''
-                    });
-                } else if (item.photo) {
-                    photos.push({
-                        file_id: item.id,
-                        name: item.name,
-                        size: item.size,
-                        path: item.parentReference?.path || '/drive/root:',
-                        last_modified: item.lastModifiedDateTime,
-                        photo_taken_ts: item.photo.takenDateTime || item.createdDateTime,
-                        thumbnail_url: item.thumbnails?.[0]?.large?.url || null
-                    });
-                }
+        // Use embedding server proxy if configured
+        const response = await fetchChildrenWithEmbeddings(folderId, getAuthToken);
+        
+        for (const item of response.value) {
+            if (item.folder) {
+                folders.push({
+                    id: item.id,
+                    name: item.name,
+                    isFolder: true,
+                    parentId: item.parentReference?.id || null,
+                    path: item.parentReference?.path || ''
+                });
+            } else if (item.photo) {
+                photos.push({
+                    file_id: item.id,
+                    name: item.name,
+                    size: item.size,
+                    path: item.parentReference?.path || '/drive/root:',
+                    last_modified: item.lastModifiedDateTime,
+                    photo_taken_ts: item.photo.takenDateTime || item.createdDateTime,
+                    thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
+                    // Include embedding and quality metrics if returned by server
+                    embedding: item.embedding || null,
+                    quality_score: item.qualityScore || null
+                });
             }
-            url = response['@odata.nextLink'] || null;
         }
 
+        // Note: Pagination support can be added later if needed
         return { folders, photos };
     } catch (error) {
         console.error('Error fetching folder children:', error);
