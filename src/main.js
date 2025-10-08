@@ -796,17 +796,11 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                     await addPhotosToEmbeddingQueue(allNeedEmbeddings, false); // Normal priority
                 }
             
-                // Update status briefly
-                const oldStatus = statusText.textContent;
+                // Update status briefly (no need to restore since status panel was removed)
                 const statusMsg = deletedCount > 0 
                     ? `Auto-indexed ${photos.length} photos (${newPhotosCount} new, ${deletedCount} deleted, ${allNeedEmbeddings.length} need embeddings)`
                     : `Auto-indexed ${photos.length} photos (${newPhotosCount} new, ${allNeedEmbeddings.length} need embeddings)`;
                 updateStatus(statusMsg, false);
-                setTimeout(() => {
-                    if (statusText.textContent.includes('Auto-indexed')) {
-                        updateStatus(oldStatus, false);
-                    }
-                }, 3000);
             } catch (indexError) {
                 console.error('❌ Failed to auto-index photos:', indexError);
                 // Don't block the UI if indexing fails
