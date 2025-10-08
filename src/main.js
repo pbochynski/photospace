@@ -5,9 +5,13 @@ import { findSimilarGroups, pickBestPhotoByQuality, findPhotoSeries } from './li
 import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } from './lib/embeddingExport.js';
 import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, getEmbeddingFileMetadata } from './lib/embeddingImport.js';
 import { initializeDebugConsole } from './lib/debugConsole.js';
+import { EmbeddingProcessor } from './lib/embedding-processor.js';
 
 // Initialize debug console (also sets window.debugConsole for worker access)
 const debugConsole = initializeDebugConsole();
+
+// Initialize embedding processor (will be configured after DOM elements are loaded)
+let embeddingProcessor = null;
 
 // --- DOM Elements ---
 const loginButton = document.getElementById('login-button');
@@ -98,15 +102,7 @@ let currentModalPhoto = null; // Track the photo currently displayed in modal
 let currentResultsType = null; // Track current results type ('similarity', 'series', or 'similar-to')
 let currentReferencePhoto = null; // Track reference photo for similar-to searches
 let currentAnalysisResults = null; // Store current analysis results for re-sorting
-
-// Embedding queue management
-let embeddingWorkers = []; // Persistent workers
-let embeddingQueue = [];
-let isEmbeddingPaused = false;
-let isProcessingEmbeddings = false;
-let currentEmbeddingPromise = null;
 let isAutoIndexing = false; // Flag to prevent overlapping auto-indexing operations
-let workersInitialized = false; // Track if workers are ready
 
 // Folder scan queue management
 const MAX_CONCURRENT_FOLDER_SCANS = 5; // Maximum folders to scan in parallel
@@ -1840,260 +1836,30 @@ async function viewPhotoInFolder() {
 }
 
 // Add photos to embedding queue (at beginning if workers are running)
+// Wrapper function for adding photos to embedding queue
 async function addPhotosToEmbeddingQueue(photos, priority = false) {
-    if (!photos || photos.length === 0) return;
-    
-    // Filter out photos that are already in the queue
-    const queuedFileIds = new Set(embeddingQueue.map(p => p.file_id));
-    const newPhotos = photos.filter(p => !queuedFileIds.has(p.file_id));
-    
-    if (newPhotos.length === 0) {
-        console.log(`⏭️ Skipped adding photos - all ${photos.length} already in queue`);
-        return;
-    }
-    
-    if (priority) {
-        // Add to beginning of queue (priority for browsed folders)
-        embeddingQueue.unshift(...newPhotos);
-        console.log(`✨ Added ${newPhotos.length} photos to beginning of embedding queue (priority)`);
-    } else {
-        // Add to end of queue
-        embeddingQueue.push(...newPhotos);
-        console.log(`📥 Added ${newPhotos.length} photos to embedding queue`);
-    }
-    
-    // Update button state
-    updatePauseResumeButton();
-}
-
-// Initialize persistent workers (call once)
-async function initializeWorkers() {
-    if (workersInitialized) {
-        console.log('Workers already initialized');
-        return;
-    }
-    
-    const NUM_EMBEDDING_WORKERS = await getWorkerCount();
-    console.log(`🚀 Initializing ${NUM_EMBEDDING_WORKERS} persistent workers...`);
-    
-    // Create workers with event listeners attached immediately
-    const readyPromises = [];
-    
-    for (let i = 0; i < NUM_EMBEDDING_WORKERS; i++) {
-        const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-        
-        const workerInfo = {
-            worker,
-            id: i,
-            busy: false,
-            ready: false
-        };
-        
-        // Create promise that resolves when this worker is ready
-        const readyPromise = new Promise((resolve) => {
-            const handleInit = (event) => {
-                if (event.data.status === 'model_ready') {
-                    workerInfo.ready = true;
-                    console.log(`✅ Worker ${i} ready (models loaded)`);
-                    worker.removeEventListener('message', handleInit);
-                    resolve();
-                } else if (event.data.status === 'model_loading') {
-                    console.log(`⏳ Worker ${i} loading models...`);
-                }
-            };
-            worker.addEventListener('message', handleInit);
-        });
-        
-        readyPromises.push(readyPromise);
-        
-        worker.onerror = (err) => {
-            console.error(`Worker ${i} error:`, err);
-        };
-        
-        embeddingWorkers.push(workerInfo);
-        
-        // Send worker ID
-        worker.postMessage({ type: 'setWorkerId', workerId: i });
-        
-        // Initialize worker (load models)
-        worker.postMessage({ type: 'init' });
-    }
-    
-    workersInitialized = true;
-    console.log(`✅ ${NUM_EMBEDDING_WORKERS} workers initialized, waiting for models to load...`);
-    
-    // Wait for all workers to finish loading models
-    await Promise.all(readyPromises);
-    console.log(`🎉 All ${NUM_EMBEDDING_WORKERS} workers ready!`);
-}
-
-// Terminate all workers (cleanup)
-function terminateWorkers() {
-    console.log('🛑 Terminating all workers...');
-    embeddingWorkers.forEach(w => w.worker.terminate());
-    embeddingWorkers = [];
-    workersInitialized = false;
-}
-
-// Start embedding workers to process the queue
-async function startEmbeddingWorkers() {
-    if (isProcessingEmbeddings) {
-        console.log('Embedding workers already running');
-        return;
-    }
-    
-    if (embeddingQueue.length === 0) {
-        // Check for photos without embeddings
-        const photosWithoutEmbeddings = await db.getPhotosWithoutEmbedding();
-        if (photosWithoutEmbeddings.length > 0) {
-            embeddingQueue.push(...photosWithoutEmbeddings);
-            console.log(`📥 Added ${photosWithoutEmbeddings.length} photos without embeddings to queue`);
-        } else {
-            updateStatus('No photos need embeddings', false);
-            return;
-        }
-    }
-    
-    // Initialize workers if not already done
-    if (!workersInitialized) {
-        await initializeWorkers();
-    }
-    
-    isProcessingEmbeddings = true;
-    isEmbeddingPaused = false;
-    updatePauseResumeButton();
-    
-    currentEmbeddingPromise = processEmbeddingQueue();
-}
-
-// Pause embedding workers (workers stay alive, just stop processing queue)
-function pauseEmbeddingWorkers() {
-    isEmbeddingPaused = true;
-    updatePauseResumeButton();
-    updateStatus('Embedding generation paused', false);
-    console.log('⏸️ Embedding generation paused (workers still alive)');
-}
-
-// Resume embedding workers
-async function resumeEmbeddingWorkers() {
-    if (!isProcessingEmbeddings && embeddingQueue.length > 0) {
-        startEmbeddingWorkers();
-    } else {
-        isEmbeddingPaused = false;
-        updatePauseResumeButton();
-        updateStatus('Embedding generation resumed', false);
-        console.log('▶️ Embedding generation resumed');
+    if (embeddingProcessor) {
+        await embeddingProcessor.addToQueue(photos, priority);
     }
 }
 
 // Update Pause/Resume button state
 function updatePauseResumeButton() {
-    if (!pauseResumeEmbeddingsBtn) return;
+    if (!pauseResumeEmbeddingsBtn || !embeddingProcessor) return;
+    
+    const state = embeddingProcessor.getState();
     
     // Button is always active
     pauseResumeEmbeddingsBtn.disabled = false;
     
-    if (isProcessingEmbeddings) {
+    if (state.isProcessing) {
         pauseResumeEmbeddingsBtn.textContent = '⏸️ Pause Embedding Workers';
-    } else if (isEmbeddingPaused) {
+    } else if (state.isPaused) {
         pauseResumeEmbeddingsBtn.textContent = '▶️ Resume Embedding Workers';
     } else {
         pauseResumeEmbeddingsBtn.textContent = '▶️ Start Embedding Workers';
     }
 }
-
-// Process the embedding queue using persistent workers
-async function processEmbeddingQueue() {
-    console.log(`📊 Starting queue processing: ${embeddingQueue.length} photos`);
-    
-    // Workers are already ready after initializeWorkers()
-    updateStatus(`Processing ${embeddingQueue.length} photos...`, true, 0, embeddingQueue.length);
-    
-    let processedCount = 0;
-    const totalToProcess = embeddingQueue.length;
-    
-    console.log(`💻 Using client-side processing for ${totalToProcess} photos`);
-    
-    // Send auth token to service worker
-    try {
-        await initializeServiceWorkerToken();
-    } catch (error) {
-        console.error('Failed to send auth token to service worker:', error);
-    }
-    
-    // Process photos using persistent workers (client-side only)
-    while (embeddingQueue.length > 0 && !isEmbeddingPaused) {
-        // Find an available worker
-        const availableWorker = embeddingWorkers.find(w => w.ready && !w.busy);
-        
-        if (!availableWorker) {
-            // All workers busy, wait a bit
-            await new Promise(resolve => setTimeout(resolve, 50));
-            continue;
-        }
-        
-        // Get next photo from queue
-        const photo = embeddingQueue.shift();
-        availableWorker.busy = true;
-        
-        // Process this photo
-        const promise = new Promise((resolve) => {
-            const handleMessage = async (event) => {
-                // Handle console messages from worker
-                if (event.data.type === 'console') {
-                    debugConsole.addEntry(event.data.level, event.data.args);
-                    return;
-                }
-                
-                const { file_id, status, embedding, qualityMetrics, error } = event.data;
-                
-                if (file_id !== photo.file_id) return; // Not for this photo
-                
-                if (status === 'complete') {
-                    await db.updatePhotoEmbedding(file_id, embedding, qualityMetrics);
-                    processedCount++;
-                    updateStatus(`Processing photos... ${processedCount}/${totalToProcess} complete, ${embeddingQueue.length} in queue`, true, processedCount, totalToProcess);
-                    availableWorker.busy = false;
-                    availableWorker.worker.removeEventListener('message', handleMessage);
-                    resolve();
-                } else if (status === 'error') {
-                    console.error(`Worker error for file ${file_id}:`, error);
-                    processedCount++;
-                    updateStatus(`Processing photos... ${processedCount}/${totalToProcess} complete, ${embeddingQueue.length} in queue (some errors)`, true, processedCount, totalToProcess);
-                    availableWorker.busy = false;
-                    availableWorker.worker.removeEventListener('message', handleMessage);
-                    resolve();
-                }
-            };
-            
-            availableWorker.worker.addEventListener('message', handleMessage);
-            // Send photo data to worker (client-side processing only)
-            availableWorker.worker.postMessage(photo);
-        });
-        
-        // Don't wait for this promise, continue sending work to other workers
-        promise.catch(err => console.error('Error processing photo:', err));
-    }
-    
-    // Wait for all workers to finish
-    console.log('⏳ Waiting for all workers to finish...');
-    while (embeddingWorkers.some(w => w.busy)) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    
-    isProcessingEmbeddings = false;
-    updatePauseResumeButton();
-    
-    if (embeddingQueue.length === 0) {
-        updateStatus('All photos processed!', false);
-        console.log('✅ Embedding queue empty - all photos processed');
-    } else if (isEmbeddingPaused) {
-        updateStatus(`Paused - ${embeddingQueue.length} photos remaining in queue`, false);
-        console.log('⏸️ Paused - photos remain in queue:', embeddingQueue.length);
-    }
-}
-
-// Old processPhotosWithWorkers function removed - now using persistent workers
 
 async function runAnalysisForScope(scope) {
     startAnalysisButton.disabled = true;
@@ -2666,10 +2432,17 @@ async function main() {
         // Initialize analysis settings UI
         await initializeAnalysisSettingsWithRetry();
         
+        // Initialize embedding processor with callbacks
+        embeddingProcessor = new EmbeddingProcessor({
+            updateStatus: updateStatus,
+            updateButton: updatePauseResumeButton,
+            initializeServiceWorker: initializeServiceWorkerToken
+        });
+        
         // Initialize embedding queue from database
         const photosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
         if (photosNeedingEmbeddings.length > 0) {
-            embeddingQueue.push(...photosNeedingEmbeddings);
+            await embeddingProcessor.addToQueue(photosNeedingEmbeddings);
             console.log(`📥 Initialized embedding queue with ${photosNeedingEmbeddings.length} photos from database`);
         }
         
@@ -2732,14 +2505,15 @@ async function main() {
                 clearDatabaseButton.textContent = '⏳ Clearing...';
                 updateStatus('Clearing database...', false);
                 
-                // Stop any running workers
-                if (isProcessingEmbeddings) {
-                    pauseEmbeddingWorkers();
+                // Stop any running workers and clear the queue
+                if (embeddingProcessor) {
+                    const state = embeddingProcessor.getState();
+                    if (state.isProcessing) {
+                        embeddingProcessor.pause();
+                    }
+                    embeddingProcessor.queue = []; // Clear the queue
+                    updatePauseResumeButton();
                 }
-                
-                // Clear the queue
-                embeddingQueue = [];
-                updatePauseResumeButton();
                 
                 // Clear all photos from database
                 await db.clearAllPhotos();
@@ -2777,13 +2551,16 @@ async function main() {
     // Pause/Resume embeddings button
     if (pauseResumeEmbeddingsBtn) {
         pauseResumeEmbeddingsBtn.addEventListener('click', async () => {
-            if (isEmbeddingPaused) {
-                await resumeEmbeddingWorkers();
-            } else if (isProcessingEmbeddings) {
-                pauseEmbeddingWorkers();
+            if (!embeddingProcessor) return;
+            
+            const state = embeddingProcessor.getState();
+            if (state.isPaused) {
+                await embeddingProcessor.resume();
+            } else if (state.isProcessing) {
+                embeddingProcessor.pause();
             } else {
                 // Start workers
-                await startEmbeddingWorkers();
+                await embeddingProcessor.start();
             }
         });
     }
@@ -2997,8 +2774,8 @@ async function main() {
     
     // Cleanup workers on page unload
     window.addEventListener('beforeunload', () => {
-        if (workersInitialized) {
-            terminateWorkers();
+        if (embeddingProcessor) {
+            embeddingProcessor.terminateWorkers();
         }
     });
 }
