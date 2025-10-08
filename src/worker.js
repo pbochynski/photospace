@@ -197,8 +197,6 @@ async function analyzeFaceQuality(imageData, humanInstance) {
     try {
         const result = await humanInstance.detect(imageData);
         
-        console.log(`Face detection result: ${result.face ? result.face.length : 0} faces detected`);
-        
         if (!result.face || result.face.length === 0) {
             return { faceScore: 0, faceCount: 0, details: null };
         }
@@ -282,8 +280,6 @@ async function analyzeFaceQuality(imageData, humanInstance) {
         const avgFaceScore = result.face.length > 0 ? totalFaceScore / result.face.length : 0;
         // Ensure final score is valid and clamped to [0, 1]
         const validAvgFaceScore = Math.min(Math.max(0, isFinite(avgFaceScore) ? avgFaceScore : 0), 1);
-        
-        console.log(`Face analysis complete: ${result.face.length} faces processed, avg score: ${validAvgFaceScore.toFixed(3)}`);
         
         return {
             faceScore: validAvgFaceScore,
@@ -462,39 +458,35 @@ self.onmessage = async (event) => {
         }
         return;
     }
-    const { file_id } = event.data;
+    const { file_id, path, name } = event.data;
+    
+    // Format photo path for concise logging
+    // Remove '/drive/root:' prefix and keep folder structure
+    const cleanPath = path ? path.replace('/drive/root:', '') || '/' : '/';
+    const fileName = name || file_id;
+    const photoPath = cleanPath === '/' ? `/${fileName}` : `${cleanPath}/${fileName}`;
     
     try {
-        console.log(`Starting client-side processing for file: ${file_id}`);
-        
-        // Use client-side processing
-        console.log(`Using client-side processing for: ${file_id}`);
+        // Get models
         const { clipModel, clipProcessor, humanInstance } = await ModelSingleton.getInstance();
         const thumbnailServiceUrl = `/api/thumb/${file_id}`;
         
-        console.log(`Fetching thumbnail via service worker for: ${file_id}`);
-        // Use fetch() to properly work with service worker, then convert to RawImage
+        // Fetch image
         const response = await fetch(thumbnailServiceUrl);
         
         if (!response.ok) {
-            console.error(`Fetch failed: ${response.status} ${response.statusText} for ${file_id}`);
             throw new Error(`Failed to fetch thumbnail: ${response.status} ${response.statusText}`);
         }
         
-        console.log(`Got response for: ${file_id}, content-type: ${response.headers.get('content-type')}`);
         const blob = await response.blob();
-        console.log(`Blob size: ${blob.size} bytes for ${file_id}`);
         
         if (blob.size === 0) {
-            console.error(`Empty blob for ${file_id}`);
             throw new Error(`Received empty blob for thumbnail: ${file_id}`);
         }
         
-        console.log(`Creating RawImage for: ${file_id}`);
         const image = await RawImage.fromBlob(blob);
-        console.log(`RawImage created: ${image.width}x${image.height} for ${file_id}`);
         
-        // Calculate quality metrics using the RawImage data
+        // Calculate quality metrics
         const sharpness = estimateSharpness(image);
         const exposureMetrics = estimateExposure(image);
         
@@ -532,56 +524,39 @@ self.onmessage = async (event) => {
                 ctx.putImageData(imageData, 0, 0);
                 
                 faceMetrics = await analyzeFaceQuality(canvas, humanInstance);
-                console.log(`Face metrics for ${file_id}:`, faceMetrics);
             } catch (faceError) {
-                console.warn(`Face detection failed for ${file_id}:`, faceError);
+                // Face detection failed, continue without it
             }
         }
         
         // Calculate final quality score including face metrics
         const qualityScore = calculateQualityScore(sharpness, exposureMetrics, faceMetrics);
-        console.log(`Quality metrics calculated for ${file_id}: sharpness=${sharpness.toFixed(2)}, exposure=${JSON.stringify(exposureMetrics)}, faces=${faceMetrics?.faceCount || 0}, score=${qualityScore.toFixed(3)}`);
 
         // Generate embedding
-        console.log(`Starting embedding generation for: ${file_id}`);
-        try {
-            console.log(`Processing image with clipProcessor for: ${file_id}`);
-            const image_inputs = await clipProcessor(image);
-            console.log(`Image inputs processed for: ${file_id}, shape:`, image_inputs?.pixel_values?.dims || 'unknown');
-            
-            console.log(`Running inference with clipModel for: ${file_id}`);
-            const { image_embeds } = await clipModel(image_inputs);
-            console.log(`Model inference complete for: ${file_id}, embedding shape:`, image_embeds?.dims || 'unknown');
-            
-            console.log(`Normalizing embedding for: ${file_id}`);
-            const normalized_embeds = image_embeds.normalize();
-            console.log(`Converting to list for: ${file_id}`);
-            const embedding = normalized_embeds.tolist()[0];
-            console.log(`Embedding generated successfully for: ${file_id}, length: ${embedding?.length || 'unknown'}`);
-            
-            self.postMessage({
-                status: 'complete',
-                file_id: file_id,
-                embedding: embedding,
-                qualityMetrics: {
-                    sharpness: sharpness,
-                    exposure: exposureMetrics,
-                    face: faceMetrics,
-                    qualityScore: qualityScore
-                }
-            });
-        } catch (embeddingError) {
-            console.error(`Embedding generation failed for ${file_id}:`, embeddingError);
-            console.error(`Embedding error details:`, {
-                message: embeddingError.message,
-                stack: embeddingError.stack,
-                name: embeddingError.name
-            });
-            throw embeddingError;
-        }
+        const image_inputs = await clipProcessor(image);
+        const { image_embeds } = await clipModel(image_inputs);
+        const normalized_embeds = image_embeds.normalize();
+        const embedding = normalized_embeds.tolist()[0];
+        
+        // Success - log one concise message with full path
+        console.log(`✅ ${photoPath} (Q:${Math.round(qualityScore * 100)}%, ${faceMetrics?.faceCount || 0} faces)`);
+        
+        self.postMessage({
+            status: 'complete',
+            file_id: file_id,
+            embedding: embedding,
+            qualityMetrics: {
+                sharpness: sharpness,
+                exposure: exposureMetrics,
+                face: faceMetrics,
+                qualityScore: qualityScore
+            }
+        });
 
     } catch (error) {
-        console.error(`Worker failed for file ${file_id}:`, error);
+        // Error - log one concise message with full path
+        console.error(`❌ ${photoPath}: ${error.message}`);
+        
         self.postMessage({
             status: 'error',
             file_id: file_id,
