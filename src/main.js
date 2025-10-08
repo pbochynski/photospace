@@ -1,4 +1,4 @@
-import { msalInstance, login, getAuthToken } from './lib/auth.js';
+import { msalInstance, login, logout, getAuthToken } from './lib/auth.js';
 import { fetchAllPhotos, fetchFolders, getFolderInfo, getFolderPath, fetchFolderChildren } from './lib/graph.js';
 import { db } from './lib/db.js';
 import { findSimilarGroups, pickBestPhotoByQuality, findPhotoSeries } from './lib/analysis.js';
@@ -13,88 +13,23 @@ const debugConsole = initializeDebugConsole();
 // Initialize embedding processor (will be configured after DOM elements are loaded)
 let embeddingProcessor = null;
 
-// --- DOM Elements ---
-const loginButton = document.getElementById('login-button');
-const userInfo = document.getElementById('user-info');
-const mainContent = document.getElementById('main-content');
-const statusText = document.getElementById('status-text');
-const progressBar = document.getElementById('progress-bar');
-const pauseResumeEmbeddingsBtn = document.getElementById('pause-resume-embeddings');
-const clearDatabaseButton = document.getElementById('clear-database-button');
-const startAnalysisButton = document.getElementById('start-analysis-button');
-const resultsContainer = document.getElementById('results-container');
-
-// Series analysis elements
-const startSeriesAnalysisButton = document.getElementById('start-series-analysis-button');
-const seriesMinGroupSizeSlider = document.getElementById('series-min-group-size');
-const seriesMinGroupSizeValueDisplay = document.getElementById('series-min-group-size-value');
-const seriesMinDensitySlider = document.getElementById('series-min-density');
-const seriesMinDensityValueDisplay = document.getElementById('series-min-density-value');
-const seriesTimeGapSlider = document.getElementById('series-time-gap');
-const seriesTimeGapValueDisplay = document.getElementById('series-time-gap-value');
-
-// Unified results elements
-const resultsTypeLabel = document.getElementById('results-type-label');
-const browserPhotoGrid = document.getElementById('browser-photo-grid');
-const browserSortSelect = document.getElementById('browser-sort');
-const browserRefreshBtn = document.getElementById('browser-refresh');
-const browserUpBtn = document.getElementById('browser-up');
-const browserScanBtn = document.getElementById('browser-scan');
-const browserAnalyzeBtn = document.getElementById('browser-analyze');
-const browserCurrentPath = document.getElementById('browser-current-path');
-const browserToggleSelectBtn = document.getElementById('browser-toggle-select');
-const browserDeleteSelectedBtn = document.getElementById('browser-delete-selected');
-
-// Analysis options
-const similarityThresholdSlider = document.getElementById('similarity-threshold');
-const thresholdValueDisplay = document.getElementById('threshold-value');
-const timeSpanSlider = document.getElementById('time-span');
-const timeSpanValueDisplay = document.getElementById('time-span-value');
-const minGroupSizeSlider = document.getElementById('min-group-size');
-const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
-const resultsSortSelect = document.getElementById('results-sort');
-const workerCountSlider = document.getElementById('worker-count');
-const workerCountValueDisplay = document.getElementById('worker-count-value');
-
-// Scan queue status elements
-const scanQueueFoldersSpan = document.getElementById('scan-queue-folders');
-const scanQueueDbCountSpan = document.getElementById('scan-queue-db-count');
-const scanQueueDetailsDiv = document.getElementById('scan-queue-details');
-const scanQueueListDiv = document.getElementById('scan-queue-list');
-
-// Date filter elements
-const dateFromInput = document.getElementById('date-from');
-const dateToInput = document.getElementById('date-to');
-const dateEnabledToggle = document.getElementById('date-enabled-toggle');
-
-// Embedding backup elements
-const exportEmbeddingsBtn = document.getElementById('export-embeddings-btn');
-const importEmbeddingsBtn = document.getElementById('import-embeddings-btn');
-const exportInfo = document.getElementById('export-info');
-const importInfo = document.getElementById('import-info');
-const embeddingFilesList = document.getElementById('embedding-files-list');
-const fileListContainer = document.getElementById('file-list-container');
-
-// Import modal elements
-const importModal = document.getElementById('import-modal');
-const importModalClose = document.getElementById('import-modal-close');
-const importLoading = document.getElementById('import-loading');
-const importFileSelection = document.getElementById('import-file-selection');
-const importFileList = document.getElementById('import-file-list');
-const importOptions = document.querySelector('.import-options');
-const conflictStrategySelect = document.getElementById('conflict-strategy');
-const confirmImportBtn = document.getElementById('confirm-import-btn');
-const cancelImportBtn = document.getElementById('cancel-import-btn');
-const importProgress = document.getElementById('import-progress');
-const importProgressBar = document.getElementById('import-progress-bar');
-const importStatus = document.getElementById('import-status');
-const importResults = document.getElementById('import-results');
-const importSummary = document.getElementById('import-summary');
-const closeImportBtn = document.getElementById('close-import-btn');
-
-// Modal action buttons
-const modalFindSimilarBtn = document.getElementById('modal-find-similar-btn');
-const modalViewInFolderBtn = document.getElementById('modal-view-in-folder-btn');
+// --- DOM Elements (will be initialized in main()) ---
+let loginButton, logoutButton, userInfo, userInfoContainer, mainContent;
+let statusText, progressBar, pauseResumeEmbeddingsBtn, clearDatabaseButton;
+let startAnalysisButton, resultsContainer;
+let startSeriesAnalysisButton, seriesMinGroupSizeSlider, seriesMinGroupSizeValueDisplay;
+let seriesMinDensitySlider, seriesMinDensityValueDisplay, seriesTimeGapSlider, seriesTimeGapValueDisplay;
+let resultsTypeLabel, browserPhotoGrid, browserSortSelect, browserRefreshBtn, browserUpBtn;
+let browserScanBtn, browserAnalyzeBtn, browserCurrentPath, browserToggleSelectBtn, browserDeleteSelectedBtn;
+let similarityThresholdSlider, thresholdValueDisplay, timeSpanSlider, timeSpanValueDisplay;
+let minGroupSizeSlider, minGroupSizeValueDisplay, resultsSortSelect, workerCountSlider, workerCountValueDisplay;
+let scanQueueFoldersSpan, scanQueueDbCountSpan, scanQueueDetailsDiv, scanQueueListDiv;
+let dateFromInput, dateToInput, dateEnabledToggle;
+let exportEmbeddingsBtn, importEmbeddingsBtn, exportInfo, importInfo, embeddingFilesList, fileListContainer;
+let importModal, importModalClose, importLoading, importFileSelection, importFileList, importOptions;
+let conflictStrategySelect, confirmImportBtn, cancelImportBtn, importProgress, importProgressBar;
+let importStatus, importResults, importSummary, closeImportBtn;
+let modalFindSimilarBtn, modalViewInFolderBtn;
 
 let embeddingWorker = null;
 let selectedFolderId = null; // null means no folder filter (all folders)
@@ -437,7 +372,7 @@ async function deletePhotosWithConfirmation(photos, onSuccess) {
 async function displayLoggedIn(account) {
     loginButton.style.display = 'none';
     userInfo.textContent = `Welcome, ${account.name}`;
-    userInfo.style.display = 'block';
+    userInfoContainer.style.display = 'flex';
     mainContent.style.display = 'block';
     updateStatus('Ready. Click "Scan OneDrive Photos" to begin.');
     
@@ -1461,14 +1396,68 @@ async function scanSingleFolder(folderPath) {
 
 // --- Core Logic ---
 
+/**
+ * Initialize the app after successful login
+ * This runs all the necessary setup for a logged-in user
+ */
+async function initializeAfterLogin(account) {
+    await displayLoggedIn(account);
+    await db.init();
+    
+    // Initialize analysis settings UI
+    await initializeAnalysisSettingsWithRetry();
+    
+    // Initialize embedding processor with callbacks
+    embeddingProcessor = new EmbeddingProcessor({
+        updateStatus: updateStatus,
+        updateButton: updatePauseResumeButton,
+        initializeServiceWorker: initializeServiceWorkerToken
+    });
+    
+    // Initialize embedding queue from database
+    const photosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
+    if (photosNeedingEmbeddings.length > 0) {
+        await embeddingProcessor.addToQueue(photosNeedingEmbeddings);
+        console.log(`📥 Initialized embedding queue with ${photosNeedingEmbeddings.length} photos from database`);
+    }
+    
+    // Initialize pause/resume button state
+    updatePauseResumeButton();
+    
+    // Initialize scan queue status
+    await updateScanQueueStatus();
+    
+    // Start periodic scan queue status updates
+    setInterval(async () => {
+        await updateScanQueueStatus();
+    }, 2000); // Update every 2 seconds
+    
+    // Restore folder selection from URL if present
+    await restoreFiltersFromURL();
+    
+    // Restore similar photos view from URL if present
+    await restoreSimilarPhotosFromURL();
+    
+    // Initialize backup panel
+    await initializeBackupPanel();
+    
+    // Initialize browser path and render photo grid
+    // Use setTimeout to ensure DOM is fully rendered before initializing browser
+    await new Promise(resolve => setTimeout(resolve, 100));
+    try {
+        updateBrowserCurrentPath();
+        await renderBrowserPhotoGrid();
+    } catch (error) {
+        console.warn('Failed to render initial browser view:', error);
+        console.error(error);
+    }
+}
+
 async function handleLoginClick() {
     try {
         const account = await login();
         if (account) {
-            await displayLoggedIn(account);
-            await db.init();
-            // Initialize analysis settings UI after login
-            await initializeAnalysisSettingsWithRetry();
+            await initializeAfterLogin(account);
         }
     } catch (error) {
         console.error(error);
@@ -2399,10 +2388,94 @@ async function getSeriesMaxTimeGap() {
     }
 }
 
+// --- DOM Element Initialization ---
+function initializeDOMElements() {
+    loginButton = document.getElementById('login-button');
+    logoutButton = document.getElementById('logout-button');
+    userInfo = document.getElementById('user-info');
+    userInfoContainer = document.getElementById('user-info-container');
+    mainContent = document.getElementById('main-content');
+    statusText = document.getElementById('status-text');
+    progressBar = document.getElementById('progress-bar');
+    pauseResumeEmbeddingsBtn = document.getElementById('pause-resume-embeddings');
+    clearDatabaseButton = document.getElementById('clear-database-button');
+    startAnalysisButton = document.getElementById('start-analysis-button');
+    resultsContainer = document.getElementById('results-container');
+    
+    startSeriesAnalysisButton = document.getElementById('start-series-analysis-button');
+    seriesMinGroupSizeSlider = document.getElementById('series-min-group-size');
+    seriesMinGroupSizeValueDisplay = document.getElementById('series-min-group-size-value');
+    seriesMinDensitySlider = document.getElementById('series-min-density');
+    seriesMinDensityValueDisplay = document.getElementById('series-min-density-value');
+    seriesTimeGapSlider = document.getElementById('series-time-gap');
+    seriesTimeGapValueDisplay = document.getElementById('series-time-gap-value');
+    
+    resultsTypeLabel = document.getElementById('results-type-label');
+    browserPhotoGrid = document.getElementById('browser-photo-grid');
+    browserSortSelect = document.getElementById('browser-sort');
+    browserRefreshBtn = document.getElementById('browser-refresh');
+    browserUpBtn = document.getElementById('browser-up');
+    browserScanBtn = document.getElementById('browser-scan');
+    browserAnalyzeBtn = document.getElementById('browser-analyze');
+    browserCurrentPath = document.getElementById('browser-current-path');
+    browserToggleSelectBtn = document.getElementById('browser-toggle-select');
+    browserDeleteSelectedBtn = document.getElementById('browser-delete-selected');
+    
+    similarityThresholdSlider = document.getElementById('similarity-threshold');
+    thresholdValueDisplay = document.getElementById('threshold-value');
+    timeSpanSlider = document.getElementById('time-span');
+    timeSpanValueDisplay = document.getElementById('time-span-value');
+    minGroupSizeSlider = document.getElementById('min-group-size');
+    minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
+    resultsSortSelect = document.getElementById('results-sort');
+    workerCountSlider = document.getElementById('worker-count');
+    workerCountValueDisplay = document.getElementById('worker-count-value');
+    
+    scanQueueFoldersSpan = document.getElementById('scan-queue-folders');
+    scanQueueDbCountSpan = document.getElementById('scan-queue-db-count');
+    scanQueueDetailsDiv = document.getElementById('scan-queue-details');
+    scanQueueListDiv = document.getElementById('scan-queue-list');
+    
+    dateFromInput = document.getElementById('date-from');
+    dateToInput = document.getElementById('date-to');
+    dateEnabledToggle = document.getElementById('date-enabled-toggle');
+    
+    exportEmbeddingsBtn = document.getElementById('export-embeddings-btn');
+    importEmbeddingsBtn = document.getElementById('import-embeddings-btn');
+    exportInfo = document.getElementById('export-info');
+    importInfo = document.getElementById('import-info');
+    embeddingFilesList = document.getElementById('embedding-files-list');
+    fileListContainer = document.getElementById('file-list-container');
+    
+    importModal = document.getElementById('import-modal');
+    importModalClose = document.getElementById('import-modal-close');
+    importLoading = document.getElementById('import-loading');
+    importFileSelection = document.getElementById('import-file-selection');
+    importFileList = document.getElementById('import-file-list');
+    importOptions = document.querySelector('.import-options');
+    conflictStrategySelect = document.getElementById('conflict-strategy');
+    confirmImportBtn = document.getElementById('confirm-import-btn');
+    cancelImportBtn = document.getElementById('cancel-import-btn');
+    importProgress = document.getElementById('import-progress');
+    importProgressBar = document.getElementById('import-progress-bar');
+    importStatus = document.getElementById('import-status');
+    importResults = document.getElementById('import-results');
+    importSummary = document.getElementById('import-summary');
+    closeImportBtn = document.getElementById('close-import-btn');
+    
+    modalFindSimilarBtn = document.getElementById('modal-find-similar-btn');
+    modalViewInFolderBtn = document.getElementById('modal-view-in-folder-btn');
+    
+    console.log('DOM elements initialized');
+}
+
 // --- Main Application Startup ---
 // NEW: We wrap the startup logic in an async function to use await.
 async function main() {
-    // STEP 0: Register service worker for image caching
+    // STEP 0: Initialize DOM elements first
+    initializeDOMElements();
+    
+    // STEP 1: Register service worker for image caching
     if ('serviceWorker' in navigator) {
         try {
             const registration = await navigator.serviceWorker.register('/sw.js');
@@ -2412,10 +2485,10 @@ async function main() {
         }
     }
 
-    // STEP 1: Initialize MSAL
+    // STEP 2: Initialize MSAL
     await msalInstance.initialize();
 
-    // STEP 2: Handle the redirect promise. This should be done after initialization.
+    // STEP 3: Handle the redirect promise. This should be done after initialization.
     try {
         const response = await msalInstance.handleRedirectPromise();
         if (response && response.account) {
@@ -2425,50 +2498,59 @@ async function main() {
         console.error("Error handling redirect promise:", error);
     }
     
-    // STEP 3: Check for an active account
+    // STEP 4: Check for an active account
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length > 0) {
         msalInstance.setActiveAccount(accounts[0]);
-        await displayLoggedIn(accounts[0]);
-        await db.init();
-        
-        // Initialize analysis settings UI
-        await initializeAnalysisSettingsWithRetry();
-        
-        // Initialize embedding processor with callbacks
-        embeddingProcessor = new EmbeddingProcessor({
-            updateStatus: updateStatus,
-            updateButton: updatePauseResumeButton,
-            initializeServiceWorker: initializeServiceWorkerToken
-        });
-        
-        // Initialize embedding queue from database
-        const photosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
-        if (photosNeedingEmbeddings.length > 0) {
-            await embeddingProcessor.addToQueue(photosNeedingEmbeddings);
-            console.log(`📥 Initialized embedding queue with ${photosNeedingEmbeddings.length} photos from database`);
-        }
-        
-        // Initialize pause/resume button state
-        updatePauseResumeButton();
-        
-        // Initialize scan queue status
-        await updateScanQueueStatus();
-        
-        // Start periodic scan queue status updates
-        setInterval(async () => {
-            await updateScanQueueStatus();
-        }, 2000); // Update every 2 seconds
-        
-        // Restore folder selection from URL if present
-        await restoreFiltersFromURL();
-        
-        // Restore similar photos view from URL if present
-        await restoreSimilarPhotosFromURL();
+        await initializeAfterLogin(accounts[0]);
     }
 
-    // STEP 4: Add event listeners now that MSAL is ready
+    // STEP 5: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
+    
+    // Logout button
+    if (logoutButton) {
+        logoutButton.addEventListener('click', async () => {
+            try {
+                // Stop any running workers
+                if (embeddingProcessor) {
+                    embeddingProcessor.pause();
+                    embeddingProcessor.terminateWorkers();
+                    embeddingProcessor = null;
+                }
+                
+                // Perform logout
+                logout();
+                
+                // Clear UI state
+                userInfoContainer.style.display = 'none';
+                mainContent.style.display = 'none';
+                loginButton.style.display = 'block';
+                
+                // Clear results
+                currentResultsType = null;
+                currentAnalysisResults = null;
+                currentReferencePhoto = null;
+                if (resultsContainer) {
+                    resultsContainer.innerHTML = '<p class="placeholder">Run similarity analysis or series analysis to see results here.</p>';
+                }
+                if (resultsTypeLabel) {
+                    resultsTypeLabel.textContent = 'No results yet';
+                }
+                
+                // Clear browser grid
+                if (browserPhotoGrid) {
+                    browserPhotoGrid.innerHTML = '';
+                }
+                
+                updateStatus('Logged out successfully', false);
+                
+            } catch (error) {
+                console.error('Logout error:', error);
+                updateStatus('Logout completed', false);
+            }
+        });
+    }
     
     // Clear database button
     if (clearDatabaseButton) {
@@ -2616,8 +2698,13 @@ async function main() {
     
     // Sort method control event listeners (moved to Results header)
     if (resultsSortSelect) {
-        const savedResultsSort = await db.getSetting('resultsSort');
-        if (savedResultsSort) resultsSortSelect.value = savedResultsSort;
+        // Try to load saved setting (will fail if db not initialized yet, which is fine)
+        try {
+            const savedResultsSort = await db.getSetting('resultsSort');
+            if (savedResultsSort) resultsSortSelect.value = savedResultsSort;
+        } catch (e) {
+            // Database not initialized yet, will be set later after login
+        }
         resultsSortSelect.addEventListener('change', async (e) => {
             const value = e.target.value;
             await db.setSetting('resultsSort', value);
@@ -2678,8 +2765,13 @@ async function main() {
     
     // Browser toolbar events
     if (browserSortSelect) {
-        const savedBrowserSort = await db.getSetting('browserSort');
-        if (savedBrowserSort) browserSortSelect.value = savedBrowserSort;
+        // Try to load saved setting (will fail if db not initialized yet, which is fine)
+        try {
+            const savedBrowserSort = await db.getSetting('browserSort');
+            if (savedBrowserSort) browserSortSelect.value = savedBrowserSort;
+        } catch (e) {
+            // Database not initialized yet, will be set later after login
+        }
         browserSortSelect.addEventListener('change', async (e) => {
             await db.setSetting('browserSort', e.target.value);
             await renderBrowserPhotoGrid();
@@ -2822,13 +2914,7 @@ async function main() {
     // Initialize image modal handlers
     initializeImageModal();
 
-    // Initialize backup panel
-    await initializeBackupPanel();
-    // Initial browser photo grid load (if logged in and a folder is selected)
-    try { 
-        updateBrowserCurrentPath();
-        await renderBrowserPhotoGrid(); 
-    } catch {}
+    // Note: Backup panel is initialized in initializeAfterLogin() for logged-in users
     
     // Cleanup workers on page unload
     window.addEventListener('beforeunload', () => {

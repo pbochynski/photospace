@@ -55,8 +55,30 @@ button:disabled {
   cursor: not-allowed;
 }
 
+#auth-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+#user-info-container {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 #auth-container #user-info {
   margin: 0;
+}
+
+#logout-button {
+  background-color: var(--secondary-color);
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+}
+
+#logout-button:hover:not(:disabled) {
+  background-color: #3a3a3a;
 }
 
 #main-content {
