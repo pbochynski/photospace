@@ -40,25 +40,52 @@ export class EmbeddingProcessor {
     /**
      * Add photos to embedding queue
      * @param {Array<Object>} photos - Photos to add
-     * @param {boolean} priority - If true, add to beginning of queue
+     * @param {boolean} priority - If true, add to beginning of queue (and move existing photos to head)
      */
     async addToQueue(photos, priority = false) {
         if (!photos || photos.length === 0) return;
         
-        // Filter out photos that are already in the queue
-        const queuedFileIds = new Set(this.queue.map(p => p.file_id));
-        const newPhotos = photos.filter(p => !queuedFileIds.has(p.file_id));
-        
-        if (newPhotos.length === 0) {
-            console.log(`⏭️ Skipped adding photos - all ${photos.length} already in queue`);
-            return;
-        }
+        // Create a set of file IDs we want to add
+        const photoFileIds = new Set(photos.map(p => p.file_id));
         
         if (priority) {
-            // Add to beginning of queue (priority for browsed folders)
-            this.queue.unshift(...newPhotos);
-            console.log(`✨ Added ${newPhotos.length} photos to beginning of embedding queue (priority)`);
+            // For priority adds, move existing photos to head and add new ones
+            const existingPhotos = [];
+            const remainingQueue = [];
+            
+            // Separate queue into: photos we're prioritizing vs. others
+            for (const queuedPhoto of this.queue) {
+                if (photoFileIds.has(queuedPhoto.file_id)) {
+                    existingPhotos.push(queuedPhoto);
+                } else {
+                    remainingQueue.push(queuedPhoto);
+                }
+            }
+            
+            // Find truly new photos (not already in queue)
+            const existingFileIds = new Set(existingPhotos.map(p => p.file_id));
+            const newPhotos = photos.filter(p => !existingFileIds.has(p.file_id));
+            
+            // Rebuild queue: new photos first, then moved existing photos, then remaining queue
+            this.queue = [...newPhotos, ...existingPhotos, ...remainingQueue];
+            
+            if (newPhotos.length > 0 && existingPhotos.length > 0) {
+                console.log(`✨ Added ${newPhotos.length} new photos and moved ${existingPhotos.length} existing photos to head of queue (priority)`);
+            } else if (newPhotos.length > 0) {
+                console.log(`✨ Added ${newPhotos.length} photos to beginning of embedding queue (priority)`);
+            } else if (existingPhotos.length > 0) {
+                console.log(`✨ Moved ${existingPhotos.length} photos to head of embedding queue (priority)`);
+            }
         } else {
+            // For non-priority adds, only add photos that aren't already in queue
+            const queuedFileIds = new Set(this.queue.map(p => p.file_id));
+            const newPhotos = photos.filter(p => !queuedFileIds.has(p.file_id));
+            
+            if (newPhotos.length === 0) {
+                console.log(`⏭️ Skipped adding photos - all ${photos.length} already in queue`);
+                return;
+            }
+            
             // Add to end of queue
             this.queue.push(...newPhotos);
             console.log(`📥 Added ${newPhotos.length} photos to embedding queue`);
