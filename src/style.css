@@ -36,23 +36,26 @@ header h1 {
 }
 
 button {
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 6px;
+  background-color: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 1rem;
-  transition: background-color 0.2s;
+  font-size: 0.85rem;
+  transition: all 0.2s;
 }
 
 button:hover:not(:disabled) {
-  background-color: #63a4ff;
+  background-color: var(--border-color);
+  border-color: var(--primary-color);
 }
 
 button:disabled {
-  background-color: #555;
+  background-color: transparent;
+  opacity: 0.5;
   cursor: not-allowed;
+  border-color: #555;
 }
 
 #auth-container {
@@ -71,14 +74,27 @@ button:disabled {
   margin: 0;
 }
 
+#login-button {
+  background-color: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+}
+
+#login-button:hover:not(:disabled) {
+  background-color: rgba(74, 144, 226, 0.1);
+  border-color: #63a4ff;
+  color: #63a4ff;
+}
+
 #logout-button {
-  background-color: var(--secondary-color);
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
 }
 
 #logout-button:hover:not(:disabled) {
-  background-color: #3a3a3a;
+  background-color: var(--border-color);
+  border-color: var(--error-color);
+  color: var(--error-color);
 }
 
 #main-content {
@@ -111,17 +127,19 @@ button:disabled {
 }
 
 .split-btn .split-caret {
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.75rem 0.9rem;
+  background-color: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-left: none;
+  padding: 0.35rem 0.75rem;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
   cursor: pointer;
 }
 
 .split-btn .split-caret:hover {
-  background-color: #63a4ff;
+  background-color: var(--border-color);
+  border-color: var(--primary-color);
 }
 
 .split-btn .menu {
@@ -147,8 +165,9 @@ button:disabled {
   background: transparent;
   border: none;
   color: var(--text-color);
-  padding: 0.6rem 0.9rem;
+  padding: 0.35rem 0.75rem;
   text-align: left;
+  font-size: 0.85rem;
 }
 
 .split-btn .menu button:hover {
@@ -214,6 +233,20 @@ button:disabled {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
+}
+
+.analysis-action button,
+.primary-action {
+  background-color: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
+}
+
+.analysis-action button:hover:not(:disabled),
+.primary-action:hover:not(:disabled) {
+  background-color: rgba(74, 144, 226, 0.1);
+  border-color: #63a4ff;
+  color: #63a4ff;
 }
 
 .analysis-options label {
@@ -347,30 +380,31 @@ button:disabled {
 }
 
 #browse-folder-btn, #clear-folder-btn {
-  background-color: var(--primary-color);
-  padding: 0.5rem;
-  font-size: 0.9rem;
-  min-width: 2.5rem;
-  height: 3rem;
-  border: none;
-  border-radius: 6px;
+  background-color: transparent;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
   cursor: pointer;
-  color: white;
+  color: var(--text-color);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 #clear-folder-btn {
-  background-color: var(--error-color);
+  border-color: rgba(220, 38, 38, 0.3);
+  color: var(--error-color);
 }
 
 #browse-folder-btn:hover {
-  background-color: #63a4ff;
+  background-color: var(--border-color);
+  border-color: var(--primary-color);
 }
 
 #clear-folder-btn:hover {
-  background-color: #ff6b6b;
+  background-color: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.5);
 }
 
 /* Date filter panel */
@@ -497,22 +531,21 @@ button:disabled {
 }
 
 #clear-date-btn {
-  background-color: var(--error-color);
-  padding: 0.5rem;
-  font-size: 0.9rem;
-  min-width: 2.5rem;
-  height: 3rem;
-  border: none;
-  border-radius: 6px;
+  background-color: transparent;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  color: var(--error-color);
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
   cursor: pointer;
-  color: white;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 #clear-date-btn:hover {
-  background-color: #ff6b6b;
+  background-color: rgba(220, 38, 38, 0.1);
+  border-color: rgba(220, 38, 38, 0.5);
 }
 
 /* Mobile responsiveness for filter panels */
@@ -534,9 +567,8 @@ button:disabled {
   }
   
   #browse-folder-btn, #clear-folder-btn, #clear-date-btn {
-    min-width: 2rem;
-    height: 2.5rem;
-    font-size: 0.8rem;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
   }
   
   /* Group header actions on mobile */
@@ -562,13 +594,13 @@ button:disabled {
 }
 
 .secondary-btn {
-  background-color: var(--secondary-color);
+  background-color: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  padding: 0.75rem 1rem;
-  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   transition: all 0.2s;
 }
 
@@ -617,9 +649,7 @@ button:disabled {
 }
 
 #browse-folder-btn {
-  padding: 0.75rem 1rem;
   white-space: nowrap;
-  font-size: 0.9rem;
 }
 
 #results-container h2 {
@@ -1086,8 +1116,9 @@ button:disabled {
 }
 
 .folder-navigation button {
-  padding: 0.5rem 1rem;
-  font-size: 0.9rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  border-radius: 4px;
 }
 
 .folder-list {
@@ -1165,11 +1196,15 @@ button:disabled {
 }
 
 .primary-btn {
-  background-color: var(--success-color);
+  background-color: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--primary-color);
 }
 
 .primary-btn:hover:not(:disabled) {
-  background-color: #3dd6b8;
+  background-color: rgba(74, 144, 226, 0.1);
+  border-color: #63a4ff;
+  color: #63a4ff;
 }
 
 /* Embedding Backup & Sync Styles */
@@ -1271,10 +1306,11 @@ button:disabled {
 }
 
 .file-actions button {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
   background-color: transparent;
   border: 1px solid var(--border-color);
+  border-radius: 4px;
   color: var(--text-color);
 }
 
@@ -1367,9 +1403,10 @@ button:disabled {
   background: transparent;
   color: var(--text-color);
   border: 1px solid var(--border-color);
-  padding: 0.25rem 0.5rem;
+  padding: 0.35rem 0.6rem;
   border-radius: 4px;
   cursor: pointer;
+  font-size: 0.85rem;
 }
 
 .panel-toggle:hover {
@@ -1513,10 +1550,19 @@ button:disabled {
 }
 
 .processing-actions button {
-  min-width: 300px;
-  padding: 0.85rem 1.5rem;
-  font-size: 1rem;
-  font-weight: 600;
+  min-width: 250px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  background-color: transparent;
+  border: 1px solid var(--success-color);
+  color: var(--success-color);
+}
+
+.processing-actions button:hover:not(:disabled) {
+  background-color: rgba(80, 227, 194, 0.1);
+  border-color: #6eecd4;
+  color: #6eecd4;
 }
 
 .processing-row {
@@ -1587,18 +1633,20 @@ button:disabled {
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  background-color: var(--error-color);
-  color: white;
-  border: none;
+  background-color: transparent;
+  border: 2px solid var(--error-color);
+  color: var(--error-color);
   font-size: 20px;
   cursor: pointer;
   z-index: 9999;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-  transition: background-color 0.2s;
+  transition: all 0.2s;
 }
 
 #debug-show-btn:hover {
-  background-color: #ff6b6b;
+  background-color: rgba(220, 38, 38, 0.1);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
 }
 
 #debug-console {
@@ -1636,11 +1684,12 @@ button:disabled {
 }
 
 #debug-controls button {
-  padding: 2px 8px;
-  font-size: 12px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
   min-height: auto;
   background-color: var(--border-color);
   color: var(--text-color);
+  border-radius: 3px;
 }
 
 #debug-controls button:hover {
