@@ -500,6 +500,91 @@ async function initializeServiceWorkerToken() {
     }
 }
 
+/**
+ * Display a photo in the modal viewer
+ * @param {Object} photo - Photo object with file_id and metadata
+ * @param {string} thumbnailSrc - Thumbnail URL for quick display
+ */
+async function displayPhotoInModal(photo, thumbnailSrc) {
+    const modal = document.getElementById('image-modal');
+    const modalImg = document.getElementById('modal-img');
+    
+    currentModalPhoto = photo;
+    populateImageMetadata(photo);
+    
+    if (photo.file_id) {
+        await initializeServiceWorkerToken();
+        modalImg.src = thumbnailSrc;
+        modal.style.display = 'flex';
+        await loadFullSizeImage(photo.file_id, modalImg, thumbnailSrc);
+    } else {
+        modalImg.src = thumbnailSrc;
+        modal.style.display = 'flex';
+    }
+}
+
+/**
+ * Delete a photo from OneDrive and local database
+ * @param {string} fileId - The file ID to delete
+ * @returns {Promise<boolean>} - Success status
+ */
+async function deletePhotoFromOneDrive(fileId) {
+    const token = await getAuthToken();
+    const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Failed to delete: ${response.status} ${response.statusText}`);
+    }
+    
+    await db.deletePhotos([fileId]);
+    return true;
+}
+
+/**
+ * Delete multiple photos with confirmation
+ * @param {Array<Object>} photos - Photos to delete
+ * @param {Function} onSuccess - Callback after successful deletion
+ * @returns {Promise<void>}
+ */
+async function deletePhotosWithConfirmation(photos, onSuccess) {
+    if (photos.length === 0) {
+        alert('No photos selected for deletion.');
+        return;
+    }
+    
+    const photoName = photos.length === 1 ? photos[0].name : null;
+    const confirmMessage = photos.length === 1 
+        ? `Delete "${photoName}"? This cannot be undone.`
+        : `Delete ${photos.length} photo(s)? This cannot be undone.`;
+    
+    if (!confirm(confirmMessage)) {
+        return;
+    }
+    
+    updateStatus(`Deleting ${photos.length} photo(s)...`, true);
+    
+    try {
+        for (const photo of photos) {
+            await deletePhotoFromOneDrive(photo.file_id);
+        }
+        
+        if (onSuccess) {
+            onSuccess();
+        }
+        
+        const successMessage = photos.length === 1 
+            ? `Photo "${photoName}" deleted successfully`
+            : `${photos.length} photos deleted successfully`;
+        updateStatus(successMessage, false);
+    } catch (err) {
+        updateStatus('Error deleting photos: ' + err.message, false);
+        throw err;
+    }
+}
+
 async function displayLoggedIn(account) {
     loginButton.style.display = 'none';
     userInfo.textContent = `Welcome, ${account.name}`;
@@ -769,22 +854,9 @@ function attachResultsEventListeners(groups, type) {
             checkboxes.forEach((cb, idx) => {
                 if (cb.checked) selectedPhotos.push(group.photos[idx]);
             });
-            if (selectedPhotos.length === 0) {
-                alert('No photos selected for deletion.');
-                return;
-            }
-            if (!confirm(`Delete ${selectedPhotos.length} selected photo(s)? This cannot be undone.`)) return;
             
-            updateStatus('Deleting selected photos...', true);
-            try {
-                const token = await getAuthToken();
-                for (const photo of selectedPhotos) {
-                    await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${photo.file_id}`, {
-                        method: 'DELETE',
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    await db.deletePhotos([photo.file_id]);
-                }
+            await deletePhotosWithConfirmation(selectedPhotos, () => {
+                // Update group photos
                 group.photos = group.photos.filter((p, idx) => !checkboxes[idx].checked);
                 
                 // Handle different result types for re-display after deletion
@@ -796,11 +868,7 @@ function attachResultsEventListeners(groups, type) {
                     const filteredGroups = groups.filter(g => g.photos && g.photos.length > 0);
                     displayAnalysisResults(filteredGroups, type);
                 }
-                
-                updateStatus('Selected photos deleted.', false);
-            } catch (err) {
-                updateStatus('Error deleting photos: ' + err.message, false);
-            }
+            });
         });
     });
 
@@ -824,24 +892,7 @@ function attachResultsEventListeners(groups, type) {
                 photo = groups[groupIdx].photos[photoIdx];
             }
             
-            currentModalPhoto = photo;
-            populateImageMetadata(photo);
-            
-            if (fileId) {
-                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-                    const token = await getAuthToken();
-                    navigator.serviceWorker.controller.postMessage({
-                        type: 'SET_TOKEN',
-                        token: token
-                    });
-                }
-                modalImg.src = img.src;
-                modal.style.display = 'flex';
-                await loadFullSizeImage(fileId, modalImg, img.src);
-            } else {
-                modalImg.src = img.src;
-                modal.style.display = 'flex';
-            }
+            await displayPhotoInModal(photo, img.src);
         });
     });
 }
@@ -1049,42 +1100,18 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 }
                 
                 // Try to get full photo data from database (includes quality metrics)
+                let photoToDisplay = photo;
                 try {
                     const dbPhoto = await db.getPhotoById(fileId);
                     if (dbPhoto) {
-                        currentModalPhoto = dbPhoto; // Store for modal actions
-                        populateImageMetadata(dbPhoto);
-                    } else {
-                        // Fallback to OneDrive photo data
-                        currentModalPhoto = photo; // Store for modal actions
-                        populateImageMetadata(photo);
+                        photoToDisplay = dbPhoto;
                     }
                 } catch (error) {
                     console.warn('Could not fetch photo from database:', error);
-                    currentModalPhoto = photo; // Store for modal actions
-                    populateImageMetadata(photo);
                 }
                 
-                if (fileId) {
-                    // Send auth token to service worker
-                    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-                        const token = await getAuthToken();
-                        navigator.serviceWorker.controller.postMessage({
-                            type: 'SET_TOKEN',
-                            token: token
-                        });
-                    }
-                    
-                    // Show modal with thumbnail first
-                    modalImg.src = img.src;
-                    modal.style.display = 'flex';
-                    
-                    // Load full-size image in background
-                    await loadFullSizeImage(fileId, modalImg, img.src);
-                } else {
-                    modalImg.src = img.src;
-                    modal.style.display = 'flex';
-                }
+                // Display photo in modal
+                await displayPhotoInModal(photoToDisplay, img.src);
             });
         });
     } catch (e) {
@@ -1126,46 +1153,25 @@ function initializeImageModal() {
                 return;
             }
             
-            const photoName = currentModalPhoto.name || 'this photo';
-            if (!confirm(`Delete "${photoName}"? This cannot be undone.`)) {
-                return;
-            }
-            
             try {
                 deleteBtn.disabled = true;
                 deleteBtn.textContent = '⏳';
                 
-                // Delete from OneDrive
-                const token = await getAuthToken();
-                const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${currentModalPhoto.file_id}`, {
-                    method: 'DELETE',
-                    headers: { Authorization: `Bearer ${token}` }
+                await deletePhotosWithConfirmation([currentModalPhoto], async () => {
+                    // Close modal
+                    closeModal();
+                    
+                    // Refresh the current view if applicable
+                    if (browserPhotoGrid && browserPhotoGrid.children.length > 0) {
+                        await renderBrowserPhotoGrid(true);
+                    }
                 });
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to delete: ${response.status} ${response.statusText}`);
-                }
-                
-                console.log(`Successfully deleted photo: ${photoName} (${currentModalPhoto.file_id})`);
-                
-                // Delete from local database
-                await db.deletePhotos([currentModalPhoto.file_id]);
-                console.log(`Removed photo from database: ${currentModalPhoto.file_id}`);
-                
-                // Close modal
-                closeModal();
-                
-                // Show success message
-                updateStatus(`Photo "${photoName}" deleted successfully`, false);
-                
-                // Refresh the current view if applicable
-                if (browserPhotoGrid && browserPhotoGrid.children.length > 0) {
-                    await renderBrowserPhotoGrid(true);
-                }
                 
             } catch (error) {
                 console.error('Failed to delete photo:', error);
                 alert(`Failed to delete photo: ${error.message}`);
+            } finally {
+                // Reset delete button
                 deleteBtn.disabled = false;
                 deleteBtn.textContent = '🗑️';
             }
@@ -1630,10 +1636,7 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
         // Check if service worker is available and active
         if (navigator.serviceWorker && navigator.serviceWorker.controller) {
             // Send token to service worker
-            navigator.serviceWorker.controller.postMessage({
-                type: 'SET_TOKEN',
-                token: token
-            });
+            await initializeServiceWorkerToken();
             
             // Use our stable, cacheable URL that the service worker will handle
             const stableImageUrl = `/api/image/${fileId}`;
@@ -2161,16 +2164,10 @@ async function processEmbeddingQueue() {
     console.log(`💻 Using client-side processing for ${totalToProcess} photos`);
     
     // Send auth token to service worker
-    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        try {
-            const token = await getAuthToken();
-            navigator.serviceWorker.controller.postMessage({
-                type: 'SET_TOKEN',
-                token: token
-            });
-        } catch (error) {
-            console.error('Failed to send auth token to service worker:', error);
-        }
+    try {
+        await initializeServiceWorkerToken();
+    } catch (error) {
+        console.error('Failed to send auth token to service worker:', error);
     }
     
     // Process photos using persistent workers (client-side only)
