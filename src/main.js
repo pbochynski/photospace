@@ -42,6 +42,8 @@ const browserUpBtn = document.getElementById('browser-up');
 const browserScanBtn = document.getElementById('browser-scan');
 const browserAnalyzeBtn = document.getElementById('browser-analyze');
 const browserCurrentPath = document.getElementById('browser-current-path');
+const browserToggleSelectBtn = document.getElementById('browser-toggle-select');
+const browserDeleteSelectedBtn = document.getElementById('browser-delete-selected');
 
 // Analysis options
 const similarityThresholdSlider = document.getElementById('similarity-threshold');
@@ -911,12 +913,13 @@ async function renderBrowserPhotoGrid(forceReload = false) {
         });
 
         // Render photos (all)
-        sortedPhotos.forEach((p) => {
+        sortedPhotos.forEach((p, idx) => {
             const item = document.createElement('div');
             item.className = 'photo-item';
             const thumbnailSrc = `/api/thumb/${p.file_id}`;
             item.innerHTML = `
                 <label class="photo-checkbox-label">
+                    <input type="checkbox" class="photo-checkbox browser-photo-checkbox" data-photo-idx="${idx}">
                     <span class="photo-checkbox-custom"></span>
                     <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
                     <div class="photo-score">
@@ -2723,6 +2726,61 @@ async function main() {
             if (resultsPanel) {
                 resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
+        });
+    }
+    if (browserToggleSelectBtn) {
+        browserToggleSelectBtn.addEventListener('click', () => {
+            const checkboxes = browserPhotoGrid.querySelectorAll('.browser-photo-checkbox');
+            
+            if (checkboxes.length === 0) return;
+            
+            // Check if all are selected
+            const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+            
+            // Toggle: if all selected, unselect all; otherwise select all
+            checkboxes.forEach(cb => {
+                cb.checked = !allSelected;
+            });
+            
+            // Update button text
+            browserToggleSelectBtn.textContent = allSelected ? '☑️ Toggle All' : '☐ Toggle All';
+        });
+    }
+    if (browserDeleteSelectedBtn) {
+        browserDeleteSelectedBtn.addEventListener('click', async () => {
+            const checkboxes = browserPhotoGrid.querySelectorAll('.browser-photo-checkbox');
+            const selectedPhotos = [];
+            const photoElements = [];
+            
+            checkboxes.forEach((cb) => {
+                if (cb.checked) {
+                    const idx = parseInt(cb.getAttribute('data-photo-idx'));
+                    // Get photo from currently displayed photos
+                    const img = browserPhotoGrid.querySelectorAll('.photo-item img')[idx];
+                    if (img) {
+                        const fileId = img.getAttribute('data-file-id');
+                        const photoItem = img.closest('.photo-item');
+                        // Find photo data from the current folder
+                        selectedPhotos.push({
+                            file_id: fileId,
+                            name: img.getAttribute('alt') || 'photo'
+                        });
+                        photoElements.push(photoItem);
+                    }
+                }
+            });
+            
+            await deletePhotosWithConfirmation(selectedPhotos, async () => {
+                // Remove deleted photos from the DOM (much faster than reloading entire folder)
+                photoElements.forEach(element => {
+                    if (element && element.parentNode) {
+                        element.remove();
+                    }
+                });
+                
+                // Reset toggle button state
+                browserToggleSelectBtn.textContent = '☑️ Toggle All';
+            });
         });
     }
     
