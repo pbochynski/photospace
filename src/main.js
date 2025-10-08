@@ -173,14 +173,15 @@ const resultsContainer = document.getElementById('results-container');
 
 // Series analysis elements
 const startSeriesAnalysisButton = document.getElementById('start-series-analysis-button');
-const seriesResultsContainer = document.getElementById('series-results-container');
 const seriesMinGroupSizeSlider = document.getElementById('series-min-group-size');
 const seriesMinGroupSizeValueDisplay = document.getElementById('series-min-group-size-value');
 const seriesMinDensitySlider = document.getElementById('series-min-density');
 const seriesMinDensityValueDisplay = document.getElementById('series-min-density-value');
 const seriesTimeGapSlider = document.getElementById('series-time-gap');
 const seriesTimeGapValueDisplay = document.getElementById('series-time-gap-value');
-const seriesResultsSortSelect = document.getElementById('series-results-sort');
+
+// Unified results elements
+const resultsTypeLabel = document.getElementById('results-type-label');
 const browserPhotoGrid = document.getElementById('browser-photo-grid');
 const browserSortSelect = document.getElementById('browser-sort');
 const browserRefreshBtn = document.getElementById('browser-refresh');
@@ -230,12 +231,7 @@ const importResults = document.getElementById('import-results');
 const importSummary = document.getElementById('import-summary');
 const closeImportBtn = document.getElementById('close-import-btn');
 
-// Similar photos elements
-const similarPhotosPanel = document.querySelector('[data-panel-key="similar-photos"]');
-const similarPhotosContainer = document.getElementById('similar-photos-container');
-const similarReferenceName = document.getElementById('similar-reference-name');
-const clearSimilarSearchBtn = document.getElementById('clear-similar-search');
-const similarCountSelect = document.getElementById('similar-count');
+// Modal action buttons
 const modalFindSimilarBtn = document.getElementById('modal-find-similar-btn');
 const modalViewInFolderBtn = document.getElementById('modal-view-in-folder-btn');
 
@@ -244,6 +240,9 @@ let selectedFolderId = null; // null means no folder filter (all folders)
 let selectedFolderPath = null; // null means no folder filter
 let selectedFolderDisplayName = 'All folders'; // Display for no filter
 let currentModalPhoto = null; // Track the photo currently displayed in modal
+let currentResultsType = null; // Track current results type ('similarity', 'series', or 'similar-to')
+let currentReferencePhoto = null; // Track reference photo for similar-to searches
+let currentAnalysisResults = null; // Store current analysis results for re-sorting
 
 // Embedding queue management
 let embeddingWorkers = []; // Persistent workers
@@ -496,47 +495,188 @@ async function displayLoggedIn(account) {
     await initializeServiceWorkerToken();
 }
 
-function displayResults(groups) {
-    resultsContainer.innerHTML = '<h2>Similar Photo Groups</h2>';
+/**
+ * Sort analysis results based on the selected sort method
+ * @param {string} sortMethod - The sort method to apply
+ */
+function sortAnalysisResults(sortMethod) {
+    if (!currentAnalysisResults || currentAnalysisResults.length === 0) {
+        return;
+    }
+    
+    const sortedResults = [...currentAnalysisResults];
+    
+    // Handle flat lists (similar-to) vs grouped results
+    if (currentResultsType === 'similar-to') {
+        // Sort flat photo list
+        sortedResults.sort((a, b) => {
+            switch (sortMethod) {
+                case 'group-size': // For similar-to, sort by similarity
+                    return b.similarity - a.similarity;
+                case 'date-desc':
+                    const aTime = a.photo_taken_ts || new Date(a.last_modified).getTime();
+                    const bTime = b.photo_taken_ts || new Date(b.last_modified).getTime();
+                    return bTime - aTime;
+                case 'date-asc':
+                    const aTimeAsc = a.photo_taken_ts || new Date(a.last_modified).getTime();
+                    const bTimeAsc = b.photo_taken_ts || new Date(b.last_modified).getTime();
+                    return aTimeAsc - bTimeAsc;
+                default:
+                    return 0;
+            }
+        });
+    } else {
+        // Sort grouped results (similarity groups or series)
+        sortedResults.sort((a, b) => {
+            switch (sortMethod) {
+                case 'group-size':
+                    return (b.photos?.length || b.photoCount || 0) - (a.photos?.length || a.photoCount || 0);
+                case 'date-desc':
+                    const aTime = a.timestamp || a.startTime;
+                    const bTime = b.timestamp || b.startTime;
+                    return bTime - aTime;
+                case 'date-asc':
+                    const aTimeAsc = a.timestamp || a.startTime;
+                    const bTimeAsc = b.timestamp || b.startTime;
+                    return aTimeAsc - bTimeAsc;
+                case 'density':
+                    // Only for series
+                    return (b.density || 0) - (a.density || 0);
+                default:
+                    return 0;
+            }
+        });
+    }
+    
+    // Re-display with sorted results
+    displayAnalysisResults(sortedResults, currentResultsType, currentReferencePhoto);
+}
+
+// Unified display function for all analysis results
+function displayAnalysisResults(groups, type = 'similarity', referencePhoto = null) {
+    // Track current results type, reference photo, and results
+    currentResultsType = type;
+    currentReferencePhoto = referencePhoto;
+    currentAnalysisResults = groups; // Store for re-sorting
+    
+    // Update type label
+    if (resultsTypeLabel) {
+        let typeText;
+        if (type === 'similar-to') {
+            typeText = `Photos Similar To: ${referencePhoto?.name || 'Selected Photo'}`;
+        } else if (type === 'similarity') {
+            typeText = 'Similar Photo Groups';
+        } else {
+            typeText = 'Large Photo Series';
+        }
+        resultsTypeLabel.textContent = typeText;
+    }
+    
+    resultsContainer.innerHTML = '';
+    
     if (groups.length === 0) {
-        resultsContainer.innerHTML += '<p>No significant groups of similar photos found.</p>';
+        resultsContainer.innerHTML = '<p class="placeholder">No results found with current criteria.</p>';
         return;
     }
 
+    // Handle flat list of photos (similar-to) vs grouped results
+    if (type === 'similar-to') {
+        // Display as a single flat grid with similarity scores
+        const groupElement = document.createElement('div');
+        groupElement.className = 'similarity-group';
+        groupElement.innerHTML = `
+            <div class="group-header">
+                <h3>${groups.length} similar photo${groups.length !== 1 ? 's' : ''} found</h3>
+                <p>Showing photos ordered by similarity</p>
+            </div>
+            <div class="photo-grid"></div>
+        `;
+        
+        const photoGrid = groupElement.querySelector('.photo-grid');
+        groups.forEach((photo, idx) => {
+            const photoItem = document.createElement('div');
+            photoItem.className = 'photo-item';
+            const thumbnailSrc = `/api/thumb/${photo.file_id}`;
+            const similarityPercent = Math.round(photo.similarity * 100);
+            
+            photoItem.innerHTML = `
+                <label class="photo-checkbox-label">
+                    <span class="photo-checkbox-custom"></span>
+                    <img src="${thumbnailSrc}" data-file-id="${photo.file_id}" data-photo-idx="${idx}" alt="${photo.name || ''}" loading="lazy">
+                    <div class="photo-score">
+                        <div class="similarity-score">Similarity: ${similarityPercent}%</div>
+                        <div class="photo-path">${photo.path ? photo.path.replace('/drive/root:', '') || '/' : ''}</div>
+                        ${photo.quality_score ? `<div class="quality-info">Quality: ${Math.round(photo.quality_score * 100)}%</div>` : ''}
+                    </div>
+                </label>
+            `;
+            photoGrid.appendChild(photoItem);
+        });
+        
+        resultsContainer.appendChild(groupElement);
+        attachResultsEventListeners([{ photos: groups }], type);
+        return;
+    }
+    
+    // Handle grouped results (similarity groups or series)
     groups.forEach((group, groupIdx) => {
-        // Remove empty groups
         if (!group.photos || group.photos.length === 0) return;
 
         const groupElement = document.createElement('div');
         groupElement.className = 'similarity-group';
 
-        const groupDate = new Date(group.timestamp).toLocaleDateString();
+        // Build header based on type
+        let headerHTML = '';
+        if (type === 'similarity') {
+            const groupDate = new Date(group.timestamp).toLocaleDateString();
+            headerHTML = `
+                <h3>${group.photos.length} similar photos from ${groupDate}</h3>
+                <p>Similarity: >${(group.similarity * 100).toFixed(0)}%</p>
+            `;
+        } else {
+            const startDate = new Date(group.startTime).toLocaleString();
+            const endDate = new Date(group.endTime).toLocaleString();
+            const durationMinutes = Math.round(group.timeSpanMinutes);
+            const durationDisplay = durationMinutes < 60 
+                ? `${durationMinutes} min` 
+                : `${(group.timeSpanMinutes / 60).toFixed(1)} hours`;
+            headerHTML = `
+                <h3>${group.photoCount} photos in ${durationDisplay}</h3>
+                <p>Density: ${group.density.toFixed(2)} photos/min • Avg: ${group.avgTimeBetweenPhotos.toFixed(2)} min</p>
+                <p style="font-size: 0.85rem; color: #aaa;">${startDate} → ${endDate}</p>
+            `;
+        }
+        
         groupElement.innerHTML = `
             <div class="group-header">
-                <h3>${group.photos.length} similar photos from ${groupDate}</h3>
-                <p>Similarity Score: >${(group.similarity * 100).toFixed(0)}%</p>
+                ${headerHTML}
                 <button class="delete-selected-btn" data-group-idx="${groupIdx}">Delete Selected Photos</button>
             </div>
             <div class="photo-grid"></div>
         `;
+        
         const photoGrid = groupElement.querySelector('.photo-grid');
 
         group.photos.forEach((p, idx) => {
             const photoItem = document.createElement('div');
             photoItem.className = 'photo-item';
-            
-            // Use service worker thumbnail endpoint instead of direct OneDrive URL
             const thumbnailSrc = `/api/thumb/${p.file_id}`;
+            
+            // Build photo info based on type
+            let photoInfo = `<div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : ''}</div>`;
+            if (type === 'series') {
+                photoInfo += `<div class="photo-time">${new Date(p.photo_taken_ts).toLocaleTimeString()}</div>`;
+            }
+            if (p.quality_score) {
+                photoInfo += `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>`;
+            }
             
             photoItem.innerHTML = `
                 <label class="photo-checkbox-label">
-                    <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${idx === 0 ? '' : 'checked'}>
+                    <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${type === 'similarity' && idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
-                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
-                    <div class="photo-score">
-                        <div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}</div>
-                        ${p.quality_score ? `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>` : ''}
-                    </div>
+                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
+                    <div class="photo-score">${photoInfo}</div>
                 </label>
             `;
             photoGrid.appendChild(photoItem);
@@ -545,9 +685,15 @@ function displayResults(groups) {
         resultsContainer.appendChild(groupElement);
     });
 
-    // Add event listeners for delete buttons
+    // Attach event listeners
+    attachResultsEventListeners(groups, type);
+}
+
+// Attach event listeners for results (delete buttons and image clicks)
+function attachResultsEventListeners(groups, type) {
+    // Delete buttons
     document.querySelectorAll('.delete-selected-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', async () => {
             const groupIdx = parseInt(btn.getAttribute('data-group-idx'));
             const group = groups[groupIdx];
             const checkboxes = resultsContainer.querySelectorAll(`.photo-checkbox[data-group-idx="${groupIdx}"]`);
@@ -560,26 +706,20 @@ function displayResults(groups) {
                 return;
             }
             if (!confirm(`Delete ${selectedPhotos.length} selected photo(s)? This cannot be undone.`)) return;
-            // Call delete logic (OneDrive API)
+            
             updateStatus('Deleting selected photos...', true);
             try {
                 const token = await getAuthToken();
                 for (const photo of selectedPhotos) {
-                    console.log(`Deleting photo: ${photo.name} (${photo.file_id})`);
                     await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${photo.file_id}`, {
                         method: 'DELETE',
                         headers: { Authorization: `Bearer ${token}` }
                     });
-                    console.log(`Successfully deleted photo: ${photo.name} (${photo.file_id})`);
-                    // Optionally, remove from local DB
                     await db.deletePhotos([photo.file_id]);
-                    console.log(`Deleted photo: ${photo.name} (${photo.file_id})`);
                 }
-                // Remove deleted photos from group
                 group.photos = group.photos.filter((p, idx) => !checkboxes[idx].checked);
-                // Remove empty groups
                 const filteredGroups = groups.filter(g => g.photos && g.photos.length > 0);
-                displayResults(filteredGroups);
+                displayAnalysisResults(filteredGroups, type);
                 updateStatus('Selected photos deleted.', false);
             } catch (err) {
                 updateStatus('Error deleting photos: ' + err.message, false);
@@ -587,185 +727,30 @@ function displayResults(groups) {
         });
     });
 
-    // Add event listeners for image click to show modal (only for results, not browser)
+    // Image clicks for modal
     resultsContainer.querySelectorAll('.photo-item img').forEach(img => {
-        img.addEventListener('click', async (e) => {
-            e.stopPropagation(); // Prevent event bubbling
-            e.preventDefault(); // Prevent default label/checkbox toggle
-            const modal = document.getElementById('image-modal');
-            const modalImg = document.getElementById('modal-img');
-            
-            // Get the file ID and photo data
-            const fileId = img.getAttribute('data-file-id');
-            const groupIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-group-idx'));
-            const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
-            const photo = groups[groupIdx].photos[photoIdx];
-            
-            // Store current photo for modal actions (e.g., delete)
-            currentModalPhoto = photo;
-            
-            // Populate metadata overlay
-            populateImageMetadata(photo);
-            
-            if (fileId) {
-                // Send auth token to service worker for both thumbnail and full-size requests
-                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-                    const token = await getAuthToken();
-                    navigator.serviceWorker.controller.postMessage({
-                        type: 'SET_TOKEN',
-                        token: token
-                    });
-                }
-                
-                // Step 1: Show modal immediately with thumbnail (already loaded via service worker)
-                modalImg.src = img.src; // Use existing thumbnail from service worker
-                modal.style.display = 'flex';
-                
-                // Step 2: Load full-size image in background
-                const blobUrl = await loadFullSizeImage(fileId, modalImg, img.src);
-                
-                // Step 3: Set up cleanup for blob URLs if needed
-                if (blobUrl) {
-                    const cleanup = () => {
-                        // Note: We don't revoke immediately as it might be in our cache
-                        // The cache will handle cleanup when it reaches capacity
-                        modal.removeEventListener('hide', cleanup);
-                    };
-                    
-                    modal.addEventListener('hide', cleanup);
-                }
-            } else {
-                // Fallback to thumbnail if no file ID
-                modalImg.src = img.src;
-                modal.style.display = 'flex';
-            }
-        });
-    });
-
-}
-
-// Display series analysis results
-function displaySeriesResults(seriesGroups) {
-    seriesResultsContainer.innerHTML = '<h2>Large Photo Series</h2>';
-    if (seriesGroups.length === 0) {
-        seriesResultsContainer.innerHTML += '<p>No large photo series found with current criteria.</p>';
-        return;
-    }
-
-    seriesGroups.forEach((series, seriesIdx) => {
-        // Remove empty series
-        if (!series.photos || series.photos.length === 0) return;
-
-        const seriesElement = document.createElement('div');
-        seriesElement.className = 'similarity-group'; // Reuse existing styles
-
-        const startDate = new Date(series.startTime).toLocaleString();
-        const endDate = new Date(series.endTime).toLocaleString();
-        const durationMinutes = Math.round(series.timeSpanMinutes);
-        const durationHours = (series.timeSpanMinutes / 60).toFixed(1);
-        const durationDisplay = durationMinutes < 60 
-            ? `${durationMinutes} min` 
-            : `${durationHours} hours`;
-        
-        seriesElement.innerHTML = `
-            <div class="group-header">
-                <h3>${series.photoCount} photos in ${durationDisplay}</h3>
-                <p>Density: ${series.density.toFixed(2)} photos/min • Avg interval: ${series.avgTimeBetweenPhotos.toFixed(2)} min</p>
-                <p style="font-size: 0.9rem; color: #aaa;">From: ${startDate} → To: ${endDate}</p>
-                <button class="delete-selected-btn" data-series-idx="${seriesIdx}">Delete Selected Photos</button>
-            </div>
-            <div class="photo-grid"></div>
-        `;
-        const photoGrid = seriesElement.querySelector('.photo-grid');
-
-        series.photos.forEach((p, idx) => {
-            const photoItem = document.createElement('div');
-            photoItem.className = 'photo-item';
-            
-            // Use service worker thumbnail endpoint
-            const thumbnailSrc = `/api/thumb/${p.file_id}`;
-            
-            photoItem.innerHTML = `
-                <label class="photo-checkbox-label">
-                    <input type="checkbox" class="photo-checkbox" data-series-idx="${seriesIdx}" data-photo-idx="${idx}">
-                    <span class="photo-checkbox-custom"></span>
-                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name}" loading="lazy">
-                    <div class="photo-score">
-                        <div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : 'Unknown path'}</div>
-                        <div class="photo-time">${new Date(p.photo_taken_ts).toLocaleTimeString()}</div>
-                        ${p.quality_score ? `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>` : ''}
-                    </div>
-                </label>
-            `;
-            photoGrid.appendChild(photoItem);
-        });
-
-        seriesResultsContainer.appendChild(seriesElement);
-    });
-
-    // Add event listeners for delete buttons
-    document.querySelectorAll('.delete-selected-btn[data-series-idx]').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const seriesIdx = parseInt(btn.getAttribute('data-series-idx'));
-            const series = seriesGroups[seriesIdx];
-            const checkboxes = seriesResultsContainer.querySelectorAll(`.photo-checkbox[data-series-idx="${seriesIdx}"]`);
-            const selectedPhotos = [];
-            checkboxes.forEach((cb, idx) => {
-                if (cb.checked) selectedPhotos.push(series.photos[idx]);
-            });
-            if (selectedPhotos.length === 0) {
-                alert('No photos selected for deletion.');
-                return;
-            }
-            if (!confirm(`Delete ${selectedPhotos.length} selected photo(s)? This cannot be undone.`)) return;
-            // Call delete logic (OneDrive API)
-            updateStatus('Deleting selected photos...', true);
-            try {
-                const token = await getAuthToken();
-                for (const photo of selectedPhotos) {
-                    console.log(`Deleting photo: ${photo.name} (${photo.file_id})`);
-                    await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${photo.file_id}`, {
-                        method: 'DELETE',
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    console.log(`Successfully deleted photo: ${photo.name} (${photo.file_id})`);
-                    // Remove from local DB
-                    await db.deletePhotos([photo.file_id]);
-                }
-                // Remove deleted photos from series
-                series.photos = series.photos.filter((p, idx) => !checkboxes[idx].checked);
-                // Remove empty series
-                const filteredSeries = seriesGroups.filter(s => s.photos && s.photos.length > 0);
-                displaySeriesResults(filteredSeries);
-                updateStatus('Selected photos deleted.', false);
-            } catch (err) {
-                updateStatus('Error deleting photos: ' + err.message, false);
-            }
-        });
-    });
-
-    // Add event listeners for image click to show modal
-    seriesResultsContainer.querySelectorAll('.photo-item img').forEach(img => {
         img.addEventListener('click', async (e) => {
             e.stopPropagation();
             e.preventDefault();
             const modal = document.getElementById('image-modal');
             const modalImg = document.getElementById('modal-img');
-            
-            // Get the file ID and photo data
             const fileId = img.getAttribute('data-file-id');
-            const seriesIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-series-idx'));
-            const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
-            const photo = seriesGroups[seriesIdx].photos[photoIdx];
             
-            // Store current photo for modal actions
+            // Get photo based on type
+            let photo;
+            if (type === 'similar-to') {
+                const photoIdx = parseInt(img.getAttribute('data-photo-idx'));
+                photo = groups[0].photos[photoIdx];
+            } else {
+                const groupIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-group-idx'));
+                const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
+                photo = groups[groupIdx].photos[photoIdx];
+            }
+            
             currentModalPhoto = photo;
-            
-            // Populate metadata overlay
             populateImageMetadata(photo);
             
             if (fileId) {
-                // Send auth token to service worker
                 if (navigator.serviceWorker && navigator.serviceWorker.controller) {
                     const token = await getAuthToken();
                     navigator.serviceWorker.controller.postMessage({
@@ -773,12 +758,8 @@ function displaySeriesResults(seriesGroups) {
                         token: token
                     });
                 }
-                
-                // Show modal with thumbnail
                 modalImg.src = img.src;
                 modal.style.display = 'flex';
-                
-                // Load full-size image in background
                 await loadFullSizeImage(fileId, modalImg, img.src);
             } else {
                 modalImg.src = img.src;
@@ -787,6 +768,7 @@ function displaySeriesResults(seriesGroups) {
         });
     });
 }
+
 
 // Render photos for the currently selected folder in the browser panel
 async function renderBrowserPhotoGrid(forceReload = false) {
@@ -844,10 +826,10 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                         last_modified: photo.last_modified || new Date().toISOString(),
                         photo_taken_ts: photoTakenTs,
                         thumbnail_url: photo.thumbnail_url || null,
-                        // Use embedding from server if available, otherwise use existing or null
-                        embedding_status: photo.embedding ? 1 : (existing ? existing.embedding_status : 0),
-                        embedding: photo.embedding || (existing ? existing.embedding : null),
-                        quality_score: photo.quality_score || (existing ? existing.quality_score : null),
+                        // Keep existing embeddings if photo was already indexed
+                        embedding_status: existing ? existing.embedding_status : 0,
+                        embedding: existing ? existing.embedding : null,
+                        quality_score: existing ? existing.quality_score : null,
                         scan_id: scanId
                     };
                 });
@@ -1485,118 +1467,6 @@ async function findSimilarToPhoto(referenceFileId, maxResults = 20) {
     }
 }
 
-/**
- * Display similar photos in the similar photos panel
- * @param {Array} photos - Array of photos with similarity scores
- * @param {Object} referencePhoto - The reference photo object
- */
-async function displaySimilarPhotos(photos, referencePhoto) {
-    // Show the panel
-    if (similarPhotosPanel) {
-        similarPhotosPanel.style.display = 'block';
-    }
-    
-    // Update reference photo name
-    if (similarReferenceName) {
-        similarReferenceName.textContent = referencePhoto.name || 'Unknown';
-    }
-    
-    // Clear and populate container
-    if (!similarPhotosContainer) return;
-    
-    if (photos.length === 0) {
-        similarPhotosContainer.innerHTML = '<p class="placeholder">No similar photos found.</p>';
-        return;
-    }
-    
-    similarPhotosContainer.innerHTML = `
-        <div class="similar-info">
-            Found ${photos.length} similar photo${photos.length !== 1 ? 's' : ''}
-        </div>
-        <div class="photo-grid" id="similar-photo-grid"></div>
-    `;
-    
-    const photoGrid = document.getElementById('similar-photo-grid');
-    
-    photos.forEach((photo, idx) => {
-        const photoItem = document.createElement('div');
-        photoItem.className = 'photo-item';
-        
-        const thumbnailSrc = `/api/thumb/${photo.file_id}`;
-        const similarityPercent = Math.round(photo.similarity * 100);
-        
-        photoItem.innerHTML = `
-            <label class="photo-checkbox-label">
-                <span class="photo-checkbox-custom"></span>
-                <img src="${thumbnailSrc}" data-file-id="${photo.file_id}" alt="${photo.name || ''}" loading="lazy">
-                <div class="photo-score">
-                    <div class="similarity-score">Similarity: ${similarityPercent}%</div>
-                    <div class="photo-path">${photo.path ? photo.path.replace('/drive/root:', '') || '/' : ''}</div>
-                    ${photo.quality_score ? `<div class="quality-info">Quality: ${Math.round(photo.quality_score * 100)}%</div>` : ''}
-                </div>
-            </label>
-        `;
-        
-        photoGrid.appendChild(photoItem);
-    });
-    
-    // Add click event listeners for full-screen view
-    photoGrid.querySelectorAll('.photo-item img').forEach((img, idx) => {
-        img.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            
-            const modal = document.getElementById('image-modal');
-            const modalImg = document.getElementById('modal-img');
-            const fileId = img.getAttribute('data-file-id');
-            const photo = photos[idx];
-            
-            if (!photo) return;
-            
-            // Try to get full photo data from database
-            try {
-                const dbPhoto = await db.getPhotoById(fileId);
-                if (dbPhoto) {
-                    currentModalPhoto = dbPhoto;
-                    populateImageMetadata(dbPhoto);
-                } else {
-                    currentModalPhoto = photo;
-                    populateImageMetadata(photo);
-                }
-            } catch (error) {
-                console.warn('Could not fetch photo from database:', error);
-                currentModalPhoto = photo;
-                populateImageMetadata(photo);
-            }
-            
-            if (fileId) {
-                // Send auth token to service worker
-                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-                    const token = await getAuthToken();
-                    navigator.serviceWorker.controller.postMessage({
-                        type: 'SET_TOKEN',
-                        token: token
-                    });
-                }
-                
-                // Show modal with thumbnail first
-                modalImg.src = img.src;
-                modal.style.display = 'flex';
-                
-                // Load full-size image in background
-                await loadFullSizeImage(fileId, modalImg, img.src);
-            } else {
-                modalImg.src = img.src;
-                modal.style.display = 'flex';
-            }
-        });
-    });
-    
-    // Scroll to similar photos panel
-    if (similarPhotosPanel) {
-        similarPhotosPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-}
 
 /**
  * Handle "Find Similar Photos" button click
@@ -1622,22 +1492,25 @@ async function handleFindSimilarClick() {
         
         updateStatus('Finding similar photos...', false);
         
-        // Get max results from selector
-        const maxResults = similarCountSelect ? parseInt(similarCountSelect.value) : 20;
-        
-        // Find similar photos
-        const similarPhotos = await findSimilarToPhoto(currentModalPhoto.file_id, maxResults);
+        // Find similar photos (default 50 results)
+        const similarPhotos = await findSimilarToPhoto(currentModalPhoto.file_id, 50);
         
         // Update URL with query parameter
         updateURLWithSimilarPhoto(currentModalPhoto.file_id);
         
-        // Display results
-        await displaySimilarPhotos(similarPhotos, currentModalPhoto);
+        // Display results using unified function
+        displayAnalysisResults(similarPhotos, 'similar-to', currentModalPhoto);
         
         // Close the modal
         const modal = document.getElementById('image-modal');
         if (modal) {
             modal.style.display = 'none';
+        }
+        
+        // Scroll to results panel
+        const resultsPanel = document.querySelector('[data-panel-key="results"]');
+        if (resultsPanel) {
+            resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         
         updateStatus(`Found ${similarPhotos.length} similar photos`, false);
@@ -1656,18 +1529,17 @@ async function handleFindSimilarClick() {
 }
 
 /**
- * Clear similar photos search and hide panel
+ * Clear similar photos search
  */
 function clearSimilarPhotosSearch() {
-    if (similarPhotosPanel) {
-        similarPhotosPanel.style.display = 'none';
+    // Clear results
+    currentResultsType = null;
+    currentReferencePhoto = null;
+    currentAnalysisResults = null;
+    if (resultsTypeLabel) {
+        resultsTypeLabel.textContent = 'No results yet';
     }
-    if (similarPhotosContainer) {
-        similarPhotosContainer.innerHTML = '<p class="placeholder">Find similar photos using the 🔍 button in full-screen photo view.</p>';
-    }
-    if (similarReferenceName) {
-        similarReferenceName.textContent = '-';
-    }
+    resultsContainer.innerHTML = '<p class="placeholder">Run similarity analysis or series analysis to see results here.</p>';
     
     // Remove URL parameter
     const url = new URL(window.location);
@@ -1713,14 +1585,11 @@ async function restoreSimilarPhotosFromURL() {
             return;
         }
         
-        // Get max results from selector (use default if not set)
-        const maxResults = similarCountSelect ? parseInt(similarCountSelect.value) : 20;
+        // Find similar photos (50 results)
+        const similarPhotos = await findSimilarToPhoto(fileId, 50);
         
-        // Find similar photos
-        const similarPhotos = await findSimilarToPhoto(fileId, maxResults);
-        
-        // Display results
-        await displaySimilarPhotos(similarPhotos, referencePhoto);
+        // Display results using unified function
+        displayAnalysisResults(similarPhotos, 'similar-to', referencePhoto);
         
         updateStatus(`Restored similar photos view (${similarPhotos.length} photos)`, false);
         
@@ -2228,7 +2097,7 @@ async function runAnalysisForScope(scope) {
             }
 
             // Display results immediately
-            displayResults(similarGroups);
+            displayAnalysisResults(similarGroups, 'similarity');
             
             // Show final status with filtering info
             let finalStatus = 'Analysis complete!';
@@ -2309,7 +2178,7 @@ async function runSeriesAnalysisForScope(scope) {
         const minGroupSize = await getSeriesMinGroupSize();
         const minDensity = await getSeriesMinDensity();
         const maxTimeGap = await getSeriesMaxTimeGap();
-        const sortMethod = await getSeriesSortMethod();
+        const sortMethod = await getSortMethod();
         
         // Show filter summary
         let filterSummary = `Analyzing ${filteredPhotos.length} photos from ${scopeDescription}`;
@@ -2335,16 +2204,16 @@ async function runSeriesAnalysisForScope(scope) {
         console.log(`📊 Found ${seriesGroups.length} large photo series`);
 
         // Display results immediately
-        displaySeriesResults(seriesGroups);
+        displayAnalysisResults(seriesGroups, 'series');
         
         // Show final status
         updateStatus(`Series analysis complete! Found ${seriesGroups.length} large photo series.`, false);
         startSeriesAnalysisButton.disabled = false;
 
         // Scroll to results
-        const seriesResultsPanel = document.querySelector('[data-panel-key="series-results"]');
-        if (seriesResultsPanel) {
-            seriesResultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const resultsPanel = document.querySelector('[data-panel-key="results"]');
+        if (resultsPanel) {
+            resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
     } catch (error) {
@@ -2525,17 +2394,6 @@ async function initializeAnalysisSettings() {
             }
         }
         
-        if (seriesResultsSortSelect) {
-            const savedSeriesSort = await db.getSetting('seriesResultsSort');
-            const seriesSort = savedSeriesSort !== null ? savedSeriesSort : 'series-size';
-            
-            seriesResultsSortSelect.value = seriesSort;
-            
-            if (savedSeriesSort === null) {
-                await db.setSetting('seriesResultsSort', seriesSort);
-            }
-        }
-        
         console.log('Series analysis settings initialized');
         
         return true;
@@ -2653,16 +2511,6 @@ async function getSeriesMaxTimeGap() {
     }
 }
 
-async function getSeriesSortMethod() {
-    try {
-        const sortMethod = await db.getSetting('seriesResultsSort');
-        return sortMethod !== null ? sortMethod : 'series-size';
-    } catch (error) {
-        console.error('Error getting series sort method:', error);
-        return 'series-size';
-    }
-}
-
 // --- Main Application Startup ---
 // NEW: We wrap the startup logic in an async function to use await.
 async function main() {
@@ -2770,7 +2618,12 @@ async function main() {
                 await db.clearAllPhotos();
                 
                 // Clear results display
-                resultsContainer.innerHTML = '<p class="placeholder">Analysis results will appear here. Groups with the most similar photos will be shown first.</p>';
+                currentResultsType = null;
+                currentAnalysisResults = null;
+                if (resultsTypeLabel) {
+                    resultsTypeLabel.textContent = 'No results yet';
+                }
+                resultsContainer.innerHTML = '<p class="placeholder">Run similarity analysis or series analysis to see results here.</p>';
                 
                 // Clear similar photos panel
                 clearSimilarPhotosSearch();
@@ -2800,27 +2653,6 @@ async function main() {
             const enabled = autoStartEmbeddingsCheckbox.checked;
             await db.setSetting('autoStartEmbeddings', enabled);
             console.log(`Auto-start embeddings: ${enabled ? 'enabled' : 'disabled'}`);
-        });
-    }
-    
-    // Server URL input
-    const serverUrlInput = document.getElementById('server-url-input');
-    if (serverUrlInput) {
-        // Load saved server URL
-        const savedServerUrl = await db.getSetting('serverUrl');
-        if (savedServerUrl) {
-            serverUrlInput.value = savedServerUrl;
-        }
-        
-        // Save server URL on change (debounced)
-        let serverUrlTimeout;
-        serverUrlInput.addEventListener('input', () => {
-            clearTimeout(serverUrlTimeout);
-            serverUrlTimeout = setTimeout(async () => {
-                const url = serverUrlInput.value.trim();
-                await db.setSetting('serverUrl', url);
-                console.log(`Server URL ${url ? 'set to: ' + url : 'cleared (using local processing)'}`);
-            }, 500); // 500ms debounce
         });
     }
     
@@ -2891,9 +2723,9 @@ async function main() {
         resultsSortSelect.addEventListener('change', async (e) => {
             const value = e.target.value;
             await db.setSetting('resultsSort', value);
-            // Re-run analysis if results are currently displayed
-            if (resultsContainer.children.length > 1) {
-                await runAnalysisForScope('all');
+            // Re-sort existing results if available
+            if (currentAnalysisResults && currentAnalysisResults.length > 0) {
+                sortAnalysisResults(value);
             }
         });
     }
@@ -2943,19 +2775,6 @@ async function main() {
             const value = parseInt(e.target.value);
             seriesTimeGapValueDisplay.textContent = `${value} minutes`;
             await db.setSetting('seriesMaxTimeGap', value);
-        });
-    }
-    
-    if (seriesResultsSortSelect) {
-        const savedSeriesSort = await db.getSetting('seriesResultsSort');
-        if (savedSeriesSort) seriesResultsSortSelect.value = savedSeriesSort;
-        seriesResultsSortSelect.addEventListener('change', async (e) => {
-            const value = e.target.value;
-            await db.setSetting('seriesResultsSort', value);
-            // Re-run analysis if results are currently displayed
-            if (seriesResultsContainer.children.length > 1) {
-                await runSeriesAnalysisForScope('all');
-            }
         });
     }
     
@@ -3030,18 +2849,6 @@ async function main() {
     }
     if (modalViewInFolderBtn) {
         modalViewInFolderBtn.addEventListener('click', viewPhotoInFolder);
-    }
-    if (clearSimilarSearchBtn) {
-        clearSimilarSearchBtn.addEventListener('click', clearSimilarPhotosSearch);
-    }
-    if (similarCountSelect) {
-        similarCountSelect.addEventListener('change', async () => {
-            // If a similar search is currently displayed, refresh it with new count
-            const fileId = getSimilarPhotoFromURL();
-            if (fileId) {
-                await restoreSimilarPhotosFromURL();
-            }
-        });
     }
     
     // Backup functionality event listeners
