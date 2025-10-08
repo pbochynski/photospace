@@ -802,7 +802,7 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                         path: photo.path || '/drive/root:',
                         last_modified: photo.last_modified || new Date().toISOString(),
                         photo_taken_ts: photoTakenTs,
-                        thumbnail_url: photo.thumbnail_url || null,
+                        thumbnail_url: null,
                         // Keep existing embeddings if photo was already indexed
                         embedding_status: existing ? existing.embedding_status : 0,
                         embedding: existing ? existing.embedding : null,
@@ -1376,7 +1376,7 @@ async function scanSingleFolder(folderPath) {
         const token = await getAuthToken();
         if (!token) throw new Error("Authentication token not available.");
         
-        let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId || 'root'}/children?$expand=thumbnails`;
+        let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId || 'root'}/children`;
         let photosFound = 0;
         let subfoldersFound = 0;
         
@@ -1410,7 +1410,7 @@ async function scanSingleFolder(folderPath) {
                         photo_taken_ts: item.photo.takenDateTime ? 
                             new Date(item.photo.takenDateTime).getTime() : 
                             new Date(item.createdDateTime).getTime(),
-                        thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
+                        thumbnail_url: null,
                         scan_id: newScanId,
                         embedding_status: 0,
                         embedding: null,

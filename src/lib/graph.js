@@ -48,7 +48,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
     if (!token) throw new Error("Authentication token not available.");
 
     let photoCount = 0;
-    let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+    let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
     
     while (nextPageUrl) {
         console.log(`Processing single folder ID: ${folderId}, page: ${photoCount > 0 ? 'next' : 'first'}`);
@@ -72,7 +72,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
                     path: fullPath,
                     last_modified: item.lastModifiedDateTime,
                     photo_taken_ts: item.photo.takenDateTime,
-                    thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
+                    thumbnail_url: null,
                     scan_id: scanId,
                     embedding_status: 0, // 0 = pending client-side processing
                     embedding: null,
@@ -128,7 +128,7 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                 console.log(`Processing folder ID: ${folderId}`);
                 
                 // Fetch all pages from this folder
-                let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+                let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
                 let pageNumber = 0;
                 
                 while (nextPageUrl) {
@@ -150,7 +150,7 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                                 name: item.name,
                                 path: item.parentReference?.path,
                                 photo_taken_ts: item.photo.takenDateTime ? new Date(item.photo.takenDateTime).getTime() : new Date(item.createdDateTime).getTime(),
-                                thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
+                                thumbnail_url: null,
                                 embedding_status: 0, // 0 = pending client-side processing
                                 embedding: null,
                                 quality_score: null,
@@ -258,7 +258,7 @@ export async function fetchFolderChildren(folderId = 'root') {
         const photos = [];
 
         // Fetch all pages from this folder
-        let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$expand=thumbnails`;
+        let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
         let pageNumber = 0;
         
         while (nextPageUrl) {
@@ -284,7 +284,7 @@ export async function fetchFolderChildren(folderId = 'root') {
                         path: item.parentReference?.path || '/drive/root:',
                         last_modified: item.lastModifiedDateTime,
                         photo_taken_ts: item.photo.takenDateTime || item.createdDateTime,
-                        thumbnail_url: item.thumbnails?.[0]?.large?.url || null
+                        thumbnail_url: null
                     });
                 }
             }
