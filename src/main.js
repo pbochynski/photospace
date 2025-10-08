@@ -164,7 +164,6 @@ const userInfo = document.getElementById('user-info');
 const mainContent = document.getElementById('main-content');
 const statusText = document.getElementById('status-text');
 const progressBar = document.getElementById('progress-bar');
-const startScanButton = document.getElementById('start-scan-button');
 const autoStartEmbeddingsCheckbox = document.getElementById('auto-start-embeddings-checkbox');
 const pauseResumeEmbeddingsBtn = document.getElementById('pause-resume-embeddings');
 const clearDatabaseButton = document.getElementById('clear-database-button');
@@ -186,7 +185,7 @@ const browserPhotoGrid = document.getElementById('browser-photo-grid');
 const browserSortSelect = document.getElementById('browser-sort');
 const browserRefreshBtn = document.getElementById('browser-refresh');
 const browserUpBtn = document.getElementById('browser-up');
-const browserAddScannedBtn = document.getElementById('browser-add-scanned');
+const browserScanBtn = document.getElementById('browser-scan');
 const browserAnalyzeBtn = document.getElementById('browser-analyze');
 const browserCurrentPath = document.getElementById('browser-current-path');
 
@@ -586,10 +585,17 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
         groupElement.className = 'similarity-group';
         groupElement.innerHTML = `
             <div class="group-header">
-                <h3>${groups.length} similar photo${groups.length !== 1 ? 's' : ''} found</h3>
-                <p>Showing photos ordered by similarity</p>
+                <div class="group-header-info">
+                    <h3>${groups.length} similar photo${groups.length !== 1 ? 's' : ''} found</h3>
+                    <p>Showing photos ordered by similarity</p>
+                </div>
+                <div class="group-header-actions">
+                    <button class="toggle-collapse-btn" data-group-idx="0" title="Collapse/Expand results">▾</button>
+                    <button class="toggle-select-all-btn" data-group-idx="0" title="Select/Unselect all photos">☑️ Toggle All</button>
+                    <button class="delete-selected-btn" data-group-idx="0">🗑️ Delete Selected</button>
+                </div>
             </div>
-            <div class="photo-grid"></div>
+            <div class="photo-grid" data-group-idx="0"></div>
         `;
         
         const photoGrid = groupElement.querySelector('.photo-grid');
@@ -601,6 +607,7 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
             
             photoItem.innerHTML = `
                 <label class="photo-checkbox-label">
+                    <input type="checkbox" class="photo-checkbox" data-group-idx="0" data-photo-idx="${idx}" checked>
                     <span class="photo-checkbox-custom"></span>
                     <img src="${thumbnailSrc}" data-file-id="${photo.file_id}" data-photo-idx="${idx}" alt="${photo.name || ''}" loading="lazy">
                     <div class="photo-score">
@@ -649,10 +656,16 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
         
         groupElement.innerHTML = `
             <div class="group-header">
-                ${headerHTML}
-                <button class="delete-selected-btn" data-group-idx="${groupIdx}">Delete Selected Photos</button>
+                <div class="group-header-info">
+                    ${headerHTML}
+                </div>
+                <div class="group-header-actions">
+                    <button class="toggle-collapse-btn" data-group-idx="${groupIdx}" title="Collapse/Expand group">▾</button>
+                    <button class="toggle-select-all-btn" data-group-idx="${groupIdx}" title="Select/Unselect all photos">☑️ Toggle All</button>
+                    <button class="delete-selected-btn" data-group-idx="${groupIdx}">🗑️ Delete Selected</button>
+                </div>
             </div>
-            <div class="photo-grid"></div>
+            <div class="photo-grid" data-group-idx="${groupIdx}"></div>
         `;
         
         const photoGrid = groupElement.querySelector('.photo-grid');
@@ -691,6 +704,44 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
 
 // Attach event listeners for results (delete buttons and image clicks)
 function attachResultsEventListeners(groups, type) {
+    // Toggle collapse/expand buttons
+    document.querySelectorAll('.toggle-collapse-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const groupIdx = btn.getAttribute('data-group-idx');
+            const photoGrid = resultsContainer.querySelector(`.photo-grid[data-group-idx="${groupIdx}"]`);
+            const groupElement = btn.closest('.similarity-group');
+            
+            if (photoGrid) {
+                const isCollapsed = photoGrid.style.display === 'none';
+                photoGrid.style.display = isCollapsed ? 'grid' : 'none';
+                btn.textContent = isCollapsed ? '▾' : '▸';
+                btn.title = isCollapsed ? 'Collapse group' : 'Expand group';
+                groupElement.classList.toggle('collapsed', !isCollapsed);
+            }
+        });
+    });
+    
+    // Toggle select all/unselect all buttons
+    document.querySelectorAll('.toggle-select-all-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const groupIdx = btn.getAttribute('data-group-idx');
+            const checkboxes = resultsContainer.querySelectorAll(`.photo-checkbox[data-group-idx="${groupIdx}"]`);
+            
+            if (checkboxes.length === 0) return;
+            
+            // Check if all are selected
+            const allSelected = Array.from(checkboxes).every(cb => cb.checked);
+            
+            // Toggle: if all selected, unselect all; otherwise select all
+            checkboxes.forEach(cb => {
+                cb.checked = !allSelected;
+            });
+            
+            // Update button text
+            btn.textContent = allSelected ? '☑️ Toggle All' : '☐ Toggle All';
+        });
+    });
+    
     // Delete buttons
     document.querySelectorAll('.delete-selected-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -718,8 +769,17 @@ function attachResultsEventListeners(groups, type) {
                     await db.deletePhotos([photo.file_id]);
                 }
                 group.photos = group.photos.filter((p, idx) => !checkboxes[idx].checked);
-                const filteredGroups = groups.filter(g => g.photos && g.photos.length > 0);
-                displayAnalysisResults(filteredGroups, type);
+                
+                // Handle different result types for re-display after deletion
+                if (type === 'similar-to') {
+                    // For similar-to, pass the flat array of remaining photos
+                    displayAnalysisResults(group.photos, type, currentReferencePhoto);
+                } else {
+                    // For similarity/series, filter out empty groups
+                    const filteredGroups = groups.filter(g => g.photos && g.photos.length > 0);
+                    displayAnalysisResults(filteredGroups, type);
+                }
+                
                 updateStatus('Selected photos deleted.', false);
             } catch (err) {
                 updateStatus('Error deleting photos: ' + err.message, false);
@@ -1256,30 +1316,21 @@ function populateImageMetadata(photo) {
 // The folder browser modal was never opened (showFolderBrowser never called)
 // Folder navigation now done through the main browser with clickable breadcrumbs
 
-async function runPhotoScan() {
-    // Determine folders to scan: use scannedFolders list if present, else current selection
-    const scannedList = (await db.getSetting('scannedFolders')) || [];
-    const foldersToScan = scannedList.length > 0 ? scannedList : [selectedFolderPath || '/drive/root:'];
+async function runPhotoScan(folderPath = null) {
+    // Use provided folder path or current selection
+    const pathToScan = folderPath || selectedFolderPath || '/drive/root:';
     
-    startScanButton.disabled = true;
-
     try {
         // --- STEP 1: Generate a new scan ID ---
         const newScanId = Date.now();
-        console.log(`Starting new scan with ID: ${newScanId} for ${foldersToScan.length} folder(s)`);
-        updateStatus(`Scanning ${foldersToScan.length} folder(s) for photos...`, true, 0, 100);
+        console.log(`Starting new scan with ID: ${newScanId} for folder: ${pathToScan}`);
+        updateStatus(`Scanning folder and subfolders for photos...`, true, 0, 100);
 
-        // --- STEP 2: Crawl OneDrive starting from selected folder ---
-        // If multiple folders, scan each by id; resolve path -> id
-        const scanOne = async (path) => {
-            const id = await findFolderIdByPath(path);
-            await fetchAllPhotos(newScanId, (progress) => {
-                updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
-            }, id || 'root');
-        };
-        for (const p of foldersToScan) {
-            await scanOne(p);
-        }
+        // --- STEP 2: Crawl OneDrive starting from selected folder (with subfolders) ---
+        const folderId = await findFolderIdByPath(pathToScan);
+        await fetchAllPhotos(newScanId, (progress) => {
+            updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
+        }, folderId || 'root');
         
         // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
         updateStatus('Cleaning up deleted files...', true, 0, 100);
@@ -1299,9 +1350,6 @@ async function runPhotoScan() {
     } catch (error) {
         console.error('Scan failed:', error);
         updateStatus(`Error during scan: ${error.message}`, false);
-    } finally {
-        // Re-enable the button
-        startScanButton.disabled = false;
     }
 }
 
@@ -1320,11 +1368,6 @@ async function handleLoginClick() {
         console.error(error);
         updateStatus('Login failed. Please try again.', false);
     }
-}
-
-async function handleScanClick() {
-    // Directly run the scan with the currently selected folder
-    runPhotoScan();
 }
 
 // Old embedding generation functions removed - now using queue-based system with addPhotosToEmbeddingQueue()
@@ -2565,7 +2608,6 @@ async function main() {
 
     // STEP 4: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
-    startScanButton.addEventListener('click', handleScanClick);
     
     // Clear database button
     if (clearDatabaseButton) {
@@ -2814,21 +2856,21 @@ async function main() {
             }
         });
     }
-    if (browserAddScannedBtn) {
-        browserAddScannedBtn.addEventListener('click', async () => {
+    if (browserScanBtn) {
+        browserScanBtn.addEventListener('click', async () => {
             try {
                 const path = selectedFolderPath || '/drive/root:';
-                const list = (await db.getSetting('scannedFolders')) || [];
-                if (!list.includes(path)) {
-                    list.push(path);
-                    await db.setSetting('scannedFolders', list);
-                    await renderScannedFoldersList();
-                    updateStatus('Added to scanned folders', false);
-                } else {
-                    updateStatus('Folder already in scanned list', false);
-                }
+                browserScanBtn.disabled = true;
+                browserScanBtn.textContent = '⏳ Scanning...';
+                
+                await runPhotoScan(path);
+                
+                browserScanBtn.disabled = false;
+                browserScanBtn.textContent = '🔍 Scan This Folder';
             } catch (e) {
-                console.error('Failed to add scanned folder', e);
+                console.error('Failed to scan folder', e);
+                browserScanBtn.disabled = false;
+                browserScanBtn.textContent = '🔍 Scan This Folder';
             }
         });
     }
@@ -2888,8 +2930,6 @@ async function main() {
         updateBrowserCurrentPath();
         await renderBrowserPhotoGrid(); 
     } catch {}
-    // Render scanned folders list
-    try { await renderScannedFoldersList(); } catch {}
     
     // Cleanup workers on page unload
     window.addEventListener('beforeunload', () => {
@@ -3294,35 +3334,6 @@ function updateBrowserCurrentPath() {
     }
 }
 
-// Render scanned folders list in Processing panel
-async function renderScannedFoldersList() {
-    const container = document.getElementById('scanned-folders-list');
-    if (!container) return;
-    const list = (await db.getSetting('scannedFolders')) || [];
-    container.innerHTML = '';
-    if (list.length === 0) {
-        container.innerHTML = '<div class="empty-note">No folders added yet. Use the OneDrive Browser to add.</div>';
-        return;
-    }
-    list.forEach((p, idx) => {
-        const item = document.createElement('div');
-        item.className = 'scanned-folder-item';
-        const display = p.replace('/drive/root:', '') || '/';
-        item.innerHTML = `
-            <div class="scanned-folder-path">${display}</div>
-            <div class="scanned-folder-actions">
-                <button type="button" data-idx="${idx}" class="secondary-btn remove-btn">Remove</button>
-            </div>
-        `;
-        item.querySelector('.remove-btn').addEventListener('click', async () => {
-            const current = (await db.getSetting('scannedFolders')) || [];
-            current.splice(idx, 1);
-            await db.setSetting('scannedFolders', current);
-            await renderScannedFoldersList();
-        });
-        container.appendChild(item);
-    });
-}
 
 // Start the application when DOM is ready
 if (document.readyState === 'loading') {

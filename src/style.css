@@ -531,6 +531,22 @@ button:disabled {
     height: 2.5rem;
     font-size: 0.8rem;
   }
+  
+  /* Group header actions on mobile */
+  .group-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .group-header-actions {
+    justify-content: flex-start;
+  }
+  
+  .toggle-select-all-btn,
+  .delete-selected-btn {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.5rem;
+  }
 }
 
 #selected-folder:focus {
@@ -620,17 +636,90 @@ button:disabled {
 
 .group-header {
   margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
-.group-header h3 {
+.group-header-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.group-header-info h3 {
   margin: 0 0 0.25rem 0;
   font-size: 1rem;
 }
 
-.group-header p {
+.group-header-info p {
   margin: 0.25rem 0;
   font-size: 0.85rem;
   opacity: 0.9;
+}
+
+.group-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle-collapse-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  min-width: 36px;
+  transition: all 0.2s;
+}
+
+.toggle-collapse-btn:hover {
+  background: var(--border-color);
+  border-color: var(--primary-color);
+}
+
+.toggle-select-all-btn {
+  background: var(--secondary-color);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.toggle-select-all-btn:hover {
+  background: var(--border-color);
+  border-color: var(--primary-color);
+}
+
+.delete-selected-btn {
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  color: #ff6b6b;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.delete-selected-btn:hover {
+  background: rgba(220, 38, 38, 0.2);
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+/* Collapsed group state */
+.similarity-group.collapsed .photo-grid {
+  display: none;
 }
 
 .photo-grid {
@@ -1335,52 +1424,11 @@ button:disabled {
   justify-content: flex-end;
 }
 
-/* Scanned folders list */
-.scanned-folders-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.scanned-folder-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 0.75rem;
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-}
-
-.scanned-folder-path {
-  font-family: monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.scanned-folder-actions button {
-  padding: 0.3rem 0.6rem;
-  font-size: 0.8rem;
-}
-
 /* Processing configuration styles */
 .processing-actions {
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border-color);
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.processing-actions .primary-action {
-  flex: 1;
-  margin-bottom: 0;
-}
-
-.processing-actions .embedding-controls {
-  flex: 1;
 }
 
 .processing-row {
