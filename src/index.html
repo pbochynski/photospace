@@ -20,15 +20,6 @@
         </header>
 
         <main id="main-content" style="display: none;">
-            <div id="status-panel" class="panel">
-                <div class="panel-header">
-                    <h3 class="panel-title">Status</h3>
-                    <div class="panel-tools"></div>
-                </div>
-                <p id="status-text">Ready to start.</p>
-                <progress id="progress-bar" value="0" max="100" style="display: none;"></progress>
-            </div>
-
             <!-- OneDrive Browser (initial structure: folder filter + date filter) -->
             <section class="panel" data-panel-key="browser">
                 <div class="panel-header">
@@ -57,7 +48,7 @@
                         <div class="toolbar-right">
                             <button id="browser-up" type="button" class="secondary-btn">📁 Up</button>
                             <button id="browser-analyze" type="button" class="primary-btn">🔍 Analyze This Folder</button>
-                            <button id="browser-scan" type="button" class="primary-btn">🔍 Scan This Folder</button>
+                            <button id="browser-scan" type="button" class="primary-btn">➕ Queue Scan</button>
                             <button id="browser-refresh" type="button" class="secondary-btn">🔄 Refresh</button>
                         </div>
                     </div>
@@ -80,6 +71,25 @@
                 <div class="panel-body">
                     <div id="processing-config">
 
+                        <!-- Scan Queue Status -->
+                        <div class="processing-row">
+                            <h4>Scan Queue Status</h4>
+                            <div id="scan-queue-status" class="scan-queue-status">
+                                <div class="scan-queue-info">
+                                    <span id="scan-queue-folders">No folders in queue</span>
+                                </div>
+                                <div class="scan-queue-info">
+                                    <span id="scan-queue-db-count">Total photos in DB: Loading...</span>
+                                </div>
+                                <div id="scan-queue-details" class="scan-queue-details" style="display: none;">
+                                    <details>
+                                        <summary>Show folder details</summary>
+                                        <div id="scan-queue-list"></div>
+                                    </details>
+                                </div>
+                            </div>
+                        </div>
+                        
                         <!-- Processing Configuration -->
                         <div class="processing-row">
                             <label for="worker-count">Parallel Workers:</label>
@@ -92,17 +102,7 @@
                         </div>
                         <!-- Processing Actions -->
                         <div class="processing-actions">
-                            <div class="embedding-controls">
-                                <div class="embedding-options">
-                                    <label class="checkbox-label">
-                                        <input type="checkbox" id="auto-start-embeddings-checkbox" checked>
-                                        <span class="checkbox-custom"></span>
-                                        Auto-start embedding generation
-                                    </label>
-                                    <small class="threshold-help">Automatically starts processing when new photos are indexed</small>
-                                </div>
-                                <button id="pause-resume-embeddings" class="secondary-btn" style="margin-top: 8px;">⏸️ Pause Embedding Workers</button>
-                            </div>
+                            <button id="pause-resume-embeddings" class="primary-btn">▶️ Start Embedding Workers</button>
                         </div>
                         
                         <!-- Database Management -->

@@ -164,7 +164,6 @@ const userInfo = document.getElementById('user-info');
 const mainContent = document.getElementById('main-content');
 const statusText = document.getElementById('status-text');
 const progressBar = document.getElementById('progress-bar');
-const autoStartEmbeddingsCheckbox = document.getElementById('auto-start-embeddings-checkbox');
 const pauseResumeEmbeddingsBtn = document.getElementById('pause-resume-embeddings');
 const clearDatabaseButton = document.getElementById('clear-database-button');
 const startAnalysisButton = document.getElementById('start-analysis-button');
@@ -199,6 +198,12 @@ const minGroupSizeValueDisplay = document.getElementById('min-group-size-value')
 const resultsSortSelect = document.getElementById('results-sort');
 const workerCountSlider = document.getElementById('worker-count');
 const workerCountValueDisplay = document.getElementById('worker-count-value');
+
+// Scan queue status elements
+const scanQueueFoldersSpan = document.getElementById('scan-queue-folders');
+const scanQueueDbCountSpan = document.getElementById('scan-queue-db-count');
+const scanQueueDetailsDiv = document.getElementById('scan-queue-details');
+const scanQueueListDiv = document.getElementById('scan-queue-list');
 
 // Date filter elements
 const dateFromInput = document.getElementById('date-from');
@@ -251,6 +256,12 @@ let isProcessingEmbeddings = false;
 let currentEmbeddingPromise = null;
 let isAutoIndexing = false; // Flag to prevent overlapping auto-indexing operations
 let workersInitialized = false; // Track if workers are ready
+
+// Folder scan queue management
+const MAX_CONCURRENT_FOLDER_SCANS = 5; // Maximum folders to scan in parallel
+let folderScanQueue = []; // Queue of folder paths to scan
+let activeFolderScans = new Set(); // Currently scanning folders
+let isScanQueueProcessorRunning = false; // Track if processor is running
 
 // --- URL Parameter Functions ---
 function updateURLWithFilters() {
@@ -457,13 +468,19 @@ function getDateFilter() {
 
 // --- UI Update Functions ---
 function updateStatus(text, showProgress = false, progressValue = 0, progressMax = 100) {
-    statusText.textContent = text;
-    if (showProgress) {
-        progressBar.style.display = 'block';
-        progressBar.value = progressValue;
-        progressBar.max = progressMax;
-    } else {
-        progressBar.style.display = 'none';
+    // Status panel was removed - just log to console for debugging
+    console.log(`[Status] ${text}`);
+    
+    // Legacy support for any code still referencing these elements
+    if (statusText) statusText.textContent = text;
+    if (progressBar) {
+        if (showProgress) {
+            progressBar.style.display = 'block';
+            progressBar.value = progressValue;
+            progressBar.max = progressMax;
+        } else {
+            progressBar.style.display = 'none';
+        }
     }
 }
 
@@ -938,13 +955,10 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 console.log(`📊 Total indexed: ${totalIndexed}, Need embeddings: ${allNeedEmbeddings.length}`);
                 
                 // If current folder is already processed but there are OTHER photos that need embeddings,
-                // start processing them (if auto-start is enabled)
+                // add them to queue
                 if (photosNeedingEmbeddings.length === 0 && allNeedEmbeddings.length > 0) {
-                    const autoStart = await db.getSetting('autoStartEmbeddings');
-                    if (autoStart !== false && !isProcessingEmbeddings && !isEmbeddingPaused) {
-                        console.log(`🚀 Current folder already processed, but ${allNeedEmbeddings.length} other photos need embeddings`);
-                        await addPhotosToEmbeddingQueue(allNeedEmbeddings, false); // Normal priority
-                    }
+                    console.log(`📥 Current folder already processed, adding ${allNeedEmbeddings.length} other photos to queue`);
+                    await addPhotosToEmbeddingQueue(allNeedEmbeddings, false); // Normal priority
                 }
             
                 // Update status briefly
@@ -1316,40 +1330,276 @@ function populateImageMetadata(photo) {
 // The folder browser modal was never opened (showFolderBrowser never called)
 // Folder navigation now done through the main browser with clickable breadcrumbs
 
-async function runPhotoScan(folderPath = null) {
-    // Use provided folder path or current selection
+/**
+ * Add a folder to the scan queue (simple direct comparison)
+ */
+async function addFolderToScanQueue(folderPath) {
     const pathToScan = folderPath || selectedFolderPath || '/drive/root:';
     
-    try {
-        // --- STEP 1: Generate a new scan ID ---
-        const newScanId = Date.now();
-        console.log(`Starting new scan with ID: ${newScanId} for folder: ${pathToScan}`);
-        updateStatus(`Scanning folder and subfolders for photos...`, true, 0, 100);
+    // Simple check: is this exact folder already in queue or being scanned?
+    if (folderScanQueue.includes(pathToScan)) {
+        console.log(`📋 Folder already in scan queue: ${pathToScan}`);
+        updateStatus(`Folder already in queue`, false);
+        return;
+    }
+    
+    if (activeFolderScans.has(pathToScan)) {
+        console.log(`⏳ Folder already being scanned: ${pathToScan}`);
+        updateStatus(`Folder already being scanned`, false);
+        return;
+    }
+    
+    // Add to queue
+    folderScanQueue.push(pathToScan);
+    console.log(`➕ Added folder to scan queue: ${pathToScan} (Queue size: ${folderScanQueue.length})`);
+    
+    // Update status
+    await updateScanQueueStatus();
+    
+    // Start queue processor if not already running
+    if (!isScanQueueProcessorRunning) {
+        processScanQueue();
+    }
+}
 
-        // --- STEP 2: Crawl OneDrive starting from selected folder (with subfolders) ---
-        const folderId = await findFolderIdByPath(pathToScan);
-        await fetchAllPhotos(newScanId, (progress) => {
-            updateStatus(`Scanning... Found ${progress.count} photos so far.`, true, 0, 100);
-        }, folderId || 'root');
+/**
+ * Update status to reflect current scan queue state
+ */
+async function updateScanQueueStatus() {
+    const queueSize = folderScanQueue.length;
+    const activeScans = activeFolderScans.size;
+    const totalScans = queueSize + activeScans;
+    
+    // Update visual panel
+    if (scanQueueFoldersSpan) {
+        if (totalScans === 0) {
+            scanQueueFoldersSpan.textContent = 'No folders in queue';
+            scanQueueFoldersSpan.style.color = '#999';
+        } else {
+            let folderMsg = '';
+            if (activeScans > 0 && queueSize > 0) {
+                folderMsg = `⏳ Scanning ${activeScans} | 📋 ${queueSize} queued`;
+                scanQueueFoldersSpan.style.color = 'var(--primary-color)';
+            } else if (activeScans > 0) {
+                folderMsg = `⏳ Scanning ${activeScans} folder${activeScans > 1 ? 's' : ''}`;
+                scanQueueFoldersSpan.style.color = 'var(--primary-color)';
+            } else if (queueSize > 0) {
+                folderMsg = `📋 ${queueSize} folder${queueSize > 1 ? 's' : ''} queued`;
+                scanQueueFoldersSpan.style.color = 'var(--primary-color)';
+            }
+            scanQueueFoldersSpan.textContent = folderMsg;
+        }
+    }
+    
+    // Update DB count
+    if (scanQueueDbCountSpan) {
+        try {
+            const totalPhotos = await db.getPhotoCount();
+            const needsEmbeddings = await db.getPhotosWithoutEmbedding();
+            scanQueueDbCountSpan.textContent = `📊 Total photos in DB: ${totalPhotos} (${needsEmbeddings.length} need embeddings)`;
+        } catch (e) {
+            scanQueueDbCountSpan.textContent = 'Total photos in DB: Loading...';
+        }
+    }
+    
+    // Update folder details list
+    if (scanQueueDetailsDiv && scanQueueListDiv) {
+        if (totalScans === 0) {
+            scanQueueDetailsDiv.style.display = 'none';
+        } else {
+            scanQueueDetailsDiv.style.display = 'block';
+            
+            let listHtml = '';
+            
+            // Show active scans
+            if (activeScans > 0) {
+                listHtml += '<div class="folder-list-section"><strong>Currently Scanning:</strong><ul>';
+                activeFolderScans.forEach(path => {
+                    const displayName = pathToDisplayName(path);
+                    listHtml += `<li class="scanning-folder">⏳ ${displayName}</li>`;
+                });
+                listHtml += '</ul></div>';
+            }
+            
+            // Show queued scans (limit to first 20 for performance)
+            if (queueSize > 0) {
+                const displayLimit = 20;
+                const showCount = Math.min(queueSize, displayLimit);
+                listHtml += '<div class="folder-list-section"><strong>Queued:</strong>';
+                if (queueSize > displayLimit) {
+                    listHtml += ` <span style="color: #999; font-size: 0.8rem;">(showing first ${displayLimit} of ${queueSize})</span>`;
+                }
+                listHtml += '<ul>';
+                
+                for (let i = 0; i < showCount; i++) {
+                    const path = folderScanQueue[i];
+                    const displayName = pathToDisplayName(path);
+                    listHtml += `<li class="queued-folder">📋 ${displayName}</li>`;
+                }
+                listHtml += '</ul></div>';
+            }
+            
+            scanQueueListDiv.innerHTML = listHtml;
+        }
+    }
+    
+    // Update main status bar if scanning
+    if (totalScans > 0) {
+        let statusMsg = '';
+        if (activeScans > 0 && queueSize > 0) {
+            statusMsg = `Scanning ${activeScans} folder${activeScans > 1 ? 's' : ''}, ${queueSize} in queue`;
+        } else if (activeScans > 0) {
+            statusMsg = `Scanning ${activeScans} folder${activeScans > 1 ? 's' : ''}`;
+        } else if (queueSize > 0) {
+            statusMsg = `${queueSize} folder${queueSize > 1 ? 's' : ''} queued`;
+        }
+        updateStatus(statusMsg, false);
+    }
+}
+
+/**
+ * Process the folder scan queue with parallelism
+ */
+async function processScanQueue() {
+    if (isScanQueueProcessorRunning) {
+        console.log('Scan queue processor already running');
+        return;
+    }
+    
+    isScanQueueProcessorRunning = true;
+    console.log('🚀 Starting scan queue processor');
+    
+    while (folderScanQueue.length > 0 || activeFolderScans.size > 0) {
+        // Start new scans if we have capacity
+        while (folderScanQueue.length > 0 && activeFolderScans.size < MAX_CONCURRENT_FOLDER_SCANS) {
+            const folderPath = folderScanQueue.shift();
+            activeFolderScans.add(folderPath);
+            
+            // Start scanning this folder (don't await - run in parallel)
+            scanSingleFolder(folderPath)
+                .then(async () => {
+                    activeFolderScans.delete(folderPath);
+                    await updateScanQueueStatus();
+                })
+                .catch(async (error) => {
+                    console.error(`Error scanning folder ${folderPath}:`, error);
+                    activeFolderScans.delete(folderPath);
+                    await updateScanQueueStatus();
+                });
+            
+            await updateScanQueueStatus();
+        }
         
-        // --- STEP 3: Clean up files that were not touched (i.e., deleted from OneDrive) ---
-        updateStatus('Cleaning up deleted files...', true, 0, 100);
-        // await db.deletePhotosNotMatchingScanId(newScanId);
+        // Wait a bit before checking again
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    isScanQueueProcessorRunning = false;
+    console.log('✅ Scan queue processor finished');
+    
+    // Final status update
+    await updateScanQueueStatus();
+    const totalPhotos = await db.getPhotoCount();
+    updateStatus(`All folders scanned. Total photos in database: ${totalPhotos}`, false);
+}
+
+/**
+ * Scan a single folder level (non-recursive, adds subfolders to queue)
+ */
+async function scanSingleFolder(folderPath) {
+    try {
+        console.log(`📁 Scanning folder: ${folderPath}`);
         
+        // Generate a new scan ID for this scan operation
+        const newScanId = Date.now();
+        
+        // Get folder ID
+        const folderId = await findFolderIdByPath(folderPath);
+        
+        // Fetch children from this folder only (one level)
+        const token = await getAuthToken();
+        if (!token) throw new Error("Authentication token not available.");
+        
+        let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId || 'root'}/children?$expand=thumbnails`;
+        let photosFound = 0;
+        let subfoldersFound = 0;
+        
+        while (nextPageUrl) {
+            const response = await fetch(nextPageUrl, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch folder contents: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const photosInPage = [];
+            const subfoldersInPage = [];
+            
+            for (const item of data.value) {
+                // If it's a folder, collect it to add to queue
+                if (item.folder) {
+                    const subfolderPath = await getFolderPath(item.id);
+                    subfoldersInPage.push(subfolderPath);
+                } 
+                // If it's a photo, process it
+                else if (item.photo) {
+                    photosInPage.push({
+                        file_id: item.id,
+                        name: item.name,
+                        size: item.size,
+                        path: item.parentReference?.path || '/drive/root:',
+                        last_modified: item.lastModifiedDateTime,
+                        photo_taken_ts: item.photo.takenDateTime ? 
+                            new Date(item.photo.takenDateTime).getTime() : 
+                            new Date(item.createdDateTime).getTime(),
+                        thumbnail_url: item.thumbnails?.[0]?.large?.url || null,
+                        scan_id: newScanId,
+                        embedding_status: 0,
+                        embedding: null,
+                        quality_score: null
+                    });
+                }
+            }
+            
+            // Save photos to database
+            if (photosInPage.length > 0) {
+                await db.addOrUpdatePhotos(photosInPage);
+                photosFound += photosInPage.length;
+            }
+            
+            // Add subfolders to queue (check for duplicates)
+            for (const subfolderPath of subfoldersInPage) {
+                // Check if already in queue or being scanned
+                if (!folderScanQueue.includes(subfolderPath) && !activeFolderScans.has(subfolderPath)) {
+                    folderScanQueue.push(subfolderPath);
+                    subfoldersFound++;
+                    console.log(`📂 Added subfolder to queue: ${subfolderPath}`);
+                }
+            }
+            
+            // Update status with current progress
+            await updateScanQueueStatus();
+            
+            // Check for next page
+            nextPageUrl = data['@odata.nextLink'] || null;
+        }
+        
+        // Get updated stats
         const totalPhotos = await db.getPhotoCount();
         const photosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
         
-        updateStatus(`Scan complete. Total photos: ${totalPhotos}`, false);
-        console.log(`📊 Scan complete: ${totalPhotos} total photos, ${photosNeedingEmbeddings.length} need embeddings`);
+        console.log(`✅ Folder scan complete: ${folderPath} | Found ${photosFound} photos, ${subfoldersFound} subfolders | Total in DB: ${totalPhotos}`);
         
-        // --- STEP 4: Add photos to embedding queue (auto-starts if enabled) ---
+        // Add photos to embedding queue
         if (photosNeedingEmbeddings.length > 0) {
-            await addPhotosToEmbeddingQueue(photosNeedingEmbeddings, false); // priority = false for scanned photos
+            await addPhotosToEmbeddingQueue(photosNeedingEmbeddings, false);
         }
-
+        
     } catch (error) {
-        console.error('Scan failed:', error);
-        updateStatus(`Error during scan: ${error.message}`, false);
+        console.error(`Scan failed for folder ${folderPath}:`, error);
+        throw error;
     }
 }
 
@@ -1748,8 +1998,8 @@ async function addPhotosToEmbeddingQueue(photos, priority = false) {
         return;
     }
     
-    if (priority && isProcessingEmbeddings) {
-        // Add to beginning of queue if workers are running
+    if (priority) {
+        // Add to beginning of queue (priority for browsed folders)
         embeddingQueue.unshift(...newPhotos);
         console.log(`✨ Added ${newPhotos.length} photos to beginning of embedding queue (priority)`);
     } else {
@@ -1760,25 +2010,6 @@ async function addPhotosToEmbeddingQueue(photos, priority = false) {
     
     // Update button state
     updatePauseResumeButton();
-    
-    // Auto-start if enabled and not currently processing
-    const autoStart = await db.getSetting('autoStartEmbeddings');
-    if (autoStart !== false && !isProcessingEmbeddings && !isEmbeddingPaused) {
-        console.log('🚀 Auto-starting embedding generation');
-        
-        // Also check for OTHER photos in database that need embeddings
-        // Add them to the queue (at lower priority) so all photos get processed
-        const allPhotosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
-        const currentQueueIds = new Set(embeddingQueue.map(p => p.file_id));
-        const remainingPhotos = allPhotosNeedingEmbeddings.filter(p => !currentQueueIds.has(p.file_id));
-        
-        if (remainingPhotos.length > 0) {
-            console.log(`📥 Adding ${remainingPhotos.length} more photos from database to queue (lower priority)`);
-            embeddingQueue.push(...remainingPhotos); // Add to END (lower priority)
-        }
-        
-        startEmbeddingWorkers();
-    }
 }
 
 // Initialize persistent workers (call once)
@@ -1905,18 +2136,15 @@ async function resumeEmbeddingWorkers() {
 function updatePauseResumeButton() {
     if (!pauseResumeEmbeddingsBtn) return;
     
-    if (!isProcessingEmbeddings && embeddingQueue.length === 0) {
-        pauseResumeEmbeddingsBtn.textContent = '⏹️ No Photos to Process';
-        pauseResumeEmbeddingsBtn.disabled = true;
+    // Button is always active
+    pauseResumeEmbeddingsBtn.disabled = false;
+    
+    if (isProcessingEmbeddings) {
+        pauseResumeEmbeddingsBtn.textContent = '⏸️ Pause Embedding Workers';
     } else if (isEmbeddingPaused) {
         pauseResumeEmbeddingsBtn.textContent = '▶️ Resume Embedding Workers';
-        pauseResumeEmbeddingsBtn.disabled = false;
-    } else if (isProcessingEmbeddings) {
-        pauseResumeEmbeddingsBtn.textContent = '⏸️ Pause Embedding Workers';
-        pauseResumeEmbeddingsBtn.disabled = false;
     } else {
         pauseResumeEmbeddingsBtn.textContent = '▶️ Start Embedding Workers';
-        pauseResumeEmbeddingsBtn.disabled = false;
     }
 }
 
@@ -2590,14 +2818,23 @@ async function main() {
         // Initialize analysis settings UI
         await initializeAnalysisSettingsWithRetry();
         
-        // Initialize auto-start embeddings setting
-        const autoStartSetting = await db.getSetting('autoStartEmbeddings');
-        if (autoStartEmbeddingsCheckbox) {
-            autoStartEmbeddingsCheckbox.checked = autoStartSetting !== false; // Default to true
+        // Initialize embedding queue from database
+        const photosNeedingEmbeddings = await db.getPhotosWithoutEmbedding();
+        if (photosNeedingEmbeddings.length > 0) {
+            embeddingQueue.push(...photosNeedingEmbeddings);
+            console.log(`📥 Initialized embedding queue with ${photosNeedingEmbeddings.length} photos from database`);
         }
         
         // Initialize pause/resume button state
         updatePauseResumeButton();
+        
+        // Initialize scan queue status
+        await updateScanQueueStatus();
+        
+        // Start periodic scan queue status updates
+        setInterval(async () => {
+            await updateScanQueueStatus();
+        }, 2000); // Update every 2 seconds
         
         // Restore folder selection from URL if present
         await restoreFiltersFromURL();
@@ -2686,15 +2923,6 @@ async function main() {
                 clearDatabaseButton.disabled = false;
                 clearDatabaseButton.textContent = '🗑️ Clear All Photos from Database';
             }
-        });
-    }
-    
-    // Auto-start embeddings checkbox
-    if (autoStartEmbeddingsCheckbox) {
-        autoStartEmbeddingsCheckbox.addEventListener('change', async () => {
-            const enabled = autoStartEmbeddingsCheckbox.checked;
-            await db.setSetting('autoStartEmbeddings', enabled);
-            console.log(`Auto-start embeddings: ${enabled ? 'enabled' : 'disabled'}`);
         });
     }
     
@@ -2858,20 +3086,8 @@ async function main() {
     }
     if (browserScanBtn) {
         browserScanBtn.addEventListener('click', async () => {
-            try {
-                const path = selectedFolderPath || '/drive/root:';
-                browserScanBtn.disabled = true;
-                browserScanBtn.textContent = '⏳ Scanning...';
-                
-                await runPhotoScan(path);
-                
-                browserScanBtn.disabled = false;
-                browserScanBtn.textContent = '🔍 Scan This Folder';
-            } catch (e) {
-                console.error('Failed to scan folder', e);
-                browserScanBtn.disabled = false;
-                browserScanBtn.textContent = '🔍 Scan This Folder';
-            }
+            const path = selectedFolderPath || '/drive/root:';
+            await addFolderToScanQueue(path);
         });
     }
     if (browserAnalyzeBtn) {
