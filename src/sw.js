@@ -135,24 +135,45 @@ async function handleImageRequest(request) {
         const imageBlob = await response.blob();
         console.log('Blob size:', imageBlob.size, 'bytes for:', fileId);
         
-        // Check if this might be a HEIC file that browsers can't display
-        if (contentType === 'application/octet-stream' || contentType === 'application/octet-stream;charset=UTF-8') {
-            console.log('Detected unsupported format, trying thumbnail endpoint for:', fileId);
+        // Check if this is a HEIC/HEIF file or other unsupported format
+        // HEIC files typically come as application/octet-stream from OneDrive
+        const isHeicFormat = contentType === 'application/octet-stream' || 
+                            contentType === 'application/octet-stream;charset=UTF-8' ||
+                            contentType === 'image/heic' ||
+                            contentType === 'image/heif';
+        
+        if (isHeicFormat) {
+            console.log('📸 Detected HEIC/HEIF format, converting via Graph API thumbnail for:', fileId);
             
-            // Try to get a browser-compatible version using thumbnail endpoint
+            // Microsoft Graph API converts HEIC→JPEG server-side
+            // Using 'c1920x1920' for high quality (up to 1920px while maintaining aspect ratio)
+            // Other options: 'large' (800x800), 'medium' (176x176), 'small' (96x96)
             try {
-                const thumbnailUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
-                const thumbnailResponse = await fetchFromGraphAPI(thumbnailUrl, fileId, 'thumbnail fallback');
+                const thumbnailUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/c1920x1920/content`;
+                const thumbnailResponse = await fetchFromGraphAPI(thumbnailUrl, fileId, 'HEIC→JPEG conversion');
                 
-                const thumbnailBlob = await thumbnailResponse.blob();
-                const thumbnailContentType = thumbnailResponse.headers.get('Content-Type') || 'image/jpeg';
+                const jpegBlob = await thumbnailResponse.blob();
+                const jpegContentType = thumbnailResponse.headers.get('Content-Type') || 'image/jpeg';
                 
-                console.log('Got thumbnail version:', thumbnailContentType, 'size:', thumbnailBlob.size, 'for:', fileId);
+                console.log('✅ Converted HEIC→JPEG:', jpegContentType, 'size:', Math.round(jpegBlob.size / 1024), 'KB for:', fileId);
                 
-                return await cacheAndReturnResponse(cache, cacheKey, thumbnailBlob, thumbnailContentType, fileId, 'thumbnail version');
+                // Cache the JPEG version (NOT the HEIC)
+                return await cacheAndReturnResponse(cache, cacheKey, jpegBlob, jpegContentType, fileId, 'JPEG (converted from HEIC)');
             } catch (thumbnailError) {
-                console.warn('Thumbnail fallback failed for:', fileId, thumbnailError);
-                // Continue with original blob and hope for the best
+                console.warn('⚠️ HEIC conversion failed, trying standard thumbnail for:', fileId, thumbnailError);
+                
+                // Fallback to standard large thumbnail
+                try {
+                    const fallbackUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${fileId}/thumbnails/0/large/content`;
+                    const fallbackResponse = await fetchFromGraphAPI(fallbackUrl, fileId, 'thumbnail fallback');
+                    const fallbackBlob = await fallbackResponse.blob();
+                    const fallbackContentType = fallbackResponse.headers.get('Content-Type') || 'image/jpeg';
+                    
+                    return await cacheAndReturnResponse(cache, cacheKey, fallbackBlob, fallbackContentType, fileId, 'JPEG (fallback)');
+                } catch (fallbackError) {
+                    console.error('❌ All conversion attempts failed for:', fileId);
+                    // Continue with original blob as last resort
+                }
             }
         }
         
