@@ -41,6 +41,10 @@ let currentReferencePhoto = null; // Track reference photo for similar-to search
 let currentAnalysisResults = null; // Store current analysis results for re-sorting
 let isAutoIndexing = false; // Flag to prevent overlapping auto-indexing operations
 
+// Modal navigation state
+let currentModalPhotoList = []; // List of photos in current context
+let currentModalPhotoIndex = -1; // Current index in the list
+
 // Folder scan queue management
 const MAX_CONCURRENT_FOLDER_SCANS = 5; // Maximum folders to scan in parallel
 let folderScanQueue = []; // Queue of folder paths to scan
@@ -288,13 +292,20 @@ async function initializeServiceWorkerToken() {
  * Display a photo in the modal viewer
  * @param {Object} photo - Photo object with file_id and metadata
  * @param {string} thumbnailSrc - Thumbnail URL for quick display
+ * @param {Array} photoList - Optional list of photos for navigation context
+ * @param {number} photoIndex - Optional current index in photoList
  */
-async function displayPhotoInModal(photo, thumbnailSrc) {
+async function displayPhotoInModal(photo, thumbnailSrc, photoList = [], photoIndex = -1) {
     const modal = document.getElementById('image-modal');
     const modalImg = document.getElementById('modal-img');
     
     currentModalPhoto = photo;
+    currentModalPhotoList = photoList;
+    currentModalPhotoIndex = photoIndex;
+    
     populateImageMetadata(photo);
+    updateModalNavigation();
+    updateModalCheckbox();
     
     if (photo.file_id) {
         await initializeServiceWorkerToken();
@@ -663,18 +674,24 @@ function attachResultsEventListeners(groups, type) {
             const modalImg = document.getElementById('modal-img');
             const fileId = img.getAttribute('data-file-id');
             
-            // Get photo based on type
+            // Get photo based on type and build navigation context
             let photo;
+            let photoList;
+            let photoIndex;
+            
             if (type === 'similar-to') {
-                const photoIdx = parseInt(img.getAttribute('data-photo-idx'));
-                photo = groups[0].photos[photoIdx];
+                photoIndex = parseInt(img.getAttribute('data-photo-idx'));
+                // For similar-to, groups is [{ photos: actualPhotosArray }]
+                photo = groups[0].photos[photoIndex];
+                photoList = groups[0].photos;
             } else {
                 const groupIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-group-idx'));
-                const photoIdx = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
-                photo = groups[groupIdx].photos[photoIdx];
+                photoIndex = parseInt(img.closest('.photo-item').querySelector('.photo-checkbox').getAttribute('data-photo-idx'));
+                photo = groups[groupIdx].photos[photoIndex];
+                photoList = groups[groupIdx].photos; // For groups, use photos within the group
             }
             
-            await displayPhotoInModal(photo, img.src);
+            await displayPhotoInModal(photo, img.src, photoList, photoIndex);
         });
     });
 }
@@ -888,14 +905,138 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                     console.warn('Could not fetch photo from database:', error);
                 }
                 
-                // Display photo in modal
-                await displayPhotoInModal(photoToDisplay, img.src);
+                // Display photo in modal with navigation context
+                await displayPhotoInModal(photoToDisplay, img.src, sortedPhotos, idx);
             });
         });
     } catch (e) {
         console.error('Failed to render browser photo grid', e);
         browserPhotoGrid.innerHTML = '<div class="error-message">Failed to load photos.</div>';
     }
+}
+
+/**
+ * Find the grid checkbox for the current modal photo
+ */
+function findGridCheckboxForCurrentPhoto() {
+    if (!currentModalPhoto || currentModalPhotoIndex < 0) return null;
+    
+    // Try to find checkbox in results container by matching file_id (more reliable)
+    const resultsCheckboxes = resultsContainer.querySelectorAll('.photo-checkbox');
+    for (const checkbox of resultsCheckboxes) {
+        const photoIdx = parseInt(checkbox.getAttribute('data-photo-idx'));
+        const groupIdx = parseInt(checkbox.getAttribute('data-group-idx'));
+        
+        // Get the photo item to find its file_id
+        const photoItem = checkbox.closest('.photo-item');
+        const img = photoItem?.querySelector('img');
+        const fileId = img?.getAttribute('data-file-id');
+        
+        if (fileId === currentModalPhoto.file_id) {
+            return checkbox;
+        }
+    }
+    
+    // Try to find checkbox in browser grid
+    const browserCheckboxes = browserPhotoGrid?.querySelectorAll('.browser-photo-checkbox');
+    if (browserCheckboxes) {
+        for (const checkbox of browserCheckboxes) {
+            const photoIdx = parseInt(checkbox.getAttribute('data-photo-idx'));
+            
+            // Get the photo item to find its file_id
+            const photoItem = checkbox.closest('.photo-item');
+            const img = photoItem?.querySelector('img');
+            const fileId = img?.getAttribute('data-file-id');
+            
+            if (fileId === currentModalPhoto.file_id) {
+                return checkbox;
+            }
+        }
+    }
+    
+    return null;
+}
+
+/**
+ * Sync checkbox state from modal to grid
+ */
+function syncCheckboxToGrid(checked) {
+    const gridCheckbox = findGridCheckboxForCurrentPhoto();
+    if (gridCheckbox) {
+        gridCheckbox.checked = checked;
+    }
+}
+
+/**
+ * Update modal checkbox state from grid
+ */
+function updateModalCheckbox() {
+    const modalCheckbox = document.getElementById('modal-photo-checkbox');
+    if (!modalCheckbox) return;
+    
+    const gridCheckbox = findGridCheckboxForCurrentPhoto();
+    
+    if (gridCheckbox) {
+        // Sync checkbox state from grid
+        modalCheckbox.checked = gridCheckbox.checked;
+        modalCheckbox.parentElement.style.display = 'flex';
+    } else {
+        // No grid checkbox found, hide modal checkbox
+        modalCheckbox.parentElement.style.display = 'none';
+    }
+}
+
+/**
+ * Update modal navigation buttons visibility and state
+ */
+function updateModalNavigation() {
+    const prevBtn = document.getElementById('modal-prev-btn');
+    const nextBtn = document.getElementById('modal-next-btn');
+    
+    if (!prevBtn || !nextBtn) return;
+    
+    const hasNavigation = currentModalPhotoList.length > 0 && currentModalPhotoIndex >= 0;
+    
+    if (hasNavigation) {
+        // Show buttons and enable/disable based on position
+        prevBtn.style.display = 'flex';
+        nextBtn.style.display = 'flex';
+        prevBtn.disabled = currentModalPhotoIndex <= 0;
+        nextBtn.disabled = currentModalPhotoIndex >= currentModalPhotoList.length - 1;
+        
+        // Update counter
+        const counter = document.getElementById('modal-photo-counter');
+        if (counter) {
+            counter.textContent = `${currentModalPhotoIndex + 1} / ${currentModalPhotoList.length}`;
+            counter.style.display = 'block';
+        }
+    } else {
+        // Hide navigation if no context
+        prevBtn.style.display = 'none';
+        nextBtn.style.display = 'none';
+        
+        const counter = document.getElementById('modal-photo-counter');
+        if (counter) {
+            counter.style.display = 'none';
+        }
+    }
+}
+
+/**
+ * Navigate to previous/next photo in modal
+ */
+async function navigateModalPhoto(direction) {
+    if (currentModalPhotoList.length === 0 || currentModalPhotoIndex < 0) return;
+    
+    const newIndex = currentModalPhotoIndex + direction;
+    
+    if (newIndex < 0 || newIndex >= currentModalPhotoList.length) return;
+    
+    const photo = currentModalPhotoList[newIndex];
+    const thumbnailSrc = `/api/thumb/${photo.file_id}`;
+    
+    // Display the new photo while maintaining the context
+    await displayPhotoInModal(photo, thumbnailSrc, currentModalPhotoList, newIndex);
 }
 
 // Initialize image modal handlers (call once at startup)
@@ -911,6 +1052,88 @@ function initializeImageModal() {
         console.warn('Image modal elements not found');
         return;
     }
+    
+    // Create navigation buttons if they don't exist
+    let prevBtn = document.getElementById('modal-prev-btn');
+    let nextBtn = document.getElementById('modal-next-btn');
+    let counter = document.getElementById('modal-photo-counter');
+    
+    if (!prevBtn) {
+        prevBtn = document.createElement('button');
+        prevBtn.id = 'modal-prev-btn';
+        prevBtn.className = 'modal-nav-btn modal-prev-btn';
+        prevBtn.innerHTML = '◀';
+        prevBtn.title = 'Previous photo (Left arrow)';
+        modal.appendChild(prevBtn);
+    }
+    
+    if (!nextBtn) {
+        nextBtn = document.createElement('button');
+        nextBtn.id = 'modal-next-btn';
+        nextBtn.className = 'modal-nav-btn modal-next-btn';
+        nextBtn.innerHTML = '▶';
+        nextBtn.title = 'Next photo (Right arrow)';
+        modal.appendChild(nextBtn);
+    }
+    
+    if (!counter) {
+        counter = document.createElement('div');
+        counter.id = 'modal-photo-counter';
+        counter.className = 'modal-photo-counter';
+        modal.appendChild(counter);
+    }
+    
+    // Create checkbox for photo selection
+    let modalCheckbox = document.getElementById('modal-photo-checkbox');
+    if (!modalCheckbox) {
+        const checkboxContainer = document.createElement('label');
+        checkboxContainer.className = 'modal-photo-checkbox-container';
+        checkboxContainer.title = 'Select/deselect photo';
+        
+        modalCheckbox = document.createElement('input');
+        modalCheckbox.type = 'checkbox';
+        modalCheckbox.id = 'modal-photo-checkbox';
+        modalCheckbox.className = 'modal-photo-checkbox';
+        
+        const checkboxCustom = document.createElement('span');
+        checkboxCustom.className = 'modal-photo-checkbox-custom';
+        
+        checkboxContainer.appendChild(modalCheckbox);
+        checkboxContainer.appendChild(checkboxCustom);
+        modal.appendChild(checkboxContainer);
+        
+        // Checkbox change handler
+        modalCheckbox.addEventListener('change', (e) => {
+            e.stopPropagation();
+            syncCheckboxToGrid(modalCheckbox.checked);
+        });
+    }
+    
+    // Navigation button handlers
+    prevBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigateModalPhoto(-1);
+    });
+    
+    nextBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        navigateModalPhoto(1);
+    });
+    
+    // Keyboard navigation (arrow keys)
+    const handleModalKeydown = (e) => {
+        if (modal.style.display !== 'flex') return;
+        
+        if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            navigateModalPhoto(-1);
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            navigateModalPhoto(1);
+        }
+    };
+    
+    document.addEventListener('keydown', handleModalKeydown);
     
     // Metadata toggle functionality
     if (metadataToggle && metadataContent) {
@@ -962,6 +1185,8 @@ function initializeImageModal() {
         modal.style.display = 'none';
         if (modalImg) modalImg.src = '';
         currentModalPhoto = null; // Clear current photo reference
+        currentModalPhotoList = []; // Clear navigation context
+        currentModalPhotoIndex = -1;
         // Reset metadata overlay
         if (metadataContent) metadataContent.classList.remove('collapsed');
         if (metadataToggle) metadataToggle.textContent = '📊';

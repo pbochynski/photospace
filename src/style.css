@@ -807,6 +807,116 @@ input[type="range"]::-moz-range-thumb {
   border-color: rgba(0, 120, 212, 0.7);
 }
 
+/* Modal Navigation Buttons */
+.modal-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10003;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(5px);
+}
+
+.modal-nav-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: translateY(-50%) scale(1.1);
+}
+
+.modal-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.modal-prev-btn {
+  left: 20px;
+}
+
+.modal-next-btn {
+  right: 20px;
+}
+
+/* Modal Photo Counter */
+.modal-photo-counter {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  z-index: 10003;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Modal Photo Checkbox */
+.modal-photo-checkbox-container {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10003;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  padding: 12px;
+  backdrop-filter: blur(5px);
+  transition: all 0.2s ease;
+}
+
+.modal-photo-checkbox-container:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: scale(1.05);
+}
+
+.modal-photo-checkbox {
+  display: none;
+}
+
+.modal-photo-checkbox-custom {
+  width: 28px;
+  height: 28px;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.1);
+  transition: all 0.2s;
+}
+
+.modal-photo-checkbox:checked + .modal-photo-checkbox-custom {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.modal-photo-checkbox:checked + .modal-photo-checkbox-custom::after {
+  content: '✓';
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+}
+
 .view-in-folder-btn {
   background: rgba(76, 175, 80, 0.2);
   border-color: rgba(76, 175, 80, 0.5);
