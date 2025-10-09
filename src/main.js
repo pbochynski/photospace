@@ -1023,13 +1023,55 @@ function initializeImageModal() {
                 deleteBtn.disabled = true;
                 deleteBtn.textContent = '⏳';
                 
+                const deletedPhotoId = currentModalPhoto.file_id;
+                const deletedPhotoIndex = currentModalPhotoIndex;
+                
                 await deletePhotosWithConfirmation([currentModalPhoto], updateStatus, async () => {
-                    // Close modal
-                    closeModal();
+                    // Remove from current photo list if we have navigation context
+                    if (currentModalPhotoList.length > 0 && deletedPhotoIndex >= 0) {
+                        currentModalPhotoList.splice(deletedPhotoIndex, 1);
+                        
+                        // If there are more photos, navigate to the next one (or previous if at end)
+                        if (currentModalPhotoList.length > 0) {
+                            // If we deleted the last photo, go to the new last photo
+                            const newIndex = deletedPhotoIndex >= currentModalPhotoList.length 
+                                ? currentModalPhotoList.length - 1 
+                                : deletedPhotoIndex;
+                            
+                            const nextPhoto = currentModalPhotoList[newIndex];
+                            const thumbnailSrc = `/api/thumb/${nextPhoto.file_id}`;
+                            
+                            // Display the next photo
+                            await displayPhotoInModal(nextPhoto, thumbnailSrc, currentModalPhotoList, newIndex, currentModalContext);
+                        } else {
+                            // No more photos in list, close modal
+                            closeModal();
+                        }
+                    } else {
+                        // No navigation context, just close modal
+                        closeModal();
+                    }
                     
-                    // Refresh the current view if applicable
-                    if (browserPhotoGrid && browserPhotoGrid.children.length > 0) {
-                        await renderBrowserPhotoGrid(true);
+                    // Remove the deleted photo from the browser grid DOM (if in browser context)
+                    if (currentModalContext === 'browser' && browserPhotoGrid) {
+                        const photoElements = browserPhotoGrid.querySelectorAll('.photo-item');
+                        photoElements.forEach((photoItem) => {
+                            const img = photoItem.querySelector('img');
+                            if (img && img.getAttribute('data-file-id') === deletedPhotoId) {
+                                photoItem.remove();
+                            }
+                        });
+                    }
+                    
+                    // Remove from results grid DOM (if in results context)
+                    if (currentModalContext === 'results' && resultsContainer) {
+                        const photoElements = resultsContainer.querySelectorAll('.photo-item');
+                        photoElements.forEach((photoItem) => {
+                            const img = photoItem.querySelector('img');
+                            if (img && img.getAttribute('data-file-id') === deletedPhotoId) {
+                                photoItem.remove();
+                            }
+                        });
                     }
                 });
                 
