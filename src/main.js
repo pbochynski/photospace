@@ -44,6 +44,7 @@ let isAutoIndexing = false; // Flag to prevent overlapping auto-indexing operati
 // Modal navigation state
 let currentModalPhotoList = []; // List of photos in current context
 let currentModalPhotoIndex = -1; // Current index in the list
+let currentModalContext = null; // 'browser' or 'results' - tracks where modal was opened from
 
 // Folder scan queue management
 const MAX_CONCURRENT_FOLDER_SCANS = 5; // Maximum folders to scan in parallel
@@ -294,14 +295,16 @@ async function initializeServiceWorkerToken() {
  * @param {string} thumbnailSrc - Thumbnail URL for quick display
  * @param {Array} photoList - Optional list of photos for navigation context
  * @param {number} photoIndex - Optional current index in photoList
+ * @param {string} context - Optional context ('browser' or 'results')
  */
-async function displayPhotoInModal(photo, thumbnailSrc, photoList = [], photoIndex = -1) {
+async function displayPhotoInModal(photo, thumbnailSrc, photoList = [], photoIndex = -1, context = null) {
     const modal = document.getElementById('image-modal');
     const modalImg = document.getElementById('modal-img');
     
     currentModalPhoto = photo;
     currentModalPhotoList = photoList;
     currentModalPhotoIndex = photoIndex;
+    currentModalContext = context;
     
     populateImageMetadata(photo);
     updateModalNavigation();
@@ -691,7 +694,7 @@ function attachResultsEventListeners(groups, type) {
                 photoList = groups[groupIdx].photos; // For groups, use photos within the group
             }
             
-            await displayPhotoInModal(photo, img.src, photoList, photoIndex);
+            await displayPhotoInModal(photo, img.src, photoList, photoIndex, 'results');
         });
     });
 }
@@ -905,8 +908,8 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                     console.warn('Could not fetch photo from database:', error);
                 }
                 
-                // Display photo in modal with navigation context
-                await displayPhotoInModal(photoToDisplay, img.src, sortedPhotos, idx);
+                // Display photo in modal with navigation context (from browser)
+                await displayPhotoInModal(photoToDisplay, img.src, sortedPhotos, idx, 'browser');
             });
         });
     } catch (e) {
@@ -921,13 +924,50 @@ async function renderBrowserPhotoGrid(forceReload = false) {
 function findGridCheckboxForCurrentPhoto() {
     if (!currentModalPhoto || currentModalPhotoIndex < 0) return null;
     
-    // Try to find checkbox in results container by matching file_id (more reliable)
+    // If we know the context, search only in that section
+    if (currentModalContext === 'browser') {
+        // Only search in browser grid
+        const browserCheckboxes = browserPhotoGrid?.querySelectorAll('.browser-photo-checkbox');
+        console.log('Finding browser checkbox:', {
+            gridExists: !!browserPhotoGrid,
+            checkboxCount: browserCheckboxes?.length,
+            lookingFor: currentModalPhoto.file_id
+        });
+        
+        if (browserCheckboxes) {
+            for (const checkbox of browserCheckboxes) {
+                const photoItem = checkbox.closest('.photo-item');
+                const img = photoItem?.querySelector('img');
+                const fileId = img?.getAttribute('data-file-id');
+                
+                console.log('  Checking checkbox:', { fileId, matches: fileId === currentModalPhoto.file_id });
+                
+                if (fileId === currentModalPhoto.file_id) {
+                    console.log('  ✓ Found matching checkbox!');
+                    return checkbox;
+                }
+            }
+        }
+        console.log('  ✗ No matching checkbox found');
+        return null;
+    } else if (currentModalContext === 'results') {
+        // Only search in results container
+        const resultsCheckboxes = resultsContainer.querySelectorAll('.photo-checkbox');
+        for (const checkbox of resultsCheckboxes) {
+            const photoItem = checkbox.closest('.photo-item');
+            const img = photoItem?.querySelector('img');
+            const fileId = img?.getAttribute('data-file-id');
+            
+            if (fileId === currentModalPhoto.file_id) {
+                return checkbox;
+            }
+        }
+        return null;
+    }
+    
+    // Fallback: no context specified, search both (results first for backward compatibility)
     const resultsCheckboxes = resultsContainer.querySelectorAll('.photo-checkbox');
     for (const checkbox of resultsCheckboxes) {
-        const photoIdx = parseInt(checkbox.getAttribute('data-photo-idx'));
-        const groupIdx = parseInt(checkbox.getAttribute('data-group-idx'));
-        
-        // Get the photo item to find its file_id
         const photoItem = checkbox.closest('.photo-item');
         const img = photoItem?.querySelector('img');
         const fileId = img?.getAttribute('data-file-id');
@@ -941,9 +981,6 @@ function findGridCheckboxForCurrentPhoto() {
     const browserCheckboxes = browserPhotoGrid?.querySelectorAll('.browser-photo-checkbox');
     if (browserCheckboxes) {
         for (const checkbox of browserCheckboxes) {
-            const photoIdx = parseInt(checkbox.getAttribute('data-photo-idx'));
-            
-            // Get the photo item to find its file_id
             const photoItem = checkbox.closest('.photo-item');
             const img = photoItem?.querySelector('img');
             const fileId = img?.getAttribute('data-file-id');
@@ -1036,7 +1073,7 @@ async function navigateModalPhoto(direction) {
     const thumbnailSrc = `/api/thumb/${photo.file_id}`;
     
     // Display the new photo while maintaining the context
-    await displayPhotoInModal(photo, thumbnailSrc, currentModalPhotoList, newIndex);
+    await displayPhotoInModal(photo, thumbnailSrc, currentModalPhotoList, newIndex, currentModalContext);
 }
 
 // Initialize image modal handlers (call once at startup)
@@ -1187,6 +1224,7 @@ function initializeImageModal() {
         currentModalPhoto = null; // Clear current photo reference
         currentModalPhotoList = []; // Clear navigation context
         currentModalPhotoIndex = -1;
+        currentModalContext = null; // Clear context
         // Reset metadata overlay
         if (metadataContent) metadataContent.classList.remove('collapsed');
         if (metadataToggle) metadataToggle.textContent = '📊';
