@@ -6,6 +6,12 @@ import { exportEmbeddingsToOneDrive, getLastExportInfo, estimateExportSize } fro
 import { importEmbeddingsFromOneDrive, listAvailableEmbeddingFiles, deleteEmbeddingFileFromOneDrive, getLastImportInfo, getEmbeddingFileMetadata } from './lib/embeddingImport.js';
 import { initializeDebugConsole } from './lib/debugConsole.js';
 import { EmbeddingProcessor } from './lib/embedding-processor.js';
+import { updateStatus, isDateFilterEnabled, applyDateEnabledUI, getDateFilter, setDefaultDateRange, initializeCollapsiblePanels, applyPanelExpandedState } from './lib/uiUtils.js';
+import { updateURLWithFilters, updateURLWithPath, getPathFromURL, getDateFiltersFromURL, restoreDateFiltersFromURL, pathToDisplayName, resetFolderToNoFilter, resetToNoFilter, updateURLWithSimilarPhoto, getSimilarPhotoFromURL, clearSimilarPhotoFromURL } from './lib/urlStateManager.js';
+import { initializeAnalysisSettingsWithRetry, getSimilarityThreshold, getTimeSpanHours, getSortMethod, getWorkerCount, getMinGroupSize, getSeriesMinGroupSize, getSeriesMinDensity, getSeriesMaxTimeGap } from './lib/settingsManager.js';
+import { deletePhotoFromOneDrive, deletePhotosWithConfirmation } from './lib/photoDeleteManager.js';
+import { handleExportEmbeddings as backupHandleExport, handleImportEmbeddings as backupHandleImport, displayImportFileList, deleteImportFile as backupDeleteFile, performImport as backupPerformImport, showImportSection, closeImportModal, initializeBackupPanel as backupInitPanel } from './lib/backupManager.js';
+import { cosineSimilarity, findSimilarToPhoto, handleFindSimilarClick as similarHandleFindClick, clearSimilarPhotosSearch as similarClearSearch, restoreSimilarPhotosFromURL as similarRestoreFromURL, viewPhotoInFolder as similarViewInFolder } from './lib/similarPhotosManager.js';
 
 // Initialize debug console (also sets window.debugConsole for worker access)
 const debugConsole = initializeDebugConsole();
@@ -32,9 +38,32 @@ let importStatus, importResults, importSummary, closeImportBtn;
 let modalFindSimilarBtn, modalViewInFolderBtn;
 
 let embeddingWorker = null;
-let selectedFolderId = null; // null means no folder filter (all folders)
-let selectedFolderPath = null; // null means no folder filter
-let selectedFolderDisplayName = 'All folders'; // Display for no filter
+
+// Application state object (passed to URL state manager and other modules)
+const appState = {
+    selectedFolderId: null, // null means no folder filter (all folders)
+    selectedFolderPath: null, // null means no folder filter
+    selectedFolderDisplayName: 'All folders' // Display for no filter
+};
+
+// For backward compatibility, expose as top-level variables
+let selectedFolderId = null;
+let selectedFolderPath = null;
+let selectedFolderDisplayName = 'All folders';
+
+// Sync state object with top-level variables (for backward compatibility)
+function syncStateToGlobals() {
+    selectedFolderId = appState.selectedFolderId;
+    selectedFolderPath = appState.selectedFolderPath;
+    selectedFolderDisplayName = appState.selectedFolderDisplayName;
+}
+
+function syncGlobalsToState() {
+    appState.selectedFolderId = selectedFolderId;
+    appState.selectedFolderPath = selectedFolderPath;
+    appState.selectedFolderDisplayName = selectedFolderDisplayName;
+}
+
 let currentModalPhoto = null; // Track the photo currently displayed in modal
 let currentResultsType = null; // Track current results type ('similarity', 'series', or 'similar-to')
 let currentReferencePhoto = null; // Track reference photo for similar-to searches
@@ -53,88 +82,7 @@ let activeFolderScans = new Set(); // Currently scanning folders
 let isScanQueueProcessorRunning = false; // Track if processor is running
 
 // --- URL Parameter Functions ---
-function updateURLWithFilters() {
-    const url = new URL(window.location);
-    
-    // Update folder path
-    if (selectedFolderPath) {
-        url.searchParams.set('path', selectedFolderPath);
-    } else {
-        url.searchParams.delete('path');
-    }
-    
-    // Update date filter enable flag
-    const dateEnabled = isDateFilterEnabled();
-    if (dateEnabled) {
-        url.searchParams.set('dateEnabled', 'true');
-    } else {
-        url.searchParams.set('dateEnabled', 'false');
-    }
-    
-    // Update date range
-    const dateFrom = dateFromInput.value;
-    const dateTo = dateToInput.value;
-    
-    if (dateEnabled && dateFrom) {
-        url.searchParams.set('dateFrom', dateFrom);
-    } else {
-        url.searchParams.delete('dateFrom');
-    }
-    
-    if (dateEnabled && dateTo) {
-        url.searchParams.set('dateTo', dateTo);
-    } else {
-        url.searchParams.delete('dateTo');
-    }
-    
-    window.history.pushState({}, '', url);
-}
-
-function updateURLWithPath(folderPath) {
-    // Keep existing behavior for backward compatibility
-    selectedFolderPath = folderPath;
-    updateURLWithFilters();
-}
-
-function getPathFromURL() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('path') || null; // null means no folder filter
-}
-
-function getDateFiltersFromURL() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return {
-        dateEnabled: urlParams.get('dateEnabled') !== 'false',
-        dateFrom: urlParams.get('dateFrom') || null,
-        dateTo: urlParams.get('dateTo') || null
-    };
-}
-
-function setDefaultDateRange() {
-    // Set default to last month
-    const today = new Date();
-    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, today.getDate());
-    
-    dateFromInput.value = lastMonth.toISOString().split('T')[0];
-    dateToInput.value = today.toISOString().split('T')[0];
-}
-
-function restoreDateFiltersFromURL() {
-    const dateFilters = getDateFiltersFromURL();
-    
-    // Restore toggle
-    dateEnabledToggle.checked = dateFilters.dateEnabled !== false;
-    
-    if (dateFilters.dateFrom || dateFilters.dateTo) {
-        // Restore from URL
-        dateFromInput.value = dateFilters.dateFrom || '';
-        dateToInput.value = dateFilters.dateTo || '';
-    } else {
-        // Set default to last month
-        setDefaultDateRange();
-    }
-    applyDateEnabledUI();
-}
+// (Moved to urlStateManager.js)
 
 async function restoreFolderFromURL() {
     const pathFromURL = getPathFromURL();
@@ -146,25 +94,23 @@ async function restoreFolderFromURL() {
                 selectedFolderId = folderId;
                 selectedFolderPath = pathFromURL;
                 selectedFolderDisplayName = pathToDisplayName(pathFromURL);
+                syncGlobalsToState();
                 updateStatus(`Restored folder filter: ${selectedFolderDisplayName}`, false);
             } else {
                 console.warn('Could not find folder for path:', pathFromURL);
                 // Reset to no filter if folder not found
-                resetFolderToNoFilter();
+                resetFolderToNoFilter(appState);
+                syncStateToGlobals();
             }
         } catch (error) {
             console.error('Error restoring folder from URL:', error);
-            resetFolderToNoFilter();
+            resetFolderToNoFilter(appState);
+            syncStateToGlobals();
         }
     } else {
-        resetFolderToNoFilter();
+        resetFolderToNoFilter(appState);
+        syncStateToGlobals();
     }
-}
-
-function resetFolderToNoFilter() {
-    selectedFolderId = null;
-    selectedFolderPath = null;
-    selectedFolderDisplayName = 'All folders';
 }
 
 async function restoreFiltersFromURL() {
@@ -175,21 +121,8 @@ async function restoreFiltersFromURL() {
     restoreDateFiltersFromURL();
     
     // Update URL to ensure consistency
-    updateURLWithFilters();
-}
-
-function resetToNoFilter() {
-    resetFolderToNoFilter();
-    updateURLWithFilters();
-}
-
-function pathToDisplayName(path) {
-    if (!path || path === '/drive/root:') {
-        return 'OneDrive (Root)';
-    }
-    // Convert path like "/drive/root:/Pictures/Camera Roll" to "OneDrive / Pictures / Camera Roll"
-    const pathParts = path.replace('/drive/root:', '').split('/').filter(part => part.length > 0);
-    return 'OneDrive' + (pathParts.length > 0 ? ' / ' + pathParts.join(' / ') : ' (Root)');
+    syncGlobalsToState();
+    updateURLWithFilters(appState);
 }
 
 async function findFolderIdByPath(targetPath) {
@@ -223,55 +156,10 @@ async function findFolderIdByPath(targetPath) {
 }
 
 // --- Filter Functions ---
-
-function isDateFilterEnabled() {
-    return dateEnabledToggle ? dateEnabledToggle.checked : true;
-}
-
-function applyDateEnabledUI() {
-    const disabled = !isDateFilterEnabled();
-    dateFromInput.disabled = disabled;
-    dateToInput.disabled = disabled;
-    const switchText = document.querySelector('.switch-text');
-    if (switchText) {
-        switchText.textContent = disabled ? 'Disabled' : 'Enabled';
-    }
-}
-
-function getDateFilter() {
-    if (!isDateFilterEnabled()) {
-        return null;
-    }
-    const fromDate = dateFromInput.value;
-    const toDate = dateToInput.value;
-    
-    if (!fromDate && !toDate) {
-        return null; // No date filter
-    }
-    
-    return {
-        from: fromDate ? new Date(fromDate + 'T00:00:00').getTime() : null,
-        to: toDate ? new Date(toDate + 'T23:59:59').getTime() : null
-    };
-}
+// (Moved to uiUtils.js)
 
 // --- UI Update Functions ---
-function updateStatus(text, showProgress = false, progressValue = 0, progressMax = 100) {
-    // Status panel was removed - just log to console for debugging
-    console.log(`[Status] ${text}`);
-    
-    // Legacy support for any code still referencing these elements
-    if (statusText) statusText.textContent = text;
-    if (progressBar) {
-        if (showProgress) {
-            progressBar.style.display = 'block';
-            progressBar.value = progressValue;
-            progressBar.max = progressMax;
-        } else {
-            progressBar.style.display = 'none';
-        }
-    }
-}
+// (Moved to uiUtils.js)
 
 // Helper function to initialize service worker with auth token
 async function initializeServiceWorkerToken() {
@@ -321,67 +209,6 @@ async function displayPhotoInModal(photo, thumbnailSrc, photoList = [], photoInd
     }
 }
 
-/**
- * Delete a photo from OneDrive and local database
- * @param {string} fileId - The file ID to delete
- * @returns {Promise<boolean>} - Success status
- */
-async function deletePhotoFromOneDrive(fileId) {
-    const token = await getAuthToken();
-    const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${fileId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-    });
-    
-    if (!response.ok) {
-        throw new Error(`Failed to delete: ${response.status} ${response.statusText}`);
-    }
-    
-    await db.deletePhotos([fileId]);
-    return true;
-}
-
-/**
- * Delete multiple photos with confirmation
- * @param {Array<Object>} photos - Photos to delete
- * @param {Function} onSuccess - Callback after successful deletion
- * @returns {Promise<void>}
- */
-async function deletePhotosWithConfirmation(photos, onSuccess) {
-    if (photos.length === 0) {
-        alert('No photos selected for deletion.');
-        return;
-    }
-    
-    const photoName = photos.length === 1 ? photos[0].name : null;
-    const confirmMessage = photos.length === 1 
-        ? `Delete "${photoName}"? This cannot be undone.`
-        : `Delete ${photos.length} photo(s)? This cannot be undone.`;
-    
-    if (!confirm(confirmMessage)) {
-        return;
-    }
-    
-    updateStatus(`Deleting ${photos.length} photo(s)...`, true);
-    
-    try {
-        for (const photo of photos) {
-            await deletePhotoFromOneDrive(photo.file_id);
-        }
-        
-        if (onSuccess) {
-            onSuccess();
-        }
-        
-        const successMessage = photos.length === 1 
-            ? `Photo "${photoName}" deleted successfully`
-            : `${photos.length} photos deleted successfully`;
-        updateStatus(successMessage, false);
-    } catch (err) {
-        updateStatus('Error deleting photos: ' + err.message, false);
-        throw err;
-    }
-}
 
 async function displayLoggedIn(account) {
     loginButton.style.display = 'none';
@@ -651,7 +478,7 @@ function attachResultsEventListeners(groups, type) {
                 if (cb.checked) selectedPhotos.push(group.photos[idx]);
             });
             
-            await deletePhotosWithConfirmation(selectedPhotos, () => {
+            await deletePhotosWithConfirmation(selectedPhotos, updateStatus, () => {
                 // Update group photos
                 group.photos = group.photos.filter((p, idx) => !checkboxes[idx].checked);
                 
@@ -852,7 +679,8 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 selectedFolderId = folder.id;
                 selectedFolderPath = await getFolderPath(folder.id);
                 selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
-                updateURLWithPath(selectedFolderPath);
+                syncGlobalsToState();
+                updateURLWithPath(selectedFolderPath, appState);
                 updateBrowserCurrentPath();
                 await renderBrowserPhotoGrid(true);
             });
@@ -1195,7 +1023,7 @@ function initializeImageModal() {
                 deleteBtn.disabled = true;
                 deleteBtn.textContent = '⏳';
                 
-                await deletePhotosWithConfirmation([currentModalPhoto], async () => {
+                await deletePhotosWithConfirmation([currentModalPhoto], updateStatus, async () => {
                     // Close modal
                     closeModal();
                     
@@ -1695,7 +1523,7 @@ async function initializeAfterLogin(account) {
     await restoreSimilarPhotosFromURL();
     
     // Initialize backup panel
-    await initializeBackupPanel();
+    await backupInitPanel(exportEmbeddingsBtn, exportInfo, importInfo);
     
     // Initialize browser path and render photo grid
     // Use setTimeout to ensure DOM is fully rendered before initializing browser
@@ -1789,298 +1617,99 @@ async function loadFullSizeImage(fileId, modalImg, thumbnailSrc) {
 }
 
 // --- Similar Photos Functions ---
+// (Moved to similarPhotosManager.js)
 
-/**
- * Calculate cosine similarity between two embedding vectors
- * @param {Array<number>} embedding1 - First embedding vector
- * @param {Array<number>} embedding2 - Second embedding vector
- * @returns {number} - Similarity score between 0 and 1
- */
-function cosineSimilarity(embedding1, embedding2) {
-    if (!embedding1 || !embedding2 || embedding1.length !== embedding2.length) {
-        return 0;
-    }
-    
-    let dotProduct = 0;
-    let norm1 = 0;
-    let norm2 = 0;
-    
-    for (let i = 0; i < embedding1.length; i++) {
-        dotProduct += embedding1[i] * embedding2[i];
-        norm1 += embedding1[i] * embedding1[i];
-        norm2 += embedding2[i] * embedding2[i];
-    }
-    
-    const denominator = Math.sqrt(norm1) * Math.sqrt(norm2);
-    return denominator === 0 ? 0 : dotProduct / denominator;
-}
-
-/**
- * Find photos similar to a reference photo
- * @param {string} referenceFileId - File ID of the reference photo
- * @param {number} maxResults - Maximum number of similar photos to return
- * @returns {Promise<Array>} - Array of similar photos with similarity scores
- */
-async function findSimilarToPhoto(referenceFileId, maxResults = 20) {
-    try {
-        // Get the reference photo with its embedding
-        const referencePhoto = await db.getPhotoById(referenceFileId);
-        
-        if (!referencePhoto || !referencePhoto.embedding) {
-            throw new Error('Reference photo not found or has no embedding');
-        }
-        
-        // Get all photos with embeddings (excluding the reference photo itself)
-        const allPhotos = await db.getAllPhotosWithEmbedding();
-        const otherPhotos = allPhotos.filter(p => p.file_id !== referenceFileId);
-        
-        if (otherPhotos.length === 0) {
-            return [];
-        }
-        
-        // Calculate similarity for each photo using CLIP embeddings
-        const photosWithScores = otherPhotos.map(photo => {
-            const similarity = cosineSimilarity(referencePhoto.embedding, photo.embedding);
-            
-            return {
-                ...photo,
-                similarity
-            };
-        });
-        
-        // Sort by similarity (highest first) and take top results
-        photosWithScores.sort((a, b) => b.similarity - a.similarity);
-        
-        return photosWithScores.slice(0, maxResults);
-    } catch (error) {
-        console.error('Error finding similar photos:', error);
-        throw error;
-    }
-}
-
-
-/**
- * Handle "Find Similar Photos" button click
- */
+// Wrapper functions to maintain compatibility with current code structure
 async function handleFindSimilarClick() {
-    if (!currentModalPhoto || !currentModalPhoto.file_id) {
-        alert('No photo selected');
-        return;
-    }
-    
-    // Check if photo has embedding
-    if (!currentModalPhoto.embedding) {
-        alert('This photo needs to be processed first (no embedding available)');
-        return;
-    }
-    
-    try {
-        // Disable button during search
-        if (modalFindSimilarBtn) {
-            modalFindSimilarBtn.disabled = true;
-            modalFindSimilarBtn.textContent = '🔍 Searching...';
-        }
-        
-        updateStatus('Finding similar photos...', false);
-        
-        // Find similar photos (default 50 results)
-        const similarPhotos = await findSimilarToPhoto(currentModalPhoto.file_id, 50);
-        
-        // Update URL with query parameter
-        updateURLWithSimilarPhoto(currentModalPhoto.file_id);
-        
-        // Display results using unified function
-        displayAnalysisResults(similarPhotos, 'similar-to', currentModalPhoto);
-        
-        // Close the modal
+    const closeModal = () => {
         const modal = document.getElementById('image-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        
-        // Scroll to results panel
+        if (modal) modal.style.display = 'none';
+    };
+    
+    const scrollToResults = () => {
         const resultsPanel = document.querySelector('[data-panel-key="results"]');
         if (resultsPanel) {
             resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
-        
-        updateStatus(`Found ${similarPhotos.length} similar photos`, false);
-        
-    } catch (error) {
-        console.error('Error finding similar photos:', error);
-        alert(`Failed to find similar photos: ${error.message}`);
-        updateStatus('Error finding similar photos', false);
-    } finally {
-        // Re-enable button
-        if (modalFindSimilarBtn) {
-            modalFindSimilarBtn.disabled = false;
-            modalFindSimilarBtn.textContent = '🔍 Find Similar Photos';
-        }
-    }
+    };
+    
+    await similarHandleFindClick(
+        currentModalPhoto,
+        modalFindSimilarBtn,
+        updateStatus,
+        displayAnalysisResults,
+        closeModal,
+        scrollToResults
+    );
 }
 
-/**
- * Clear similar photos search
- */
 function clearSimilarPhotosSearch() {
-    // Clear results
-    currentResultsType = null;
-    currentReferencePhoto = null;
-    currentAnalysisResults = null;
-    if (resultsTypeLabel) {
-        resultsTypeLabel.textContent = 'No results yet';
-    }
-    resultsContainer.innerHTML = '<p class="placeholder">Run similarity analysis or series analysis to see results here.</p>';
-    
-    // Remove URL parameter
-    const url = new URL(window.location);
-    url.searchParams.delete('similar-to');
-    window.history.pushState({}, '', url);
-    
-    updateStatus('Similar photos search cleared', false);
+    const refs = {
+        currentResultsType,
+        currentReferencePhoto,
+        currentAnalysisResults,
+        resultsTypeLabel,
+        resultsContainer
+    };
+    similarClearSearch(refs, updateStatus);
+    // Update global refs
+    currentResultsType = refs.currentResultsType;
+    currentReferencePhoto = refs.currentReferencePhoto;
+    currentAnalysisResults = refs.currentAnalysisResults;
 }
 
-/**
- * Update URL with similar photo parameter
- */
-function updateURLWithSimilarPhoto(fileId) {
-    const url = new URL(window.location);
-    url.searchParams.set('similar-to', fileId);
-    window.history.pushState({}, '', url);
-}
-
-/**
- * Get similar photo file ID from URL
- */
-function getSimilarPhotoFromURL() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('similar-to');
-}
-
-/**
- * Restore similar photos view from URL parameter
- */
 async function restoreSimilarPhotosFromURL() {
-    const fileId = getSimilarPhotoFromURL();
-    if (!fileId) return;
-    
-    try {
-        updateStatus('Restoring similar photos view...', false);
-        
-        // Get reference photo
-        const referencePhoto = await db.getPhotoById(fileId);
-        if (!referencePhoto || !referencePhoto.embedding) {
-            console.warn('Reference photo not found or has no embedding:', fileId);
-            // Clear invalid URL parameter
-            clearSimilarPhotosSearch();
-            return;
-        }
-        
-        // Find similar photos (50 results)
-        const similarPhotos = await findSimilarToPhoto(fileId, 50);
-        
-        // Display results using unified function
-        displayAnalysisResults(similarPhotos, 'similar-to', referencePhoto);
-        
-        updateStatus(`Restored similar photos view (${similarPhotos.length} photos)`, false);
-        
-    } catch (error) {
-        console.error('Error restoring similar photos from URL:', error);
-        clearSimilarPhotosSearch();
-    }
+    await similarRestoreFromURL(updateStatus, displayAnalysisResults);
 }
 
-/**
- * Navigate to photo's folder in browser and scroll to the photo
- */
 async function viewPhotoInFolder() {
-    if (!currentModalPhoto || !currentModalPhoto.file_id) {
-        alert('No photo selected');
-        return;
-    }
-    
-    try {
-        // Disable button during navigation
-        if (modalViewInFolderBtn) {
-            modalViewInFolderBtn.disabled = true;
-            modalViewInFolderBtn.textContent = '📁 Loading...';
-        }
-        
-        updateStatus('Navigating to folder...', false);
-        
-        // Get photo's folder path
-        const photoPath = currentModalPhoto.path || '/drive/root:';
-        
-        // Find folder ID for the path
-        const folderId = await findFolderIdByPath(photoPath);
-        if (!folderId) {
-            throw new Error('Could not find folder for path: ' + photoPath);
-        }
-        
-        // Update browser state to this folder
+    const updateBrowserState = (folderId, folderPath, displayName) => {
         selectedFolderId = folderId;
-        selectedFolderPath = photoPath;
-        selectedFolderDisplayName = pathToDisplayName(photoPath);
-        updateURLWithPath(photoPath);
+        selectedFolderPath = folderPath;
+        selectedFolderDisplayName = displayName;
+        syncGlobalsToState();
+        updateURLWithPath(folderPath, appState);
         updateBrowserCurrentPath();
-        
-        // Close the modal
+    };
+    
+    const closeModal = () => {
         const modal = document.getElementById('image-modal');
-        if (modal) {
-            modal.style.display = 'none';
-        }
-        
-        // Render the browser grid
-        await renderBrowserPhotoGrid(true);
-        
-        // Scroll to browser panel
-        const browserPanel = document.querySelector('[data-panel-key="browser"]');
-        if (browserPanel) {
-            browserPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-        
-        // Wait a bit for the grid to render, then scroll to and highlight the photo
+        if (modal) modal.style.display = 'none';
+    };
+    
+    const scrollToPhoto = async (fileId) => {
         setTimeout(() => {
             const photoElements = browserPhotoGrid.querySelectorAll('.photo-item img');
             let targetPhotoElement = null;
             
-            // Find the photo element with matching file_id
             photoElements.forEach((img) => {
-                if (img.getAttribute('data-file-id') === currentModalPhoto.file_id) {
+                if (img.getAttribute('data-file-id') === fileId) {
                     targetPhotoElement = img.closest('.photo-item');
                 }
             });
             
             if (targetPhotoElement) {
-                // Scroll to the photo
                 targetPhotoElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                
-                // Add highlight animation
                 targetPhotoElement.classList.add('highlight');
-                
-                // Remove highlight after animation completes
-                setTimeout(() => {
-                    targetPhotoElement.classList.remove('highlight');
-                }, 2000);
-                
+                setTimeout(() => targetPhotoElement.classList.remove('highlight'), 2000);
                 updateStatus('Photo found in folder', false);
             } else {
                 console.warn('Photo not found in rendered grid');
                 updateStatus('Folder opened (photo not visible)', false);
             }
         }, 500);
-        
-    } catch (error) {
-        console.error('Error viewing photo in folder:', error);
-        alert(`Failed to open folder: ${error.message}`);
-        updateStatus('Error opening folder', false);
-    } finally {
-        // Re-enable button
-        if (modalViewInFolderBtn) {
-            modalViewInFolderBtn.disabled = false;
-            modalViewInFolderBtn.textContent = '📁 View in Folder';
-        }
-    }
+    };
+    
+    await similarViewInFolder(
+        currentModalPhoto,
+        findFolderIdByPath,
+        updateBrowserState,
+        closeModal,
+        renderBrowserPhotoGrid,
+        scrollToPhoto,
+        updateStatus,
+        modalViewInFolderBtn
+    );
 }
 
 // Add photos to embedding queue (at beginning if workers are running)
@@ -2357,292 +1986,7 @@ async function runSeriesAnalysisForScope(scope) {
 }
 
 // --- Analysis Settings Functions ---
-async function initializeAnalysisSettingsWithRetry(maxRetries = 10, delay = 100) {
-    for (let i = 0; i < maxRetries; i++) {
-        const success = await initializeAnalysisSettings();
-        if (success) {
-            return;
-        }
-        console.log(`Retrying initializeAnalysisSettings (attempt ${i + 1}/${maxRetries})`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-    }
-    console.error('Failed to initialize analysis settings after maximum retries');
-}
-
-async function initializeAnalysisSettings() {
-    try {
-        // Get DOM elements fresh each time to ensure they're available
-        const similarityThresholdSlider = document.getElementById('similarity-threshold');
-        const thresholdValueDisplay = document.getElementById('threshold-value');
-        const timeSpanSlider = document.getElementById('time-span');
-        const timeSpanValueDisplay = document.getElementById('time-span-value');
-        const minGroupSizeSlider = document.getElementById('min-group-size');
-        const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
-        const resultsSortSelect = document.getElementById('results-sort');
-        const workerCountSlider = document.getElementById('worker-count');
-        const workerCountValueDisplay = document.getElementById('worker-count-value');
-        
-        // Check if DOM elements are available
-        if (!similarityThresholdSlider || !thresholdValueDisplay || !timeSpanSlider || !timeSpanValueDisplay || !minGroupSizeSlider || !minGroupSizeValueDisplay || !workerCountSlider || !workerCountValueDisplay) {
-            console.warn('Some DOM elements not found, skipping analysis settings initialization');
-            return false;
-        }
-        
-        // Initialize date toggle and restore last range from DB if URL absent
-        try {
-            const dateEnabledSetting = await db.getSetting('dateEnabled');
-            if (dateEnabledSetting !== null) {
-                dateEnabledToggle.checked = Boolean(dateEnabledSetting);
-            }
-            const dateFilters = getDateFiltersFromURL();
-            if (!dateFilters.dateFrom && !dateFilters.dateTo) {
-                const savedFrom = await db.getSetting('dateFrom');
-                const savedTo = await db.getSetting('dateTo');
-                if (savedFrom) dateFromInput.value = savedFrom;
-                if (savedTo) dateToInput.value = savedTo;
-                if (!savedFrom && !savedTo) {
-                    setDefaultDateRange();
-                }
-            }
-            applyDateEnabledUI();
-        } catch (e) {
-            // Non-fatal
-        }
-
-        // Initialize similarity threshold
-        const savedThreshold = await db.getSetting('similarityThreshold');
-        const threshold = savedThreshold !== null ? Number(savedThreshold) : 0.90; // Default to 0.90
-        
-        // Ensure threshold is a valid number
-        const validThreshold = (!isNaN(threshold) && threshold >= 0.5 && threshold <= 0.99) ? threshold : 0.90;
-        
-        similarityThresholdSlider.value = validThreshold;
-        thresholdValueDisplay.textContent = validThreshold.toFixed(2);
-        
-        // Save default if no setting exists
-        if (savedThreshold === null) {
-            await db.setSetting('similarityThreshold', validThreshold);
-        }
-        
-        // Initialize time span
-        const savedTimeSpan = await db.getSetting('timeSpanHours');
-        const timeSpan = savedTimeSpan !== null ? Number(savedTimeSpan) : 8; // Default to 8 hours
-        
-        // Ensure timeSpan is a valid number (0 = disabled, 1-24 = hours)
-        const validTimeSpan = (!isNaN(timeSpan) && timeSpan >= 0 && timeSpan <= 24) ? timeSpan : 8;
-        
-        timeSpanSlider.value = validTimeSpan;
-        timeSpanValueDisplay.textContent = validTimeSpan === 0 ? 'Disabled (compare all)' : `${validTimeSpan} hours`;
-        
-        // Save default if no setting exists
-        if (savedTimeSpan === null) {
-            await db.setSetting('timeSpanHours', validTimeSpan);
-        }
-        
-        // Initialize min group size
-        const savedMinGroupSize = await db.getSetting('minGroupSize');
-        const minGroupSize = savedMinGroupSize !== null ? Number(savedMinGroupSize) : 3; // Default to 3 photos
-        
-        // Ensure minGroupSize is a valid number
-        const validMinGroupSize = (!isNaN(minGroupSize) && minGroupSize >= 2 && minGroupSize <= 20) ? minGroupSize : 3;
-        
-        minGroupSizeSlider.value = validMinGroupSize;
-        minGroupSizeValueDisplay.textContent = `${validMinGroupSize} photos`;
-        
-        // Save default if no setting exists
-        if (savedMinGroupSize === null) {
-            await db.setSetting('minGroupSize', validMinGroupSize);
-        }
-        
-        // Initialize sort method (moved to Results header)
-        const savedResultsSort = await db.getSetting('resultsSort');
-        const resultsSort = savedResultsSort !== null ? savedResultsSort : 'group-size'; // Default to group size
-        
-        if (resultsSortSelect) {
-            resultsSortSelect.value = resultsSort;
-        }
-        
-        // Save default if no setting exists
-        if (savedResultsSort === null) {
-            await db.setSetting('resultsSort', resultsSort);
-        }
-        
-        // Initialize worker count
-        const savedWorkerCount = await db.getSetting('workerCount');
-        const workerCount = savedWorkerCount !== null ? Number(savedWorkerCount) : 4; // Default to 4 workers
-        
-        // Ensure workerCount is a valid number
-        const validWorkerCount = (!isNaN(workerCount) && workerCount >= 1 && workerCount <= 8) ? workerCount : 4;
-        
-        // Set both the slider value and display text
-        workerCountSlider.value = validWorkerCount;
-        workerCountValueDisplay.textContent = `${validWorkerCount} worker${validWorkerCount === 1 ? '' : 's'}`;
-        
-        // Don't trigger the input event during initialization to avoid overriding
-        
-        // Save default if no setting exists
-        if (savedWorkerCount === null) {
-            await db.setSetting('workerCount', validWorkerCount);
-        }
-        
-        console.log(`Worker count initialized to: ${validWorkerCount}`);
-        
-        // Initialize series analysis settings
-        if (seriesMinGroupSizeSlider && seriesMinGroupSizeValueDisplay) {
-            const savedSeriesMinGroupSize = await db.getSetting('seriesMinGroupSize');
-            const seriesMinGroupSize = savedSeriesMinGroupSize !== null ? Number(savedSeriesMinGroupSize) : 20;
-            const validSeriesMinGroupSize = (!isNaN(seriesMinGroupSize) && seriesMinGroupSize >= 5 && seriesMinGroupSize <= 100) ? seriesMinGroupSize : 20;
-            
-            seriesMinGroupSizeSlider.value = validSeriesMinGroupSize;
-            seriesMinGroupSizeValueDisplay.textContent = `${validSeriesMinGroupSize} photos`;
-            
-            if (savedSeriesMinGroupSize === null) {
-                await db.setSetting('seriesMinGroupSize', validSeriesMinGroupSize);
-            }
-        }
-        
-        if (seriesMinDensitySlider && seriesMinDensityValueDisplay) {
-            const savedSeriesMinDensity = await db.getSetting('seriesMinDensity');
-            const seriesMinDensity = savedSeriesMinDensity !== null ? Number(savedSeriesMinDensity) : 3;
-            const validSeriesMinDensity = (!isNaN(seriesMinDensity) && seriesMinDensity >= 0.5 && seriesMinDensity <= 10) ? seriesMinDensity : 3;
-            
-            seriesMinDensitySlider.value = validSeriesMinDensity;
-            seriesMinDensityValueDisplay.textContent = `${validSeriesMinDensity.toFixed(1)} photos/min`;
-            
-            if (savedSeriesMinDensity === null) {
-                await db.setSetting('seriesMinDensity', validSeriesMinDensity);
-            }
-        }
-        
-        if (seriesTimeGapSlider && seriesTimeGapValueDisplay) {
-            const savedSeriesTimeGap = await db.getSetting('seriesMaxTimeGap');
-            const seriesTimeGap = savedSeriesTimeGap !== null ? Number(savedSeriesTimeGap) : 5;
-            const validSeriesTimeGap = (!isNaN(seriesTimeGap) && seriesTimeGap >= 1 && seriesTimeGap <= 60) ? seriesTimeGap : 5;
-            
-            seriesTimeGapSlider.value = validSeriesTimeGap;
-            seriesTimeGapValueDisplay.textContent = `${validSeriesTimeGap} minutes`;
-            
-            if (savedSeriesTimeGap === null) {
-                await db.setSetting('seriesMaxTimeGap', validSeriesTimeGap);
-            }
-        }
-        
-        console.log('Series analysis settings initialized');
-        
-        return true;
-    } catch (error) {
-        console.error('Error initializing analysis settings:', error);
-        // Set default values if database fails - get elements again in case they weren't available before
-        const similarityThresholdSlider = document.getElementById('similarity-threshold');
-        const thresholdValueDisplay = document.getElementById('threshold-value');
-        const timeSpanSlider = document.getElementById('time-span');
-        const timeSpanValueDisplay = document.getElementById('time-span-value');
-        const minGroupSizeSlider = document.getElementById('min-group-size');
-        const minGroupSizeValueDisplay = document.getElementById('min-group-size-value');
-        const resultsSortSelect = document.getElementById('results-sort');
-        const workerCountSlider = document.getElementById('worker-count');
-        const workerCountValueDisplay = document.getElementById('worker-count-value');
-        
-        if (similarityThresholdSlider) similarityThresholdSlider.value = 0.90;
-        if (thresholdValueDisplay) thresholdValueDisplay.textContent = '0.90';
-        if (timeSpanSlider) timeSpanSlider.value = 8;
-        if (timeSpanValueDisplay) timeSpanValueDisplay.textContent = '8 hours';
-        if (minGroupSizeSlider) minGroupSizeSlider.value = 3;
-        if (minGroupSizeValueDisplay) minGroupSizeValueDisplay.textContent = '3 photos';
-        if (resultsSortSelect) resultsSortSelect.value = 'group-size';
-        if (workerCountSlider) workerCountSlider.value = 4;
-        if (workerCountValueDisplay) workerCountValueDisplay.textContent = '4 workers';
-        
-        // Also save the default value to database
-        try {
-            await db.setSetting('workerCount', 4);
-        } catch (dbError) {
-            console.error('Error saving default worker count:', dbError);
-        }
-        return false;
-    }
-}
-
-async function getSimilarityThreshold() {
-    try {
-        const threshold = await db.getSetting('similarityThreshold');
-        return threshold !== null ? threshold : 0.90;
-    } catch (error) {
-        console.error('Error getting similarity threshold:', error);
-        return 0.90;
-    }
-}
-
-async function getTimeSpanHours() {
-    try {
-        const timeSpan = await db.getSetting('timeSpanHours');
-        return timeSpan !== null ? timeSpan : 8;
-    } catch (error) {
-        console.error('Error getting time span:', error);
-        return 8;
-    }
-}
-
-async function getSortMethod() {
-    try {
-        const sortMethod = await db.getSetting('resultsSort');
-        return sortMethod !== null ? sortMethod : 'group-size';
-    } catch (error) {
-        console.error('Error getting sort method:', error);
-        return 'group-size';
-    }
-}
-
-async function getWorkerCount() {
-    try {
-        const workerCount = await db.getSetting('workerCount');
-        return (workerCount != null) ? workerCount : 4; // != null checks for both null and undefined
-    } catch (error) {
-        console.error('Error getting worker count:', error);
-        return 4;
-    }
-}
-
-async function getMinGroupSize() {
-    try {
-        const minGroupSize = await db.getSetting('minGroupSize');
-        return minGroupSize !== null ? minGroupSize : 3;
-    } catch (error) {
-        console.error('Error getting min group size:', error);
-        return 3;
-    }
-}
-
-// Series analysis settings getters
-async function getSeriesMinGroupSize() {
-    try {
-        const minGroupSize = await db.getSetting('seriesMinGroupSize');
-        return minGroupSize !== null ? minGroupSize : 20;
-    } catch (error) {
-        console.error('Error getting series min group size:', error);
-        return 20;
-    }
-}
-
-async function getSeriesMinDensity() {
-    try {
-        const minDensity = await db.getSetting('seriesMinDensity');
-        return minDensity !== null ? minDensity : 3;
-    } catch (error) {
-        console.error('Error getting series min density:', error);
-        return 3;
-    }
-}
-
-async function getSeriesMaxTimeGap() {
-    try {
-        const maxTimeGap = await db.getSetting('seriesMaxTimeGap');
-        return maxTimeGap !== null ? maxTimeGap : 5;
-    } catch (error) {
-        console.error('Error getting series max time gap:', error);
-        return 5;
-    }
-}
+// (Moved to settingsManager.js)
 
 // --- DOM Element Initialization ---
 function initializeDOMElements() {
@@ -2919,16 +2263,19 @@ async function main() {
     // Filter control event listeners
     dateFromInput.addEventListener('change', async () => {
         await db.setSetting('dateFrom', dateFromInput.value || '');
-        updateURLWithFilters();
+        syncGlobalsToState();
+        updateURLWithFilters(appState);
     });
     dateToInput.addEventListener('change', async () => {
         await db.setSetting('dateTo', dateToInput.value || '');
-        updateURLWithFilters();
+        syncGlobalsToState();
+        updateURLWithFilters(appState);
     });
     dateEnabledToggle.addEventListener('change', async () => {
         await db.setSetting('dateEnabled', isDateFilterEnabled());
         applyDateEnabledUI();
-        updateURLWithFilters();
+        syncGlobalsToState();
+        updateURLWithFilters(appState);
     });
     
     // Similarity threshold control event listeners
@@ -3052,7 +2399,8 @@ async function main() {
                 selectedFolderPath = '/drive/root:';
             }
             selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
-            updateURLWithPath(selectedFolderPath);
+            syncGlobalsToState();
+            updateURLWithPath(selectedFolderPath, appState);
             updateBrowserCurrentPath();
             await renderBrowserPhotoGrid(true);
             } catch (e) {
@@ -3118,7 +2466,7 @@ async function main() {
                 }
             });
             
-            await deletePhotosWithConfirmation(selectedPhotos, async () => {
+            await deletePhotosWithConfirmation(selectedPhotos, updateStatus, async () => {
                 // Remove deleted photos from the DOM (much faster than reloading entire folder)
                 photoElements.forEach(element => {
                     if (element && element.parentNode) {
@@ -3141,13 +2489,13 @@ async function main() {
     }
     
     // Backup functionality event listeners
-    exportEmbeddingsBtn.addEventListener('click', handleExportEmbeddings);
-    importEmbeddingsBtn.addEventListener('click', handleImportEmbeddings);
+    exportEmbeddingsBtn.addEventListener('click', () => backupHandleExport(updateStatus, exportEmbeddingsBtn, exportInfo));
+    importEmbeddingsBtn.addEventListener('click', () => backupHandleImport(importModal, showImportSection, (files) => displayImportFileList(files, backupDeleteFile)));
     
     // Import modal event listeners
     importModalClose.addEventListener('click', closeImportModal);
     cancelImportBtn.addEventListener('click', closeImportModal);
-    confirmImportBtn.addEventListener('click', performImport);
+    confirmImportBtn.addEventListener('click', () => backupPerformImport(showImportSection, importInfo));
     closeImportBtn.addEventListener('click', closeImportModal);
     
     // Close import modal on outside click
@@ -3180,311 +2528,10 @@ async function main() {
     });
 }
 
-// Backup functionality
-async function handleExportEmbeddings() {
-    try {
-        exportEmbeddingsBtn.disabled = true;
-        updateStatus('Preparing embeddings for export...', true);
-        
-        const result = await exportEmbeddingsToOneDrive();
-        
-        updateStatus(`Successfully exported ${result.embeddingCount} embeddings (${result.fileSizeMB} MB) to OneDrive`, false);
-        
-        // Update export info
-        exportInfo.textContent = `Last export: ${result.embeddingCount} embeddings (${result.fileSizeMB} MB)`;
-        
-    } catch (error) {
-        console.error('Export failed:', error);
-        
-        // Check if it's because there are no embeddings
-        if (error.message.includes('No embeddings found to export')) {
-            updateStatus('No embeddings to export yet. Generate embeddings first, then try exporting again.', false);
-        } else {
-            updateStatus(`Export failed: ${error.message}`, false);
-        }
-    } finally {
-        exportEmbeddingsBtn.disabled = false;
-    }
-}
-
-async function handleImportEmbeddings() {
-    try {
-        importModal.style.display = 'flex';
-        showImportSection('loading');
-        
-        const files = await listAvailableEmbeddingFiles();
-        
-        if (files.length === 0) {
-            showImportSection('file-selection');
-            importFileList.innerHTML = '<p>No embedding files found on OneDrive.</p>';
-            return;
-        }
-        
-        displayImportFileList(files);
-        showImportSection('file-selection');
-        
-    } catch (error) {
-        console.error('Failed to load import files:', error);
-        alert(`Failed to load import files: ${error.message}`);
-        closeImportModal();
-    }
-}
-
-function displayImportFileList(files) {
-    importFileList.innerHTML = '';
-    
-    files.forEach(file => {
-        const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
-        fileItem.dataset.fileId = file.id;
-        
-        const formatDate = (dateStr) => new Date(dateStr).toLocaleString();
-        const formatSize = (bytes) => (bytes / (1024 * 1024)).toFixed(2) + ' MB';
-        
-        fileItem.innerHTML = `
-            <div class="file-info">
-                <div class="file-name">${file.name}</div>
-                <div class="file-meta">
-                    Click to load details • ${formatSize(file.size)} • ${formatDate(file.createdDateTime)}
-                    ${file.hasValidFormat ? '' : ' • ⚠️ Unknown format'}
-                </div>
-            </div>
-            <div class="file-actions">
-                <button type="button" onclick="deleteImportFile('${file.id}', this)">Delete</button>
-            </div>
-        `;
-        
-        fileItem.addEventListener('click', async (e) => {
-            if (e.target.tagName === 'BUTTON') return;
-            
-            // Clear previous selection
-            document.querySelectorAll('.file-item').forEach(item => item.classList.remove('selected'));
-            
-            // Select this item
-            fileItem.classList.add('selected');
-            
-            // Show loading state
-            const metaDiv = fileItem.querySelector('.file-meta');
-            const originalMeta = metaDiv.innerHTML;
-            metaDiv.innerHTML = 'Loading file details...';
-            confirmImportBtn.disabled = true;
-            
-            try {
-                // Load metadata on demand
-                const metadata = await getEmbeddingFileMetadata(file.id);
-                
-                if (metadata.valid) {
-                    // Update display with actual metadata
-                    metaDiv.innerHTML = `
-                        ${metadata.embeddingCount} embeddings • ${formatSize(file.size)} • ${formatDate(file.createdDateTime)}
-                        ${metadata.hasValidFormat ? '' : ' • ⚠️ Unknown format'}
-                        ${metadata.exportDate ? ` • Exported: ${formatDate(metadata.exportDate)}` : ''}
-                    `;
-                    
-                    // Show import options
-                    importOptions.style.display = 'block';
-                    confirmImportBtn.disabled = false;
-                    confirmImportBtn.dataset.fileId = file.id;
-                } else {
-                    metaDiv.innerHTML = `${originalMeta} • ❌ Invalid file format`;
-                    importOptions.style.display = 'none';
-                    confirmImportBtn.disabled = true;
-                }
-            } catch (error) {
-                console.error('Error loading file metadata:', error);
-                metaDiv.innerHTML = `${originalMeta} • ❌ Error loading details`;
-                importOptions.style.display = 'none';
-                confirmImportBtn.disabled = true;
-            }
-        });
-        
-        importFileList.appendChild(fileItem);
-    });
-}
-
-async function deleteImportFile(fileId, buttonElement) {
-    if (!confirm('Are you sure you want to delete this embedding file?')) {
-        return;
-    }
-    
-    try {
-        buttonElement.disabled = true;
-        buttonElement.textContent = 'Deleting...';
-        
-        await deleteEmbeddingFileFromOneDrive(fileId);
-        
-        // Remove from UI
-        buttonElement.closest('.file-item').remove();
-        
-        // Hide options if this was the selected file
-        if (confirmImportBtn.dataset.fileId === fileId) {
-            importOptions.style.display = 'none';
-            confirmImportBtn.disabled = true;
-        }
-        
-    } catch (error) {
-        console.error('Delete failed:', error);
-        alert(`Failed to delete file: ${error.message}`);
-        buttonElement.disabled = false;
-        buttonElement.textContent = 'Delete';
-    }
-}
-
-async function performImport() {
-    const fileId = confirmImportBtn.dataset.fileId;
-    const conflictStrategy = conflictStrategySelect.value;
-    
-    if (!fileId) {
-        alert('No file selected');
-        return;
-    }
-    
-    try {
-        showImportSection('progress');
-        importStatus.textContent = 'Downloading and processing embeddings...';
-        
-        const result = await importEmbeddingsFromOneDrive(fileId, conflictStrategy);
-        
-        // Show results
-        importSummary.innerHTML = `
-            <div class="summary-item">
-                <span class="label">Source Export Date:</span>
-                <span class="value">${new Date(result.sourceMetadata.exportDate).toLocaleString()}</span>
-            </div>
-            <div class="summary-item">
-                <span class="label">Total in File:</span>
-                <span class="value">${result.sourceMetadata.embeddingCount}</span>
-            </div>
-            <div class="summary-item">
-                <span class="label">Newly Imported:</span>
-                <span class="value">${result.imported}</span>
-            </div>
-            <div class="summary-item">
-                <span class="label">Updated Existing:</span>
-                <span class="value">${result.updated}</span>
-            </div>
-            <div class="summary-item">
-                <span class="label">Skipped:</span>
-                <span class="value">${result.skipped}</span>
-            </div>
-        `;
-        
-        showImportSection('results');
-        
-        // Update import info in main panel
-        importInfo.textContent = `Last import: ${result.imported + result.updated} embeddings imported/updated`;
-        
-    } catch (error) {
-        console.error('Import failed:', error);
-        alert(`Import failed: ${error.message}`);
-        showImportSection('file-selection');
-    }
-}
-
-function showImportSection(section) {
-    // Hide all sections
-    importLoading.style.display = 'none';
-    importFileSelection.style.display = 'none';
-    importProgress.style.display = 'none';
-    importResults.style.display = 'none';
-    
-    // Show selected section
-    document.getElementById(`import-${section}`).style.display = 'block';
-}
-
-function closeImportModal() {
-    importModal.style.display = 'none';
-    
-    // Reset modal state
-    importOptions.style.display = 'none';
-    confirmImportBtn.disabled = true;
-    confirmImportBtn.removeAttribute('data-file-id');
-    
-    // Clear selections
-    document.querySelectorAll('.file-item').forEach(item => item.classList.remove('selected'));
-}
-
-async function initializeBackupPanel() {
-    try {
-        // Always enable the export button - user might have embeddings from previous sessions
-        exportEmbeddingsBtn.disabled = false;
-        
-        // Check if we have embeddings to show accurate info
-        const sizeEstimate = await estimateExportSize();
-        
-        if (sizeEstimate.embeddingCount > 0) {
-            exportInfo.textContent = `Ready to export: ${sizeEstimate.embeddingCount} embeddings (~${sizeEstimate.estimatedSizeMB} MB)`;
-        } else {
-            exportInfo.textContent = 'Export will include any existing embeddings (may be empty if no embeddings generated yet)';
-        }
-        
-        // Show last export info if available
-        const lastExport = await getLastExportInfo();
-        if (lastExport) {
-            const date = new Date(lastExport.date).toLocaleString();
-            exportInfo.textContent += ` • Last export: ${date}`;
-        }
-        
-        // Show last import info if available
-        const lastImport = await getLastImportInfo();
-        if (lastImport) {
-            const date = new Date(lastImport.date).toLocaleString();
-            importInfo.textContent = `Last import: ${lastImport.imported + lastImport.updated} embeddings • ${date}`;
-        }
-        
-    } catch (error) {
-        console.error('Error initializing backup panel:', error);
-        // Even on error, keep export button enabled
-        exportEmbeddingsBtn.disabled = false;
-        exportInfo.textContent = 'Export available (click to check for embeddings)';
-    }
-}
+// Backup functionality (moved to backupManager.js)
 
 // Make deleteImportFile available globally for onclick handlers
-window.deleteImportFile = deleteImportFile;
-
-// Collapsible Panels: init and persistence
-function initializeCollapsiblePanels() {
-    const panels = document.querySelectorAll('.panel[data-panel-key]');
-    panels.forEach(async (panel) => {
-        const key = panel.getAttribute('data-panel-key');
-        const toggleBtn = panel.querySelector('.panel-toggle');
-        if (!toggleBtn) return;
-
-        // Restore state from DB
-        try {
-            const stored = await db.getSetting(`ui.panel.${key}.expanded`);
-            const isExpanded = stored === null ? true : Boolean(stored);
-            applyPanelExpandedState(panel, toggleBtn, isExpanded);
-        } catch (e) {
-            applyPanelExpandedState(panel, toggleBtn, true);
-        }
-
-        // Listener
-        toggleBtn.addEventListener('click', async () => {
-            const currentlyExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-            const next = !currentlyExpanded;
-            applyPanelExpandedState(panel, toggleBtn, next);
-            try {
-                await db.setSetting(`ui.panel.${key}.expanded`, next);
-            } catch (e) {
-                console.warn('Failed to persist panel state', key, e);
-            }
-        });
-    });
-}
-
-function applyPanelExpandedState(panel, toggleBtn, expanded) {
-    if (expanded) {
-        panel.classList.remove('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'true');
-        toggleBtn.textContent = '▾';
-    } else {
-        panel.classList.add('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'false');
-        toggleBtn.textContent = '▸';
-    }
-}
+window.deleteImportFile = backupDeleteFile;
 
 // Update browser current path display with clickable breadcrumbs
 function updateBrowserCurrentPath() {
@@ -3507,7 +2554,8 @@ function updateBrowserCurrentPath() {
         selectedFolderId = 'root';
         selectedFolderPath = '/drive/root:';
         selectedFolderDisplayName = 'OneDrive (Root)';
-        updateURLWithPath(selectedFolderPath);
+        syncGlobalsToState();
+        updateURLWithPath(selectedFolderPath, appState);
         updateBrowserCurrentPath();
         await renderBrowserPhotoGrid(true);
     });
@@ -3545,7 +2593,8 @@ function updateBrowserCurrentPath() {
                         selectedFolderId = folderId;
                         selectedFolderPath = targetPath;
                         selectedFolderDisplayName = pathToDisplayName(targetPath);
-                        updateURLWithPath(selectedFolderPath);
+                        syncGlobalsToState();
+                        updateURLWithPath(selectedFolderPath, appState);
                         updateBrowserCurrentPath();
                         await renderBrowserPhotoGrid(true);
                     }
