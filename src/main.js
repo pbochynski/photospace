@@ -495,13 +495,13 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox" data-group-idx="0" data-photo-idx="${idx}" checked>
                     <span class="photo-checkbox-custom"></span>
-                    <img src="${thumbnailSrc}" data-file-id="${photo.file_id}" data-photo-idx="${idx}" alt="${photo.name || ''}" loading="lazy">
-                    <div class="photo-score">
-                        <div class="similarity-score">Similarity: ${similarityPercent}%</div>
-                        <div class="photo-path">${photo.path ? photo.path.replace('/drive/root:', '') || '/' : ''}</div>
-                        ${photo.quality_score ? `<div class="quality-info">Quality: ${Math.round(photo.quality_score * 100)}%</div>` : ''}
-                    </div>
                 </label>
+                <img src="${thumbnailSrc}" data-file-id="${photo.file_id}" data-photo-idx="${idx}" alt="${photo.name || ''}" loading="lazy">
+                <div class="photo-info">
+                    <div class="similarity-score">Similarity: ${similarityPercent}%</div>
+                    <div class="photo-path">${photo.path ? photo.path.replace('/drive/root:', '') || '/' : ''}</div>
+                    <div class="photo-name">${photo.name || 'Untitled'}</div>
+                </div>
             `;
             photoGrid.appendChild(photoItem);
         });
@@ -563,20 +563,18 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
             
             // Build photo info based on type
             let photoInfo = `<div class="photo-path">${p.path ? p.path.replace('/drive/root:', '') || '/' : ''}</div>`;
+            photoInfo += `<div class="photo-name">${p.name || 'Untitled'}</div>`;
             if (type === 'series') {
                 photoInfo += `<div class="photo-time">${new Date(p.photo_taken_ts).toLocaleTimeString()}</div>`;
-            }
-            if (p.quality_score) {
-                photoInfo += `<div class="quality-info">Quality: ${(p.quality_score * 100).toFixed(0)}%</div>`;
             }
             
             photoItem.innerHTML = `
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox" data-group-idx="${groupIdx}" data-photo-idx="${idx}" ${type === 'similarity' && idx === 0 ? '' : 'checked'}>
                     <span class="photo-checkbox-custom"></span>
-                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
-                    <div class="photo-score">${photoInfo}</div>
                 </label>
+                <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
+                <div class="photo-info">${photoInfo}</div>
             `;
             photoGrid.appendChild(photoItem);
         });
@@ -850,11 +848,12 @@ async function renderBrowserPhotoGrid(forceReload = false) {
                 <label class="photo-checkbox-label">
                     <input type="checkbox" class="photo-checkbox browser-photo-checkbox" data-photo-idx="${idx}">
                     <span class="photo-checkbox-custom"></span>
-                    <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
-                    <div class="photo-score">
-                        <div class="photo-path">${p.path ? (p.path.replace('/drive/root:', '') || '/') : ''}</div>
-                    </div>
                 </label>
+                <img src="${thumbnailSrc}" data-file-id="${p.file_id}" alt="${p.name || ''}" loading="lazy">
+                <div class="photo-info">
+                    <div class="photo-path">${p.path ? (p.path.replace('/drive/root:', '') || '/') : ''}</div>
+                    <div class="photo-name">${p.name || 'Untitled'}</div>
+                </div>
             `;
             browserPhotoGrid.appendChild(item);
         });
