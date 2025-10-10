@@ -140,6 +140,7 @@ button:disabled {
 }
 
 .delete-selected-btn,
+.delete-btn,
 #clear-folder-btn,
 #clear-date-btn,
 .delete-photo-btn,
@@ -149,6 +150,7 @@ button:disabled {
 }
 
 .delete-selected-btn:hover:not(:disabled),
+.delete-btn:hover:not(:disabled),
 #clear-folder-btn:hover:not(:disabled),
 #clear-date-btn:hover:not(:disabled),
 .delete-photo-btn:hover,
@@ -499,15 +501,6 @@ input[type="range"]::-moz-range-thumb {
 /* Browser & Toolbar */
 .browser-toolbar {
   margin: 1rem 0 0.5rem 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.toolbar-left,
-.toolbar-right {
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -1449,22 +1442,13 @@ input[type="range"]::-moz-range-thumb {
   }
   
   .folder-input-group,
-  .date-range-group,
-  .toolbar-left,
-  .toolbar-right {
+  .date-range-group {
     flex-wrap: wrap;
     gap: 0.5rem;
   }
   
   .browser-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .toolbar-left,
-  .toolbar-right {
-    width: 100%;
-    justify-content: space-between;
+    gap: 0.5rem;
   }
   
   #selected-folder,

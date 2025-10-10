@@ -25,7 +25,7 @@ let statusText, progressBar, pauseResumeEmbeddingsBtn, clearDatabaseButton;
 let startAnalysisButton, resultsContainer;
 let startSeriesAnalysisButton, seriesMinGroupSizeSlider, seriesMinGroupSizeValueDisplay;
 let seriesMinDensitySlider, seriesMinDensityValueDisplay, seriesTimeGapSlider, seriesTimeGapValueDisplay;
-let resultsTypeLabel, browserPhotoGrid, browserSortSelect, browserRefreshBtn, browserUpBtn;
+let resultsTypeLabel, browserPhotoGrid, browserSortSelect, browserRefreshBtn;
 let browserScanBtn, browserAnalyzeBtn, browserCurrentPath, browserToggleSelectBtn, browserDeleteSelectedBtn;
 let similarityThresholdSlider, thresholdValueDisplay, timeSpanSlider, timeSpanValueDisplay;
 let minGroupSizeSlider, minGroupSizeValueDisplay, resultsSortSelect, workerCountSlider, workerCountValueDisplay;
@@ -2057,7 +2057,6 @@ function initializeDOMElements() {
     browserPhotoGrid = document.getElementById('browser-photo-grid');
     browserSortSelect = document.getElementById('browser-sort');
     browserRefreshBtn = document.getElementById('browser-refresh');
-    browserUpBtn = document.getElementById('browser-up');
     browserScanBtn = document.getElementById('browser-scan');
     browserAnalyzeBtn = document.getElementById('browser-analyze');
     browserCurrentPath = document.getElementById('browser-current-path');
@@ -2435,29 +2434,6 @@ async function main() {
     if (browserRefreshBtn) {
         browserRefreshBtn.addEventListener('click', async () => {
             await renderBrowserPhotoGrid(true);
-        });
-    }
-    if (browserUpBtn) {
-        browserUpBtn.addEventListener('click', async () => {
-            // Use API to get parent
-            try {
-                if (!selectedFolderId || selectedFolderId === 'root') return;
-                const info = await getFolderInfo(selectedFolderId);
-                if (info.parentId) {
-                selectedFolderId = info.parentId;
-                selectedFolderPath = await getFolderPath(selectedFolderId);
-            } else {
-                selectedFolderId = 'root';
-                selectedFolderPath = '/drive/root:';
-            }
-            selectedFolderDisplayName = pathToDisplayName(selectedFolderPath);
-            syncGlobalsToState();
-            updateURLWithPath(selectedFolderPath, appState);
-            updateBrowserCurrentPath();
-            await renderBrowserPhotoGrid(true);
-            } catch (e) {
-                console.error('Failed to navigate up', e);
-            }
         });
     }
     if (browserScanBtn) {

@@ -62,21 +62,16 @@
 
                     <!-- Browser toolbar and photo grid -->
                     <div class="browser-toolbar">
-                        <div class="toolbar-left">
-                            <label for="browser-sort">Sort:</label>
-                            <select id="browser-sort">
-                                <option value="date-desc">Date (Newest First)</option>
-                                <option value="date-asc">Date (Oldest First)</option>
-                            </select>
-                            <button id="browser-toggle-select" type="button" class="secondary-btn">☑️ Toggle All</button>
-                            <button id="browser-delete-selected" type="button" class="secondary-btn">🗑️ Delete Selected</button>
-                        </div>
-                        <div class="toolbar-right">
-                            <button id="browser-up" type="button" class="secondary-btn">📁 Up</button>
-                            <button id="browser-analyze" type="button" class="primary-btn">🔍 Analyze This Folder</button>
-                            <button id="browser-scan" type="button" class="primary-btn">➕ Queue Scan</button>
-                            <button id="browser-refresh" type="button" class="secondary-btn">🔄 Refresh</button>
-                        </div>
+                        <button id="browser-toggle-select" type="button" class="secondary-btn">☑️ Toggle All</button>
+                        <button id="browser-delete-selected" type="button" class="delete-btn">🗑️ Delete Selected</button>
+                        <button id="browser-analyze" type="button" class="primary-btn">🔍 Similar groups</button>
+                        <button id="browser-scan" type="button" class="primary-btn">➕ Scan</button>
+                        <button id="browser-refresh" type="button" class="secondary-btn">🔄 Refresh</button>
+                        <label for="browser-sort">Sort:</label>
+                        <select id="browser-sort">
+                            <option value="date-desc">Date (Newest First)</option>
+                            <option value="date-asc">Date (Oldest First)</option>
+                        </select>
                     </div>
                     <div id="browser-photo-grid" class="photo-grid"></div>
                 </div>
