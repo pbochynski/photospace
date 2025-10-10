@@ -20,7 +20,7 @@ const debugConsole = initializeDebugConsole();
 let embeddingProcessor = null;
 
 // --- DOM Elements (will be initialized in main()) ---
-let loginButton, logoutButton, userInfo, userInfoContainer, mainContent;
+let loginButton, logoutButton, userInfoContainer, mainContent;
 let statusText, progressBar, pauseResumeEmbeddingsBtn, clearDatabaseButton;
 let startAnalysisButton, resultsContainer;
 let startSeriesAnalysisButton, seriesMinGroupSizeSlider, seriesMinGroupSizeValueDisplay;
@@ -212,9 +212,11 @@ async function displayPhotoInModal(photo, thumbnailSrc, photoList = [], photoInd
 
 async function displayLoggedIn(account) {
     loginButton.style.display = 'none';
-    userInfo.textContent = `Welcome, ${account.name}`;
     userInfoContainer.style.display = 'flex';
     mainContent.style.display = 'block';
+    // Hide landing intro if present
+    const landingIntro = document.getElementById('landing-intro');
+    if (landingIntro) landingIntro.style.display = 'none';
     updateStatus('Ready. Click "Scan OneDrive Photos" to begin.');
     
     // Initialize service worker with auth token
@@ -2034,7 +2036,6 @@ async function runSeriesAnalysisForScope(scope) {
 function initializeDOMElements() {
     loginButton = document.getElementById('login-button');
     logoutButton = document.getElementById('logout-button');
-    userInfo = document.getElementById('user-info');
     userInfoContainer = document.getElementById('user-info-container');
     mainContent = document.getElementById('main-content');
     statusText = document.getElementById('status-text');
@@ -2150,6 +2151,12 @@ async function main() {
     // STEP 5: Add event listeners now that MSAL is ready
     loginButton.addEventListener('click', handleLoginClick);
     
+    // Hero login button (if present)
+    const heroLoginBtn = document.getElementById('hero-login-btn');
+    if (heroLoginBtn) {
+        heroLoginBtn.addEventListener('click', handleLoginClick);
+    }
+    
     // Logout button
     if (logoutButton) {
         logoutButton.addEventListener('click', async () => {
@@ -2168,6 +2175,9 @@ async function main() {
                 userInfoContainer.style.display = 'none';
                 mainContent.style.display = 'none';
                 loginButton.style.display = 'block';
+                // Show landing intro again
+                const landingIntro = document.getElementById('landing-intro');
+                if (landingIntro) landingIntro.style.display = '';
                 
                 // Clear results
                 currentResultsType = null;

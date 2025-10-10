@@ -1,6 +1,16 @@
 # Photospace.app
 
-A privacy-first OneDrive photo library analyzer. This tool helps you find and remove groups of similar photos to free up space. All processing happens directly in your browser using AI models running locally. Your photos are never uploaded to a third-party server.
+A privacy-first OneDrive photo library analyzer and organizer. Find and remove duplicate photos, discover photo series, and manage your photo library efficiently. All processing happens directly in your browser using AI models running locally. Your photos are never uploaded to a third-party server.
+
+## 🚀 Quick Overview
+
+- 🔒 **100% Private** - All AI processing happens in your browser
+- 🤖 **Smart AI** - CLIP vision model for accurate similarity detection  
+- 📁 **Easy Organization** - Browse, scan, and analyze your OneDrive photos
+- 🎯 **Two Analysis Modes** - Find duplicates (AI) or photo series (time-based)
+- ⚡ **Fast Processing** - Parallel workers with pause/resume capability
+- 💾 **Backup & Sync** - Export/import embeddings across devices
+- 🗑️ **Quick Cleanup** - Select and delete duplicates with one click
 
 ## Features
 
@@ -9,36 +19,62 @@ A privacy-first OneDrive photo library analyzer. This tool helps you find and re
 - All photo processing happens locally in your browser
 - Photos and embeddings are stored securely in your browser's IndexedDB
 - Service Worker provides persistent, authenticated caching for images
+- No data collection or third-party server processing
 
-### 📁 **Photo Management**
-- **Flexible Scanning**: Scan all OneDrive photos or specific folders
-- **Folder Browser**: Interactive folder navigation to select specific directories
-- **Smart Filtering**: Filter photos by date range and folder path
-- **URL State**: Shareable URLs with filter parameters for easy navigation
-- **Incremental Processing**: Only process new photos on subsequent scans
-- **Force Reprocess**: Option to regenerate embeddings for all photos
+### 📁 **OneDrive Browser & Photo Management**
+- **Interactive Folder Browser**: Navigate your OneDrive folders with clickable breadcrumbs
+- **Auto-Indexing**: Automatically indexes photos as you browse folders
+- **Smart Queue System**: Queue multiple folders for scanning with parallel processing (up to 5 concurrent)
+- **Real-time Status**: Live updates showing scan queue, active scans, and database statistics
+- **Batch Operations**: Select and delete multiple photos at once
+- **Folder-Specific Analysis**: Analyze current folder or all indexed photos
+- **Incremental Updates**: Only processes new photos, automatically removes deleted ones
+- **URL State Management**: Shareable URLs preserve folder navigation and filters
 
 ### 🤖 **AI-Powered Analysis**
 - **Local AI Processing**: CLIP vision model (ViT-Base-Patch16) running entirely in your browser
-- **Parallel Processing**: Configurable number of Web Workers (1-8) for optimal performance
-- **Mobile Optimization**: WebAssembly fallback for devices without WebGPU support
-- **Quality Assessment**: Automatic sharpness, exposure, and overall quality scoring
+- **Parallel Processing**: Configurable Web Workers (1-8) for optimal performance
+- **Automatic Embedding Generation**: Background processing with pause/resume capability
+- **Quality Assessment**: 
+  - Sharpness detection (blur detection)
+  - Exposure analysis (brightness, clipping, dynamic range, entropy)
+  - Face detection with quality scoring
+  - Overall quality score combining all metrics
 - **Visual Similarity**: Advanced cosine similarity matching between photo embeddings
 
-### 🔍 **Smart Photo Grouping**
-- **Temporal Clustering**: Groups photos by time sessions (configurable 1-24 hours)
-- **Similarity Thresholds**: Adjustable similarity detection (50%-95%)
+### 🔍 **Similarity Analysis (Duplicate Detection)**
+- **Smart Grouping**: Finds groups of visually similar photos
+- **Temporal Clustering**: Groups photos by time sessions (0-24 hours, configurable)
+- **Adjustable Threshold**: Fine-tune similarity detection (50%-99%)
+- **Quality-Based Ranking**: Automatically identifies best photo in each group
+- **Minimum Group Size**: Filter by group size (2-20 photos)
 - **Multiple Sort Options**: 
   - Group size (highest reduction potential first)
   - Date (newest or oldest first)
-- **Quality Ranking**: Best photo selection based on sharpness, exposure, and quality metrics
+  - Density (for series analysis)
+
+### 📸 **Photo Series Detection**
+- **Time-Based Analysis**: Finds large photo series based on shooting patterns
+- **No Embeddings Required**: Works without AI processing for faster analysis
+- **Density Filtering**: Minimum photos per minute threshold (0.5-10 photos/min)
+- **Size Filtering**: Minimum group size (5-100 photos)
+- **Gap Detection**: Maximum time gap between photos (1-60 minutes)
+- **Detailed Metrics**: Shows duration, density, average time between photos
 
 ### 🖼️ **Enhanced Image Viewing**
-- **Thumbnail Caching**: Fast thumbnail loading with persistent browser cache
-- **Full-Size Viewing**: Modal viewer with automatic full-resolution image loading
-- **HEIC Support**: Automatic fallback to thumbnail for unsupported formats
-- **Image Metadata**: Display quality metrics, sharpness, exposure scores
-- **Batch Selection**: Select multiple photos for deletion within groups
+- **Modal Viewer**: Full-screen photo viewing with keyboard navigation
+- **Next/Previous Navigation**: Arrow keys and buttons to browse through photos
+- **Photo Metadata Overlay**: 
+  - Sharpness scores with color coding
+  - Exposure metrics (brightness, clipping, dynamic range)
+  - Face detection results with quality scores
+  - Overall quality percentage
+- **Quick Actions**:
+  - Find Similar Photos: Search for photos similar to current one
+  - View in Folder: Jump to photo's location in browser
+  - Delete Photo: Remove with seamless navigation to next photo
+- **Photo Selection**: Checkbox in modal syncs with grid selections
+- **Persistent Caching**: Service Worker ensures fast loading
 
 ### 💾 **Backup & Sync**
 - **Embedding Export**: Export all photo embeddings to OneDrive (JSON format)
@@ -46,18 +82,33 @@ A privacy-first OneDrive photo library analyzer. This tool helps you find and re
 - **Embedding Import**: Import embeddings from previous exports
 - **Conflict Resolution**: Choose how to handle duplicate embeddings during import
 - **File Management**: View, delete, and manage embedding backup files
+- **Cross-Device Sync**: Share embeddings between devices to avoid reprocessing
+
+### 🎯 **Smart Features**
+- **Find Similar Photos**: Right-click or use modal button to find photos similar to any specific photo
+- **Photo Series Detection**: Automatically find burst photo sequences and long photo sessions
+- **Date Range Filter**: Global date filter applies to all analysis operations
+- **Collapsible Panels**: Organize UI with expandable/collapsible sections
+- **Progress Tracking**: Real-time progress indicators for all operations
+- **Status Updates**: Live status bar shows current operations and database stats
 
 ### 🐛 **Development & Debugging**
 - **Debug Console**: Mobile-friendly debug overlay for development and troubleshooting
 - **Worker Logging**: Capture and display Web Worker messages in debug console
 - **Error Handling**: Comprehensive error catching and user-friendly error messages
-- **Progress Tracking**: Real-time progress indicators for long-running operations
+- **Mobile-Optimized**: Special debugging features for mobile development
 
 ### ⚙️ **Configurable Settings**
-- **Performance Tuning**: Adjustable worker count based on device capabilities
-- **Analysis Parameters**: Customizable similarity thresholds and time spans
-- **Persistent Settings**: All preferences saved locally and restored on app restart
-- **Filter Memory**: Last used filters are remembered and restored
+- **Performance Tuning**: Adjustable worker count (1-8) based on device capabilities
+- **Analysis Parameters**: 
+  - Similarity threshold (50%-99%)
+  - Time window for sessions (0-24 hours)
+  - Minimum group size (2-20 photos)
+  - Series density (0.5-10 photos/min)
+  - Maximum time gap (1-60 minutes)
+- **Persistent Settings**: All preferences saved locally in IndexedDB
+- **Filter Memory**: Last used filters and folder paths restored on app restart
+- **Sort Preferences**: Remember sorting preferences for browser and results
 
 ### 📱 **Cross-Platform Compatibility**
 - **Progressive Web App**: Installable on desktop and mobile devices
@@ -126,23 +177,116 @@ A privacy-first OneDrive photo library analyzer. This tool helps you find and re
 ## Usage Guide
 
 ### Getting Started
-1. **Login**: Click "Login with Microsoft" and authenticate with your Microsoft account
-2. **Scan Photos**: Click "Scan OneDrive Photos" to fetch photo metadata from your OneDrive
-3. **Generate Embeddings**: Click "Generate Embeddings" to create AI-powered photo signatures
-4. **Run Analysis**: Click "Analyze Photos" to find groups of similar photos
 
-### Advanced Features
-- **Folder Filtering**: Use the folder browser to analyze specific directories
-- **Date Filtering**: Set date ranges to focus on particular time periods
-- **Performance Tuning**: Adjust worker count based on your device capabilities
-- **Backup Management**: Export/import embeddings to preserve analysis across devices
-- **Quality Assessment**: View detailed quality metrics for each photo
+#### 1. Initial Setup
+1. **Login**: Click "Login with Microsoft" and authenticate with your Microsoft account
+2. **Grant Permissions**: Allow access to your OneDrive when prompted
+3. **Wait for Models**: The app will download AI models (~50MB) on first use
+4. **Browse Your Photos**: The app opens to the OneDrive Browser showing root folder
+
+#### 2. Indexing Your Photos
+**Option A: Auto-Index While Browsing (Recommended)**
+- Simply browse folders in the OneDrive Browser
+- Photos are automatically indexed as you navigate
+- Embedding workers start processing in the background
+
+**Option B: Queue Full Folder Scans**
+- Navigate to any folder and click "➕ Queue Scan"
+- The scanner will recursively scan all subfolders
+- Up to 5 folders scan in parallel
+- Monitor progress in the "Scan Queue Status" panel
+
+#### 3. Processing Photos
+- **Automatic**: Embedding workers start automatically after scanning
+- **Manual Control**: Use "▶️ Start Embedding Workers" or "⏸️ Pause" button
+- **Parallel Processing**: Adjust worker count (1-8) based on your device
+- **Monitor Progress**: Check "Processing" panel for queue status
+
+#### 4. Finding Duplicates (Similarity Analysis)
+1. Navigate to "Similarity Analysis" panel
+2. Adjust settings:
+   - **Similarity Threshold**: 85-95% for duplicates (lower = more results)
+   - **Time Window**: 2-8 hours for photo sessions (0 = no time limit)
+   - **Minimum Group Size**: Filter out small groups
+3. Set date range in "Date Range Filter" panel (optional)
+4. Click "Analyze All Indexed Photos" (or "🔍 Analyze This Folder" in browser)
+5. Review results - best photo is unselected, others selected for deletion
+
+#### 5. Finding Photo Series
+1. Navigate to "Large Photo Series" panel
+2. Adjust settings:
+   - **Minimum Group Size**: 20+ photos for large series
+   - **Minimum Density**: 3+ photos/min for burst sequences
+   - **Maximum Time Gap**: 5 minutes typical
+3. Click "Analyze All Indexed Photos"
+4. Perfect for finding:
+   - Burst photo sequences
+   - Long photography sessions
+   - Time-lapse sets
+   - Sports/action sequences
+
+#### 6. Working with Results
+- **Browse Photos**: Click any photo for full-screen view
+- **Navigate**: Use arrow keys or ◀/▶ buttons
+- **View Metadata**: Check quality scores, sharpness, exposure
+- **Find Similar**: Click "🔍 Find Similar Photos" to find photos like current one
+- **View in Folder**: Click "📁 View in Folder" to jump to photo's location
+- **Delete Photos**: 
+  - Select/unselect with checkboxes
+  - Click "🗑️ Delete Selected" in each group
+  - Or delete in modal and move to next photo seamlessly
+- **Re-sort Results**: Use "Sort" dropdown to reorder groups
+
+### Advanced Workflows
+
+#### Managing Large Libraries
+1. **Incremental Scanning**: Scan frequently-updated folders separately
+2. **Folder-Specific Analysis**: Analyze one folder at a time for focused cleanup
+3. **Date Range Focus**: Use date filter to work through library chronologically
+4. **Export Embeddings**: Save your work periodically to OneDrive backup
+
+#### Cross-Device Usage
+1. **Export on Primary Device**: Use "Export Embeddings" in Backup panel
+2. **Import on Other Device**: Use "Import Embeddings" to restore analysis
+3. **Conflict Strategy**: Choose "Skip existing" to merge, "Overwrite" to replace
+
+#### Finding Specific Photos
+1. Open any photo in modal viewer
+2. Click "🔍 Find Similar Photos"
+3. View all similar photos sorted by similarity percentage
+4. Navigate and delete unwanted duplicates
 
 ### Tips for Best Results
-- **Similarity Threshold**: Start with 85-90% for general duplicate detection
-- **Time Span**: Use 2-8 hours for typical photo sessions
-- **Worker Count**: Use 4-6 workers on desktop, 1-2 on mobile devices
-- **Regular Exports**: Export embeddings periodically to backup your analysis data
+
+#### Performance Optimization
+- **Worker Count**: 
+  - Desktop: 4-6 workers
+  - Mobile: 1-2 workers
+  - High-end: 8 workers for maximum speed
+- **Pause workers** when using other browser tabs
+- **Close other tabs** during embedding generation for faster processing
+
+#### Analysis Settings
+- **Duplicate Detection**: 
+  - Exact duplicates: 95-99%
+  - Near duplicates: 90-95%
+  - Similar shots: 85-90%
+  - Loose grouping: 70-85%
+- **Time Windows**:
+  - Same photo session: 2-4 hours
+  - Same day: 12-24 hours
+  - All photos: 0 (disabled)
+- **Series Detection**:
+  - Burst sequences: 5+ photos/min, 2-3 min gap
+  - Long sessions: 1-3 photos/min, 5-10 min gap
+  - Time-lapse: 0.5-1 photos/min, 1-2 min gap
+
+#### Best Practices
+- **Backup Regularly**: Export embeddings after major processing sessions
+- **Review Before Delete**: Check "best photo" selection before mass deletion
+- **Use Date Filters**: Work through your library in manageable time periods
+- **Browser Memory**: Clear database if it becomes too large (photos not affected)
+- **URL Sharing**: Share URLs to return to specific folders or search results
 
 ## Deployment
 
@@ -184,11 +328,23 @@ To enable automatic deployment:
 4. Run development server: `npm run dev`
 
 ### Key Development Areas
-- **Performance Optimization**: Improve AI model loading and processing speed
-- **Mobile Experience**: Enhance mobile interface and touch interactions  
-- **Additional AI Models**: Integration of other vision models for better accuracy
-- **Export Formats**: Support for additional backup/export formats
-- **Batch Operations**: Enhanced batch processing capabilities
+- **Performance Optimization**: 
+  - Improve AI model loading and processing speed
+  - Optimize IndexedDB queries for large libraries
+  - Reduce memory usage during embedding generation
+- **Enhanced Analysis**:
+  - Face recognition for duplicate people detection
+  - GPS/location-based grouping
+  - Advanced quality metrics (composition, lighting)
+- **Mobile Experience**: 
+  - Enhanced mobile interface and touch interactions
+  - Improved performance on mobile devices
+  - Native mobile app wrapper
+- **Additional Features**:
+  - Photo tagging and search
+  - Custom folder organization
+  - Bulk operations UI improvements
+  - Export selected groups to new folders
 
 ## License
 

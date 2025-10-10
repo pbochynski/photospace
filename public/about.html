@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Photospace.app – Private OneDrive Photo Cleaner</title>
+    <meta name="description" content="Photospace.app helps you declutter OneDrive by finding duplicates and photo series using private, in‑browser AI. No uploads. Fast. Easy.">
+    <link rel="canonical" href="https://photospace.app/about.html">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Photospace.app – Private OneDrive Photo Cleaner">
+    <meta property="og:description" content="Declutter OneDrive with private, in‑browser AI. Find duplicates and series. No uploads.">
+    <meta property="og:url" content="https://photospace.app/about.html">
+    <meta property="og:image" content="https://photospace.app/photospace-app-logo.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <style>
+        :root { --primary: #0078d4; --accent: #7deffe; --bg: #0b1020; --fg: #ffffff; --muted: #9aa3b2; --card: #131a2b; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: var(--bg); color: var(--fg); line-height: 1.6; }
+        header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        header .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font-size: 1.25rem; font-weight: 600; }
+        header .brand img { width: 32px; height: 32px; object-fit: contain; }
+        header .brand .logo-text-photo { color: #ffffff; }
+        header .brand .logo-text-space { color: var(--accent); }
+        header .header-right { display: flex; align-items: center; gap: 16px; }
+        header .header-right a { color: var(--fg); text-decoration: none; opacity: 0.9; transition: color 0.2s; }
+        header .header-right a:hover { color: var(--accent); }
+        button { background-color: transparent; color: var(--fg); border: 1px solid #444; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; line-height: 1; }
+        button:hover { background-color: #444; border-color: var(--primary); }
+        .btn { display: inline-block; padding: 0.35rem 0.75rem; border-radius: 4px; text-decoration: none; font-size: 0.85rem; border: 1px solid #444; transition: all 0.2s; line-height: 1; }
+        .btn:hover { background-color: #444; border-color: var(--primary); }
+        .container { max-width: 980px; margin: 0 auto; padding: 24px; }
+        .hero { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 24px; align-items: center; padding: 32px 0; }
+        .hero h1 { margin: 0 0 8px; font-size: 2.2rem; }
+        .hero p { margin: 0 0 16px; color: var(--muted); }
+        .cta { display: flex; gap: 12px; margin-top: 8px; }
+        .btn-primary { border-color: var(--primary); color: var(--primary); background-color: transparent; }
+        .btn-primary:hover { background-color: rgba(74, 144, 226, 0.1); border-color: #63a4ff; color: #63a4ff; }
+        .btn-secondary { background: transparent; color: var(--fg); border: 1px solid #444; }
+        .btn-secondary:hover { background-color: #444; border-color: var(--primary); }
+        .art { background: linear-gradient(145deg, #0f1730, #0b1327); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 12px; text-align: center; }
+        .art .placeholder { width: 100%; aspect-ratio: 16/10; border-radius: 8px; background: #0f1730; border: 1px dashed rgba(255,255,255,0.2); color: var(--muted); display: flex; align-items: center; justify-content: center; padding: 12px; font-size: 0.95rem; }
+        .section { margin: 40px 0; }
+        .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .card { background: var(--card); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; }
+        .muted { color: var(--muted); }
+        .list { margin: 0; padding-left: 18px; }
+        .footnote { font-size: 0.9rem; color: var(--muted); }
+        footer { padding: 32px 24px; text-align: center; color: var(--muted); border-top: 1px solid rgba(255,255,255,0.08); }
+        @media (max-width: 900px) { .hero { grid-template-columns: 1fr; } .cards { grid-template-columns: 1fr; } }
+        @media (max-width: 640px) { 
+            header { flex-wrap: wrap; gap: 12px; }
+            header .brand { font-size: 1.1rem; }
+            header .brand img { width: 28px; height: 28px; }
+            header .header-right { gap: 12px; }
+        }
+    </style>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Photospace.app",
+      "applicationCategory": "PhotographyApplication",
+      "operatingSystem": "Web",
+      "url": "https://photospace.app/",
+      "description": "Declutter OneDrive with private, in‑browser AI. Find duplicates and photo series without uploading your photos.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+</head>
+<body>
+    <header>
+        <a class="brand" href="/">
+            <img src="/bare-logo-shutter.jpg" alt="Photospace.app logo">
+            <span><span class="logo-text-photo">photo</span><span class="logo-text-space">space.app</span></span>
+        </a>
+        <div class="header-right">
+            <a href="/" class="btn btn-primary">Start</a>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <div>
+                <h1>Declutter OneDrive with private, in‑browser AI</h1>
+                <p class="muted">Tired of endless duplicates, burst shots, and messy albums? Photospace scans your OneDrive with AI that runs entirely in your browser. Nothing is uploaded. Ever.</p>
+                <div class="cta">
+                    <a class="btn btn-primary" href="/">Log in to get started</a>
+                    <a class="btn btn-secondary" href="#how-it-works">How it works</a>
+                </div>
+            </div>
+            <div class="art">
+                <img src="/cockpit-photos.webp" alt="Photo organization visualization" style="width: 100%; height: auto; border-radius: 8px;">
+            </div>
+        </section>
+
+        <section class="section" id="pain-points">
+            <h2>Why photo libraries get out of control</h2>
+            <div class="cards">
+                <div class="card">
+                    <h3>Duplicates everywhere</h3>
+                    <p class="muted">Messenger saves, burst shots, edits, exports – they pile up silently and cost storage.</p>
+                </div>
+                <div class="card">
+                    <h3>Manual cleanup is painful</h3>
+                    <p class="muted">Scrolling, comparing, and second‑guessing every image is slow and error‑prone.</p>
+                </div>
+                <div class="card">
+                    <h3>Privacy concerns</h3>
+                    <p class="muted">Most tools upload your photos to the cloud to analyze them. That's a hard no.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="how-it-works">
+            <h2>How Photospace fixes it</h2>
+            <div class="cards">
+                <div class="card">
+                    <h3>AI runs in your browser</h3>
+                    <p class="muted">CLIP‑based visual similarity and quality scoring execute locally with WebGPU/WASM. Your photos never leave your device.</p>
+                    <ul class="list">
+                        <li>Find true and near‑duplicates</li>
+                        <li>Detect large photo series and bursts</li>
+                        <li>Pick the best shot using sharpness/exposure/face quality</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Built for OneDrive</h3>
+                    <p class="muted">Direct Microsoft Graph integration. Browse, scan, and clean without exports or sync friction.</p>
+                    <ul class="list">
+                        <li>Auto‑index while you browse</li>
+                        <li>Queue recursive folder scans (parallel)</li>
+                        <li>Service Worker caching for snappy previews</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Fast, focused cleanup</h3>
+                    <p class="muted">Groups similar shots, highlights the best, and pre‑selects the rest for removal. Delete confidently with one click.</p>
+                    <ul class="list">
+                        <li>Similarity & time‑window controls</li>
+                        <li>Date range filtering</li>
+                        <li>Keyboard navigation in a full‑screen viewer</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section class="section" id="why-private">
+            <h2>Private by design</h2>
+            <p class="muted">Photospace does all analysis locally. No uploads, no servers, no training on your photos. Embeddings and metadata live in your browser (IndexedDB), and you can export/import them to speed up work across devices.</p>
+        </section>
+
+        <section class="section" id="cta">
+            <h2>Start cleaning in minutes</h2>
+            <p class="muted">Log in with your Microsoft account, browse your OneDrive, and let Photospace surface the clutter. Keep the best – remove the rest.</p>
+            <div class="cta">
+                <a class="btn btn-primary" href="/">Log in</a>
+                <a class="btn btn-secondary" href="#how-it-works">See how it works</a>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p class="footnote">© <span id="year"></span> Photospace.app • <a href="/" style="color: var(--primary); text-decoration: none;">Home</a></p>
+    </footer>
+    <script>
+        document.getElementById('year').textContent = new Date().getFullYear();
+    </script>
+</body>
+</html>
+
+

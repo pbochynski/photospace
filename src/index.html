@@ -12,15 +12,36 @@
 <body>
     <div id="app">
         <header>
-            <h1>photospace.app</h1>
-            <div id="auth-container">
-                <button id="login-button">Login with Microsoft</button>
-                <div id="user-info-container" style="display: none;">
-                    <p id="user-info"></p>
-                    <button id="logout-button">Logout</button>
+            <a class="brand" href="/">
+                <img src="/bare-logo-shutter.jpg" alt="Photospace.app logo">
+                <span><span class="logo-text-photo">photo</span><span class="logo-text-space">space.app</span></span>
+            </a>
+            <div class="header-right">
+                <a href="/about.html" title="Learn about Photospace">About</a>
+                <a href="#" id="debug-menu-btn" title="Show debug console">Debug</a>
+                <div id="auth-container">
+                    <button id="login-button">Login with Microsoft</button>
+                    <div id="user-info-container" style="display: none;">
+                        <button id="logout-button">Logout</button>
+                    </div>
                 </div>
             </div>
         </header>
+
+        <!-- Hero section for new users (hidden after login) -->
+        <section id="landing-intro" class="hero-landing">
+            <div class="hero-content">
+                <h1>Declutter OneDrive with private, in‑browser AI</h1>
+                <p class="hero-description">Tired of endless duplicates, burst shots, and messy albums? Photospace scans your OneDrive with AI that runs entirely in your browser. Nothing is uploaded. Ever.</p>
+                <div class="hero-cta">
+                    <button class="btn btn-primary" id="hero-login-btn">Log in to get started</button>
+                    <a href="/about.html" class="btn btn-secondary">How it works</a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="/cockpit-photos.webp" alt="Photo organization visualization">
+            </div>
+        </section>
 
         <main id="main-content" style="display: none;">
             <!-- OneDrive Browser (initial structure: folder filter + date filter) -->
@@ -185,7 +206,6 @@
                         <!-- Analysis Action -->
                         <div class="analysis-action">
                             <button id="start-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
-                            <small class="threshold-help">Analyzes all photos that have been indexed and processed with embeddings</small>
                         </div>
 
                     </div>
@@ -226,7 +246,6 @@
                         <!-- Series Analysis Actions -->
                         <div class="analysis-action">
                             <button id="start-series-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
-                            <small class="threshold-help">Finds large photo series based on time density. Works without embeddings.</small>
                         </div>
 
                     </div>
@@ -381,10 +400,8 @@
         <div id="debug-content"></div>
     </div>
 
-    <!-- Debug Toggle Button -->
-    <button id="debug-show-btn" title="Show Debug Console">🐛</button>
-
     <script type="module" src="/main.js"></script>
 </body>
 
 </html>
+

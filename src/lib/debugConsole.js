@@ -25,27 +25,23 @@ export class DebugConsole {
     initializeDOM() {
         this.debugConsole = document.getElementById('debug-console');
         this.debugContent = document.getElementById('debug-content');
-        this.debugShowBtn = document.getElementById('debug-show-btn');
+        this.debugMenuBtn = document.getElementById('debug-menu-btn');
         this.debugToggle = document.getElementById('debug-toggle');
         this.debugClear = document.getElementById('debug-clear');
         this.debugClose = document.getElementById('debug-close');
 
-        if (!this.debugShowBtn) return; // Elements not ready yet
+        if (!this.debugMenuBtn) return; // Elements not ready yet
 
         // Event listeners
-        this.debugShowBtn.addEventListener('click', () => this.show());
+        this.debugMenuBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.toggle();
+        });
         this.debugToggle.addEventListener('click', () => this.toggleMinimize());
         this.debugClear.addEventListener('click', () => this.clear());
         this.debugClose.addEventListener('click', () => this.hide());
 
-        // Auto-show on mobile devices
-        if (this.isMobile()) {
-            this.show();
-        }
-    }
-
-    isMobile() {
-        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        // Debug console starts hidden - user can show it manually if needed
     }
 
     overrideConsole() {
@@ -121,17 +117,23 @@ export class DebugConsole {
         this.debugContent.scrollTop = this.debugContent.scrollHeight;
     }
 
+    toggle() {
+        if (this.isVisible) {
+            this.hide();
+        } else {
+            this.show();
+        }
+    }
+
     show() {
         if (!this.debugConsole) return;
         this.debugConsole.style.display = 'flex';
-        this.debugShowBtn.style.display = 'none';
         this.isVisible = true;
     }
 
     hide() {
         if (!this.debugConsole) return;
         this.debugConsole.style.display = 'none';
-        this.debugShowBtn.style.display = 'block';
         this.isVisible = false;
         this.isMinimized = false;
     }
