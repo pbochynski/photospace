@@ -58,8 +58,8 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
         
         const photosInPage = [];
         for (const item of response.value) {
-            // Only process photos, skip folders completely
-            if (item.photo) {
+            // Only process photos, skip folders and videos
+            if (item.photo && !item.video) {
                 const folderPath = item.parentReference?.path || '/drive/root:';
                 const fullPath = folderPath === '/drive/root:' ? 
                     `/drive/root:/${item.name}` : 
@@ -143,8 +143,8 @@ export async function fetchAllPhotos(scanId, progressCallback, startingFolderId 
                         if (item.folder) {
                             foldersToProcess.push(item.id);
                         } 
-                        // If it's a photo, process it
-                        else if (item.photo) {
+                        // If it's a photo (but not a video), process it
+                        else if (item.photo && !item.video) {
                             photosInPage.push({
                                 file_id: item.id,
                                 name: item.name,
@@ -276,7 +276,7 @@ export async function fetchFolderChildren(folderId = 'root') {
                         parentId: item.parentReference?.id || null,
                         path: item.parentReference?.path || ''
                     });
-                } else if (item.photo) {
+                } else if (item.photo && !item.video) {
                     photos.push({
                         file_id: item.id,
                         name: item.name,

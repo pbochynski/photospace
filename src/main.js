@@ -1462,8 +1462,8 @@ async function scanSingleFolder(folderPath) {
                     const subfolderPath = await getFolderPath(item.id);
                     subfoldersInPage.push(subfolderPath);
                 } 
-                // If it's a photo, process it
-                else if (item.photo) {
+                // If it's a photo (but not a video), process it
+                else if (item.photo && !item.video) {
                     photosInPage.push({
                         file_id: item.id,
                         name: item.name,
