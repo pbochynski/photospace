@@ -9,7 +9,7 @@ import { db } from './db.js';
 /**
  * Delete a photo from OneDrive and local database
  * @param {string} fileId - The file ID to delete
- * @returns {Promise<boolean>} - Success status
+ * @returns {Promise<{success: boolean, alreadyDeleted: boolean, error: string|null}>} - Deletion result
  */
 export async function deletePhotoFromOneDrive(fileId) {
     const token = await getAuthToken();
@@ -18,12 +18,23 @@ export async function deletePhotoFromOneDrive(fileId) {
         headers: { Authorization: `Bearer ${token}` }
     });
     
-    if (!response.ok) {
-        throw new Error(`Failed to delete: ${response.status} ${response.statusText}`);
+    // 404 means already deleted - treat as success
+    if (response.status === 404) {
+        console.log(`Photo ${fileId} already deleted (404), cleaning up from database`);
+        await db.deletePhotos([fileId]);
+        return { success: true, alreadyDeleted: true, error: null };
     }
     
+    // Other errors should be reported
+    if (!response.ok) {
+        const errorMsg = `${response.status} ${response.statusText}`;
+        console.error(`Failed to delete photo ${fileId}: ${errorMsg}`);
+        return { success: false, alreadyDeleted: false, error: errorMsg };
+    }
+    
+    // Success - remove from database
     await db.deletePhotos([fileId]);
-    return true;
+    return { success: true, alreadyDeleted: false, error: null };
 }
 
 /**
@@ -52,27 +63,59 @@ export async function deletePhotosWithConfirmation(photos, updateStatusFn, onSuc
         updateStatusFn(`Deleting ${photos.length} photo(s)...`, true);
     }
     
-    try {
-        for (const photo of photos) {
-            await deletePhotoFromOneDrive(photo.file_id);
-        }
+    // Track results
+    let deletedCount = 0;
+    let alreadyDeletedCount = 0;
+    let failedCount = 0;
+    const failures = [];
+    
+    for (const photo of photos) {
+        const result = await deletePhotoFromOneDrive(photo.file_id);
         
-        if (onSuccess) {
-            onSuccess();
+        if (result.success) {
+            if (result.alreadyDeleted) {
+                alreadyDeletedCount++;
+            } else {
+                deletedCount++;
+            }
+        } else {
+            failedCount++;
+            failures.push({ name: photo.name, error: result.error });
         }
-        
-        const successMessage = photos.length === 1 
-            ? `Photo "${photoName}" deleted successfully`
-            : `${photos.length} photos deleted successfully`;
-        
-        if (updateStatusFn) {
-            updateStatusFn(successMessage, false);
-        }
-    } catch (err) {
-        if (updateStatusFn) {
-            updateStatusFn('Error deleting photos: ' + err.message, false);
-        }
-        throw err;
+    }
+    
+    // Call onSuccess if any photos were removed (deleted or already deleted)
+    if ((deletedCount + alreadyDeletedCount) > 0 && onSuccess) {
+        onSuccess();
+    }
+    
+    // Build status message
+    let statusParts = [];
+    if (deletedCount > 0) {
+        statusParts.push(`${deletedCount} deleted`);
+    }
+    if (alreadyDeletedCount > 0) {
+        statusParts.push(`${alreadyDeletedCount} already gone`);
+    }
+    if (failedCount > 0) {
+        statusParts.push(`${failedCount} failed`);
+    }
+    
+    const statusMessage = photos.length === 1 
+        ? (deletedCount > 0 ? `Photo "${photoName}" deleted successfully` : 
+           alreadyDeletedCount > 0 ? `Photo "${photoName}" was already deleted` :
+           `Failed to delete photo "${photoName}"`)
+        : `${photos.length} photos processed: ${statusParts.join(', ')}`;
+    
+    if (updateStatusFn) {
+        updateStatusFn(statusMessage, false);
+    }
+    
+    // Show detailed error info if there were failures
+    if (failedCount > 0) {
+        console.error('Failed deletions:', failures);
+        const errorDetails = failures.map(f => `${f.name}: ${f.error}`).join('\n');
+        alert(`Some photos could not be deleted:\n\n${errorDetails}`);
     }
 }
 

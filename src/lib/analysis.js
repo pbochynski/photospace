@@ -211,6 +211,7 @@ export async function findSimilarGroups(photos, progressCallback, similarityThre
  * @param {number} options.minDensity - Minimum photos per minute (default: 3)
  * @param {number} options.maxTimeGap - Maximum time gap in minutes between photos (default: 5)
  * @param {string} options.sortMethod - How to sort results (default: 'series-size')
+ * @param {Array} options.ignoredPeriods - Array of time periods to ignore (default: [])
  * @param {Function} progressCallback - Optional callback for progress updates
  * @returns {Promise<Array>} - Array of photo series
  */
@@ -219,11 +220,30 @@ export async function findPhotoSeries(photos, options = {}, progressCallback = n
         minGroupSize = 20,
         minDensity = 3, // photos per minute
         maxTimeGap = 5, // minutes
-        sortMethod = 'series-size'
+        sortMethod = 'series-size',
+        ignoredPeriods = []
     } = options;
     
     console.log(`📊 findPhotoSeries: Analyzing ${photos.length} photos`);
     console.log(`📊 Parameters: minGroupSize=${minGroupSize}, minDensity=${minDensity} photos/min, maxTimeGap=${maxTimeGap} min`);
+    if (ignoredPeriods.length > 0) {
+        console.log(`📊 Ignored periods: ${ignoredPeriods.length}`);
+        const formatDateTime = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        };
+        ignoredPeriods.forEach(period => {
+            const startStr = formatDateTime(new Date(period.startTime));
+            const endStr = formatDateTime(new Date(period.endTime));
+            console.log(`   - ${period.label}`);
+            console.log(`     ${startStr} → ${endStr}`);
+        });
+    }
     
     // Filter photos with valid timestamps
     const photosWithTimestamps = photos.filter(p => {
@@ -253,28 +273,49 @@ export async function findPhotoSeries(photos, options = {}, progressCallback = n
     
     photosWithTimestamps.sort((a, b) => a.photo_taken_ts - b.photo_taken_ts);
     
+    // Filter out photos in ignored periods
+    let photosToAnalyze = photosWithTimestamps;
+    if (ignoredPeriods.length > 0) {
+        const beforeFilterCount = photosWithTimestamps.length;
+        photosToAnalyze = photosWithTimestamps.filter(photo => {
+            const timestamp = photo.photo_taken_ts;
+            const isIgnored = ignoredPeriods.some(period => 
+                timestamp >= period.startTime && timestamp <= period.endTime
+            );
+            return !isIgnored;
+        });
+        const filteredCount = beforeFilterCount - photosToAnalyze.length;
+        console.log(`📊 Filtered out ${filteredCount} photos in ignored periods (${photosToAnalyze.length} remaining)`);
+    }
+    
+    // Check if we have photos to analyze after filtering
+    if (photosToAnalyze.length === 0) {
+        console.warn('⚠️ No photos remaining after filtering ignored periods');
+        return [];
+    }
+    
     // Group photos into series based on time gaps
     const maxTimeGapMs = maxTimeGap * 60 * 1000; // Convert minutes to milliseconds
     const series = [];
-    let currentSeries = [photosWithTimestamps[0]];
+    let currentSeries = [photosToAnalyze[0]];
     
-    for (let i = 1; i < photosWithTimestamps.length; i++) {
-        const timeDiff = photosWithTimestamps[i].photo_taken_ts - photosWithTimestamps[i - 1].photo_taken_ts;
+    for (let i = 1; i < photosToAnalyze.length; i++) {
+        const timeDiff = photosToAnalyze[i].photo_taken_ts - photosToAnalyze[i - 1].photo_taken_ts;
         
         if (timeDiff <= maxTimeGapMs) {
             // Continue current series
-            currentSeries.push(photosWithTimestamps[i]);
+            currentSeries.push(photosToAnalyze[i]);
         } else {
             // End current series and start new one
             if (currentSeries.length > 0) {
                 series.push(currentSeries);
             }
-            currentSeries = [photosWithTimestamps[i]];
+            currentSeries = [photosToAnalyze[i]];
         }
         
         // Progress callback
         if (progressCallback && i % 100 === 0) {
-            progressCallback((i / photosWithTimestamps.length) * 50); // First 50% is grouping
+            progressCallback((i / photosToAnalyze.length) * 50); // First 50% is grouping
         }
     }
     

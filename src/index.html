@@ -143,7 +143,7 @@
                     <h3 class="panel-title">📅 Date Range Filter</h3>
                     <div class="panel-tools">
                         <label class="switch-label">
-                            <input type="checkbox" id="date-enabled-toggle" checked>
+                            <input type="checkbox" id="date-enabled-toggle">
                             <span class="switch"></span>
                             <span class="switch-text">Enabled</span>
                         </label>
@@ -236,6 +236,17 @@
                             <input type="range" id="series-time-gap" min="1" max="60" step="1" value="5">
                             <span id="series-time-gap-value">5 minutes</span>
                             <small class="threshold-help">Maximum time gap between photos to stay in same series</small>
+                        </div>
+                        
+                        <!-- Ignored Periods -->
+                        <div class="processing-row" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                            <h4>Ignored Periods</h4>
+                            <small class="threshold-help" style="display: block; margin-bottom: 12px;">
+                                Time periods that will be excluded from series analysis. Use the "Ignore" button on series results to add periods.
+                            </small>
+                            <div id="ignored-periods-list" class="ignored-periods-list">
+                                <p class="placeholder" style="margin: 0; color: #999; font-size: 0.9rem;">No ignored periods</p>
+                            </div>
                         </div>
                         
                         <!-- Series Analysis Actions -->

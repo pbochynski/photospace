@@ -76,8 +76,11 @@ export function getPathFromURL() {
  */
 export function getDateFiltersFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
+    const dateEnabledParam = urlParams.get('dateEnabled');
+    
     return {
-        dateEnabled: urlParams.get('dateEnabled') !== 'false',
+        // Only return dateEnabled if it's explicitly in URL, otherwise return null
+        dateEnabled: dateEnabledParam !== null ? dateEnabledParam === 'true' : null,
         dateFrom: urlParams.get('dateFrom') || null,
         dateTo: urlParams.get('dateTo') || null
     };
@@ -92,19 +95,18 @@ export function restoreDateFiltersFromURL() {
     const dateFromInput = document.getElementById('date-from');
     const dateToInput = document.getElementById('date-to');
     
-    // Restore toggle
-    if (dateEnabledToggle) {
-        dateEnabledToggle.checked = dateFilters.dateEnabled !== false;
+    // Only restore toggle if explicitly set in URL, otherwise leave DB setting intact
+    if (dateEnabledToggle && dateFilters.dateEnabled !== null) {
+        dateEnabledToggle.checked = dateFilters.dateEnabled;
     }
     
+    // Only restore date values if they're in the URL
     if (dateFilters.dateFrom || dateFilters.dateTo) {
         // Restore from URL
         if (dateFromInput) dateFromInput.value = dateFilters.dateFrom || '';
         if (dateToInput) dateToInput.value = dateFilters.dateTo || '';
-    } else {
-        // Set default to last month
-        setDefaultDateRange();
     }
+    // Note: We removed the "else setDefaultDateRange()" because that's handled by settingsManager now
 }
 
 /**

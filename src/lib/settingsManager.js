@@ -64,6 +64,10 @@ export async function initializeAnalysisSettings() {
                 const dateEnabledSetting = await db.getSetting('dateEnabled');
                 if (dateEnabledSetting !== null) {
                     dateEnabledToggle.checked = Boolean(dateEnabledSetting);
+                } else {
+                    // Default to disabled (false)
+                    dateEnabledToggle.checked = false;
+                    await db.setSetting('dateEnabled', false);
                 }
                 
                 // Import from urlStateManager to check URL
@@ -339,5 +343,100 @@ export async function getSeriesMaxTimeGap() {
         console.error('Error getting series max time gap:', error);
         return 5;
     }
+}
+
+/**
+ * Get ignored periods for series analysis
+ * @returns {Promise<Array>} - Array of ignored period objects {id, startTime, endTime, label}
+ */
+export async function getIgnoredPeriods() {
+    try {
+        const ignoredPeriods = await db.getSetting('ignoredPeriods');
+        // Ensure we always return an array
+        if (!ignoredPeriods) return [];
+        if (!Array.isArray(ignoredPeriods)) return [];
+        return ignoredPeriods;
+    } catch (error) {
+        console.error('Error getting ignored periods:', error);
+        return [];
+    }
+}
+
+/**
+ * Format date as yyyy-mm-dd HH:MM
+ * @param {Date} date - Date object to format
+ * @returns {string} - Formatted date string
+ */
+function formatDateTime(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+/**
+ * Add a new ignored period
+ * @param {number} startTime - Start timestamp (ms)
+ * @param {number} endTime - End timestamp (ms)
+ * @param {string} label - Optional label for the period
+ * @returns {Promise<Array>} - Updated array of ignored periods
+ */
+export async function addIgnoredPeriod(startTime, endTime, label = '') {
+    try {
+        const ignoredPeriods = await getIgnoredPeriods();
+        
+        // Format dates with time (yyyy-mm-dd HH:MM)
+        const startDate = new Date(startTime);
+        const endDate = new Date(endTime);
+        
+        const startStr = formatDateTime(startDate);
+        const endStr = formatDateTime(endDate);
+        
+        const newPeriod = {
+            id: Date.now(), // Use timestamp as unique ID
+            startTime,
+            endTime,
+            label: label || `${startStr} → ${endStr}`
+        };
+        ignoredPeriods.push(newPeriod);
+        await db.setSetting('ignoredPeriods', ignoredPeriods);
+        console.log('Added ignored period:', newPeriod);
+        return ignoredPeriods;
+    } catch (error) {
+        console.error('Error adding ignored period:', error);
+        throw error;
+    }
+}
+
+/**
+ * Remove an ignored period by ID
+ * @param {number} periodId - ID of the period to remove
+ * @returns {Promise<Array>} - Updated array of ignored periods
+ */
+export async function removeIgnoredPeriod(periodId) {
+    try {
+        const ignoredPeriods = await getIgnoredPeriods();
+        const filteredPeriods = ignoredPeriods.filter(p => p.id !== periodId);
+        await db.setSetting('ignoredPeriods', filteredPeriods);
+        console.log('Removed ignored period:', periodId);
+        return filteredPeriods;
+    } catch (error) {
+        console.error('Error removing ignored period:', error);
+        throw error;
+    }
+}
+
+/**
+ * Check if a timestamp falls within any ignored period
+ * @param {number} timestamp - Timestamp to check (ms)
+ * @param {Array} ignoredPeriods - Array of ignored periods
+ * @returns {boolean} - True if timestamp is in an ignored period
+ */
+export function isTimestampIgnored(timestamp, ignoredPeriods) {
+    return ignoredPeriods.some(period => 
+        timestamp >= period.startTime && timestamp <= period.endTime
+    );
 }
 

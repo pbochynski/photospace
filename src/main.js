@@ -8,7 +8,7 @@ import { initializeDebugConsole } from './lib/debugConsole.js';
 import { EmbeddingProcessor } from './lib/embedding-processor.js';
 import { updateStatus, isDateFilterEnabled, applyDateEnabledUI, getDateFilter, setDefaultDateRange, initializeCollapsiblePanels, applyPanelExpandedState } from './lib/uiUtils.js';
 import { updateURLWithFilters, updateURLWithPath, getPathFromURL, getDateFiltersFromURL, restoreDateFiltersFromURL, pathToDisplayName, resetFolderToNoFilter, resetToNoFilter, updateURLWithSimilarPhoto, getSimilarPhotoFromURL, clearSimilarPhotoFromURL } from './lib/urlStateManager.js';
-import { initializeAnalysisSettingsWithRetry, getSimilarityThreshold, getTimeSpanHours, getSortMethod, getWorkerCount, getMinGroupSize, getSeriesMinGroupSize, getSeriesMinDensity, getSeriesMaxTimeGap } from './lib/settingsManager.js';
+import { initializeAnalysisSettingsWithRetry, getSimilarityThreshold, getTimeSpanHours, getSortMethod, getWorkerCount, getMinGroupSize, getSeriesMinGroupSize, getSeriesMinDensity, getSeriesMaxTimeGap, getIgnoredPeriods, addIgnoredPeriod, removeIgnoredPeriod } from './lib/settingsManager.js';
 import { deletePhotoFromOneDrive, deletePhotosWithConfirmation } from './lib/photoDeleteManager.js';
 import { handleExportEmbeddings as backupHandleExport, handleImportEmbeddings as backupHandleImport, displayImportFileList, deleteImportFile as backupDeleteFile, performImport as backupPerformImport, showImportSection, closeImportModal, initializeBackupPanel as backupInitPanel } from './lib/backupManager.js';
 import { cosineSimilarity, findSimilarToPhoto, handleFindSimilarClick as similarHandleFindClick, clearSimilarPhotosSearch as similarClearSearch, restoreSimilarPhotosFromURL as similarRestoreFromURL, viewPhotoInFolder as similarViewInFolder } from './lib/similarPhotosManager.js';
@@ -25,6 +25,7 @@ let statusText, progressBar, pauseResumeEmbeddingsBtn, clearDatabaseButton;
 let startAnalysisButton, resultsContainer;
 let startSeriesAnalysisButton, seriesMinGroupSizeSlider, seriesMinGroupSizeValueDisplay;
 let seriesMinDensitySlider, seriesMinDensityValueDisplay, seriesTimeGapSlider, seriesTimeGapValueDisplay;
+let ignoredPeriodsListDiv;
 let resultsTypeLabel, browserPhotoGrid, browserSortSelect, browserRefreshBtn;
 let browserScanBtn, browserAnalyzeBtn, browserCurrentPath, browserToggleSelectBtn, browserDeleteSelectedBtn;
 let similarityThresholdSlider, thresholdValueDisplay, timeSpanSlider, timeSpanValueDisplay;
@@ -363,6 +364,7 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
 
         // Build header based on type
         let headerHTML = '';
+        let ignoreButtonHTML = '';
         if (type === 'similarity') {
             const groupDate = new Date(group.timestamp).toLocaleDateString();
             headerHTML = `
@@ -381,6 +383,8 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
                 <p>Density: ${group.density.toFixed(2)} photos/min • Avg: ${group.avgTimeBetweenPhotos.toFixed(2)} min</p>
                 <p style="font-size: 0.85rem; color: #aaa;">${startDate} → ${endDate}</p>
             `;
+            // Add Ignore button for series type
+            ignoreButtonHTML = `<button class="ignore-series-btn secondary-btn" data-group-idx="${groupIdx}" title="Ignore this period in future analyses">🚫 Ignore</button>`;
         }
         
         groupElement.innerHTML = `
@@ -390,6 +394,7 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
                 </div>
                 <div class="group-header-actions">
                     <button class="toggle-collapse-btn" data-group-idx="${groupIdx}" title="Collapse/Expand group">▾</button>
+                    ${ignoreButtonHTML}
                     <button class="toggle-select-all-btn" data-group-idx="${groupIdx}" title="Select/Unselect all photos">☑️ Toggle All</button>
                     <button class="delete-selected-btn" data-group-idx="${groupIdx}">🗑️ Delete Selected</button>
                 </div>
@@ -431,6 +436,46 @@ function displayAnalysisResults(groups, type = 'similarity', referencePhoto = nu
 
 // Attach event listeners for results (delete buttons and image clicks)
 function attachResultsEventListeners(groups, type) {
+    // Ignore buttons (for series only)
+    if (type === 'series') {
+        document.querySelectorAll('.ignore-series-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const groupIdx = parseInt(btn.getAttribute('data-group-idx'));
+                const group = groups[groupIdx];
+                
+                try {
+                    // Add period to ignored list
+                    await addIgnoredPeriod(group.startTime, group.endTime);
+                    
+                    // Re-render ignored periods list
+                    await renderIgnoredPeriodsList();
+                    
+                    // Provide feedback - format as yyyy-mm-dd HH:MM
+                    const formatDateTime = (date) => {
+                        const year = date.getFullYear();
+                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                        const day = String(date.getDate()).padStart(2, '0');
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        return `${year}-${month}-${day} ${hours}:${minutes}`;
+                    };
+                    const startStr = formatDateTime(new Date(group.startTime));
+                    const endStr = formatDateTime(new Date(group.endTime));
+                    updateStatus(`Added period to ignore list: ${startStr} → ${endStr}`, false);
+                    
+                    // Optionally scroll to the ignored periods section
+                    const seriesPanel = document.querySelector('[data-panel-key="series"]');
+                    if (seriesPanel) {
+                        seriesPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                } catch (error) {
+                    console.error('Failed to add ignored period:', error);
+                    updateStatus(`Failed to add ignored period: ${error.message}`, false);
+                }
+            });
+        });
+    }
+    
     // Toggle collapse/expand buttons
     document.querySelectorAll('.toggle-collapse-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1569,6 +1614,13 @@ async function initializeAfterLogin(account) {
     // Initialize backup panel
     await backupInitPanel(exportEmbeddingsBtn, exportInfo, importInfo);
     
+    // Initialize ignored periods list (non-blocking, with error handling)
+    try {
+        await renderIgnoredPeriodsList();
+    } catch (error) {
+        console.warn('Failed to initialize ignored periods list:', error);
+    }
+    
     // Initialize browser path and render photo grid
     // Use setTimeout to ensure DOM is fully rendered before initializing browser
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -1985,6 +2037,7 @@ async function runSeriesAnalysisForScope(scope) {
         const minDensity = await getSeriesMinDensity();
         const maxTimeGap = await getSeriesMaxTimeGap();
         const sortMethod = await getSortMethod();
+        const ignoredPeriods = await getIgnoredPeriods();
         
         // Show filter summary
         let filterSummary = `Analyzing ${filteredPhotos.length} photos from ${scopeDescription}`;
@@ -1994,6 +2047,9 @@ async function runSeriesAnalysisForScope(scope) {
             filterSummary += ` (filtered by date: ${fromStr} to ${toStr})`;
         }
         filterSummary += ` • Min size: ${minGroupSize}, Min density: ${minDensity} photos/min`;
+        if (ignoredPeriods.length > 0) {
+            filterSummary += ` • ${ignoredPeriods.length} period(s) ignored`;
+        }
         
         updateStatus(filterSummary, true, 25, 100);
 
@@ -2002,7 +2058,8 @@ async function runSeriesAnalysisForScope(scope) {
             minGroupSize,
             minDensity,
             maxTimeGap,
-            sortMethod
+            sortMethod,
+            ignoredPeriods
         }, (progress) => {
             updateStatus(`Finding series... ${progress.toFixed(0)}% complete.`, true, 25 + (progress * 0.75), 100);
         });
@@ -2052,6 +2109,7 @@ function initializeDOMElements() {
     seriesMinDensityValueDisplay = document.getElementById('series-min-density-value');
     seriesTimeGapSlider = document.getElementById('series-time-gap');
     seriesTimeGapValueDisplay = document.getElementById('series-time-gap-value');
+    ignoredPeriodsListDiv = document.getElementById('ignored-periods-list');
     
     resultsTypeLabel = document.getElementById('results-type-label');
     browserPhotoGrid = document.getElementById('browser-photo-grid');
@@ -2560,6 +2618,53 @@ async function main() {
 
 // Make deleteImportFile available globally for onclick handlers
 window.deleteImportFile = backupDeleteFile;
+
+/**
+ * Render the list of ignored periods
+ */
+async function renderIgnoredPeriodsList() {
+    if (!ignoredPeriodsListDiv) return;
+    
+    try {
+        const ignoredPeriods = await getIgnoredPeriods();
+        
+        if (!ignoredPeriods || ignoredPeriods.length === 0) {
+            ignoredPeriodsListDiv.innerHTML = '<p class="placeholder" style="margin: 0; color: #999; font-size: 0.9rem;">No ignored periods</p>';
+            return;
+        }
+    
+        ignoredPeriodsListDiv.innerHTML = '';
+        
+        ignoredPeriods.forEach(period => {
+            const periodItem = document.createElement('div');
+            periodItem.className = 'ignored-period-item';
+            periodItem.style.cssText = 'display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; margin-bottom: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.1);';
+            
+            const label = document.createElement('span');
+            label.textContent = period.label;
+            label.style.cssText = 'flex: 1; font-size: 0.9rem;';
+            
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '✕ Remove';
+            removeBtn.className = 'secondary-btn';
+            removeBtn.style.cssText = 'font-size: 0.8rem; padding: 4px 8px;';
+            removeBtn.addEventListener('click', async () => {
+                await removeIgnoredPeriod(period.id);
+                await renderIgnoredPeriodsList();
+                updateStatus(`Removed ignored period: ${period.label}`, false);
+            });
+            
+            periodItem.appendChild(label);
+            periodItem.appendChild(removeBtn);
+            ignoredPeriodsListDiv.appendChild(periodItem);
+        });
+    } catch (error) {
+        console.error('Error rendering ignored periods list:', error);
+        if (ignoredPeriodsListDiv) {
+            ignoredPeriodsListDiv.innerHTML = '<p class="placeholder" style="margin: 0; color: #999; font-size: 0.9rem;">No ignored periods</p>';
+        }
+    }
+}
 
 // Update browser current path display with clickable breadcrumbs
 function updateBrowserCurrentPath() {
