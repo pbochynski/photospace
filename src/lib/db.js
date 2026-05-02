@@ -143,7 +143,40 @@ class PhotoDB {
             cursorRequest.onerror = (event) => reject(event.target.error);
         });
     }
-        
+
+    async deleteStalePhotosInFolder(folderId, scanId) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readwrite');
+            const store = tx.objectStore('photos');
+            const request = store.getAll();
+            let deletedCount = 0;
+            request.onsuccess = () => {
+                const photos = request.result;
+                const toDelete = photos.filter(p => p.folder_id === folderId && p.scan_id !== scanId);
+                const ops = toDelete.map(p => new Promise((res, rej) => {
+                    const dr = store.delete(p.file_id);
+                    dr.onsuccess = () => { deletedCount++; res(); };
+                    dr.onerror = rej;
+                }));
+                Promise.all(ops).then(() => {
+                    console.log(`Deleted ${deletedCount} stale photos from folder ${folderId}`);
+                    resolve(deletedCount);
+                }).catch(reject);
+            };
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async getPhotosByFolderId(folderId) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readonly');
+            const store = tx.objectStore('photos');
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result.filter(p => p.folder_id === folderId));
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
     // NEW: Functions to get/set settings like the deltaLink
     async getSetting(key) {
         return new Promise((resolve, reject) => {
