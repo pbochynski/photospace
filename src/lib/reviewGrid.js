@@ -1,6 +1,5 @@
 import { preselectSeries, loadSeriesState, saveSeriesState, togglePhotoKeep } from './reviewManager.js';
 import { getCalibration } from './calibration.js';
-import { db } from './db.js';
 
 export class ReviewGrid {
     constructor({ headerEl, gridEl, footerEl, fullscreenOverlay, fullscreenPhoto, fullscreenSidebar }) {
@@ -108,9 +107,9 @@ export class ReviewGrid {
             </div>
         `;
 
-        document.getElementById('btn-delete-series')?.addEventListener('click', () => this._confirmDelete());
-        document.getElementById('btn-select-all')?.addEventListener('click', () => this._markAllDelete());
-        document.getElementById('btn-deselect-all')?.addEventListener('click', () => this._markAllKeep());
+        this._footerEl.querySelector('#btn-delete-series')?.addEventListener('click', () => this._confirmDelete());
+        this._footerEl.querySelector('#btn-select-all')?.addEventListener('click', () => this._markAllDelete());
+        this._footerEl.querySelector('#btn-deselect-all')?.addEventListener('click', () => this._markAllKeep());
     }
 
     async _toggleKeep(fileId) {
@@ -142,15 +141,27 @@ export class ReviewGrid {
         try {
             const { deletePhotoFromOneDrive } = await import('./photoDeleteManager.js');
             const idsToDelete = [...this._deletedIds];
+            const deletedSuccessfully = [];
+            let lastError = null;
             for (const fileId of idsToDelete) {
-                await deletePhotoFromOneDrive(fileId);
+                try {
+                    await deletePhotoFromOneDrive(fileId);
+                    deletedSuccessfully.push(fileId);
+                } catch (err) {
+                    lastError = err;
+                }
             }
-            this._series.photos = this._series.photos.filter(p => !idsToDelete.includes(p.file_id));
-            this._deletedIds = [];
-            this._keptIds = this._series.photos.map(p => p.file_id);
-            await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);
-            this._photos = [...this._series.photos].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0));
-            this._render();
+            if (deletedSuccessfully.length > 0) {
+                this._series.photos = this._series.photos.filter(p => !deletedSuccessfully.includes(p.file_id));
+                this._deletedIds = this._deletedIds.filter(id => !deletedSuccessfully.includes(id));
+                this._keptIds = this._series.photos.map(p => p.file_id);
+                await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);
+                this._photos = [...this._series.photos].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0));
+                this._render();
+            }
+            if (lastError) {
+                alert(`Deleted ${deletedSuccessfully.length} of ${idsToDelete.length} photos. Some deletions failed: ${lastError.message}`);
+            }
         } catch (e) {
             alert(`Delete failed: ${e.message}`);
         }
@@ -167,7 +178,7 @@ export class ReviewGrid {
         const isKept = this._keptIds.includes(photo.file_id);
 
         this._fsPhoto.innerHTML = `
-            <button onclick="document.getElementById('fullscreen-overlay').hidden=true"
+            <button id="fs-close"
                 style="position:absolute;top:12px;right:12px;background:rgba(0,0,0,0.5);border:none;color:white;font-size:20px;cursor:pointer;padding:4px 10px;border-radius:4px">✕</button>
             <button id="fs-prev" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);border:none;color:white;font-size:28px;cursor:pointer;padding:8px 14px;border-radius:4px"
                 ${index === 0 ? 'disabled' : ''}>‹</button>
@@ -179,7 +190,7 @@ export class ReviewGrid {
         this._fsSidebar.innerHTML = `
             <div style="margin-bottom:12px">
                 <div style="color:#888;font-size:11px;margin-bottom:2px">Photo ${index + 1} of ${this._photos.length}</div>
-                <div style="font-size:12px;word-break:break-all">${photo.name}</div>
+                <div style="font-size:12px;word-break:break-all">${this._escapeHtml(photo.name)}</div>
             </div>
             <div style="margin-bottom:16px">
                 <div style="font-weight:600;margin-bottom:8px">Quality Score</div>
@@ -188,16 +199,17 @@ export class ReviewGrid {
                 ${this._scoreBar('Exposure', photo.exposure)}
                 ${photo.face?.detected ? this._scoreBar('Face', photo.face.score) : '<div style="color:#888;font-size:12px">Face — n/a</div>'}
             </div>
-            <button onclick="window.__reviewGrid._toggleKeep('${photo.file_id}')"
+            <button id="fs-toggle-keep"
                 style="width:100%;padding:8px;background:${isKept ? 'var(--color-keep)' : 'var(--color-delete)'};border:none;color:white;border-radius:4px;cursor:pointer;font-size:13px">
                 ${isKept ? '★ Kept — click to mark for deletion' : '✕ Marked for deletion — click to keep'}
             </button>
         `;
+        this._fsSidebar.querySelector('#fs-toggle-keep')?.addEventListener('click', () => this._toggleKeep(photo.file_id));
 
         document.getElementById('fs-prev')?.addEventListener('click', () => this._renderFullscreen(index - 1));
         document.getElementById('fs-next')?.addEventListener('click', () => this._renderFullscreen(index + 1));
+        this._fsPhoto.querySelector('#fs-close')?.addEventListener('click', () => this.closeFullscreen());
 
-        window.__reviewGrid = this;
         this._fsIndex = index;
     }
 
@@ -218,5 +230,13 @@ export class ReviewGrid {
     closeFullscreen() {
         this._fsOverlay.hidden = true;
         this._fsIndex = null;
+    }
+
+    _escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 }
