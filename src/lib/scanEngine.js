@@ -1,5 +1,5 @@
 import { scanQueue } from './scanQueue.js';
-import { fetchPhotosFromSingleFolder } from './graph.js';
+import { fetchPhotosFromSingleFolder, getFolderChildren } from './graph.js';
 import { db } from './db.js';
 import { calibrateFolder } from './calibration.js';
 
@@ -63,6 +63,17 @@ export class ScanEngine extends EventTarget {
                 this.dispatchEvent(new CustomEvent('folder_scan_complete', {
                     detail: { folderId, folderPath, photoCount: photos.length }
                 }));
+
+                if (entry.recursive) {
+                    try {
+                        const children = await getFolderChildren(folderId);
+                        for (const child of children) {
+                            await this.enqueueFolder(child.id, child.name, entry.driveId, 'normal', true);
+                        }
+                    } catch (err) {
+                        console.error(`Failed to fetch subfolders of ${folderId}:`, err);
+                    }
+                }
             } catch (err) {
                 console.error(`Scan failed for folder ${folderId}:`, err);
                 this._setFolderStatus(folderId, 'error');
