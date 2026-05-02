@@ -1,413 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/jpeg" href="/bare-logo-shutter.jpg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>photospace.app</title>
-    <link rel="stylesheet" href="/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photospace</title>
+  <link rel="stylesheet" href="./style.css" />
 </head>
-
 <body>
-    <div id="app">
-        <header>
-            <a class="brand" href="/">
-                <img src="/bare-logo-shutter.jpg" alt="Photospace.app logo">
-                <span><span class="logo-text-photo">photo</span><span class="logo-text-space">space.app</span></span>
-            </a>
-            <div class="header-right">
-                <a href="/about.html" title="Learn about Photospace">About</a>
-                <a href="#" id="debug-menu-btn" title="Show debug console">Debug</a>
-                <div id="auth-container">
-                    <button id="login-button">Login with Microsoft</button>
-                    <div id="user-info-container" style="display: none;">
-                        <button id="logout-button">Logout</button>
-                    </div>
-                </div>
-            </div>
-        </header>
+  <div id="app" class="app-layout">
 
-        <!-- Hero section for new users (hidden after login) -->
-        <section id="landing-intro" class="hero-landing">
-            <div class="hero-content">
-                <h1>Declutter OneDrive with private, in‑browser AI</h1>
-                <p class="hero-description">Tired of endless duplicates, burst shots, and messy albums? Photospace scans your OneDrive with AI that runs entirely in your browser. Nothing is uploaded. Ever.</p>
-                <div class="hero-cta">
-                    <button class="btn btn-primary" id="hero-login-btn">Log in to get started</button>
-                    <a href="/about.html" class="btn btn-secondary">How it works</a>
-                </div>
-            </div>
-            <div class="hero-image">
-                <img src="/cockpit-photos.webp" alt="Photo organization visualization">
-            </div>
-        </section>
+    <!-- Header bar -->
+    <header class="app-header">
+      <div class="app-header__brand">📷 Photospace</div>
+      <div class="app-header__status" id="header-status"></div>
+      <div class="app-header__mode-toggle">
+        <button id="btn-quick" class="mode-btn mode-btn--active">Quick cleanup</button>
+        <button id="btn-advanced" class="mode-btn">Advanced</button>
+      </div>
+    </header>
 
-        <main id="main-content" style="display: none;">
-            <!-- OneDrive Browser (initial structure: folder filter + date filter) -->
-            <section class="panel" data-panel-key="browser">
-                <div class="panel-header">
-                    <div class="panel-title-section">
-                        <h3 class="panel-title">OneDrive Browser</h3>
-                        <div id="browser-current-path" class="current-path">OneDrive (Root)</div>
-                    </div>
-                    <div class="panel-tools">
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
+    <!-- Three-column body -->
+    <div class="app-columns">
 
-
-
-
-                    <!-- Browser toolbar and photo grid -->
-                    <div class="browser-toolbar">
-                        <button id="browser-toggle-select" type="button" class="secondary-btn">☑️ Toggle All</button>
-                        <button id="browser-delete-selected" type="button" class="delete-btn">🗑️ Delete Selected</button>
-                        <button id="browser-analyze" type="button" class="primary-btn">🔍 Similar groups</button>
-                        <button id="browser-scan" type="button" class="primary-btn">➕ Scan</button>
-                        <button id="browser-refresh" type="button" class="secondary-btn">🔄 Refresh</button>
-                        <label for="browser-sort">Sort:</label>
-                        <select id="browser-sort">
-                            <option value="date-desc">Date (Newest First)</option>
-                            <option value="date-asc">Date (Oldest First)</option>
-                        </select>
-                    </div>
-                    <div id="browser-photo-grid" class="photo-grid"></div>
-                </div>
-            </section>
-
-            <div id="controls">
-                <!-- Controls moved to respective panels -->
-            </div>
-
-            <!-- Processing Panel -->
-            <section class="panel" data-panel-key="processing">
-                <div class="panel-header">
-                    <h3 class="panel-title">Processing</h3>
-                    <div class="panel-tools">
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div id="processing-config">
-
-                        <!-- Scan Queue Status -->
-                        <div class="processing-row">
-                            <h4>Scan Queue Status</h4>
-                            <div id="scan-queue-status" class="scan-queue-status">
-                                <div class="scan-queue-info">
-                                    <span id="scan-queue-folders">No folders in queue</span>
-                                </div>
-                                <div class="scan-queue-info">
-                                    <span id="scan-queue-db-count">Total photos in DB: Loading...</span>
-                                </div>
-                                <div id="scan-queue-details" class="scan-queue-details" style="display: none;">
-                                    <details>
-                                        <summary>Show folder details</summary>
-                                        <div id="scan-queue-list"></div>
-                                    </details>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Processing Configuration -->
-                        <div class="processing-row">
-                            <label for="worker-count">Parallel Workers:</label>
-                            <div class="threshold-input-group">
-                                <input type="range" id="worker-count" min="1" max="8" step="1">
-                                <span id="worker-count-value">Loading...</span>
-                                <small class="threshold-help">Number of parallel workers for embedding generation (more
-                                    workers = faster processing, but uses more CPU)</small>
-                            </div>
-                        </div>
-                        <!-- Processing Actions -->
-                        <div class="processing-actions">
-                            <button id="pause-resume-embeddings" class="primary-btn">▶️ Start Embedding Workers</button>
-                        </div>
-                        
-                        <!-- Database Management -->
-                        <div class="processing-row" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-                            <h4>Database Management</h4>
-                            <button id="clear-database-button" class="secondary-btn" style="color: #ff6b6b;">🗑️ Clear All Photos from Database</button>
-                            <small class="threshold-help" style="display: block; margin-top: 8px;">This will remove all indexed photos and embeddings from the local database. Your photos on OneDrive will not be affected.</small>
-                        </div>
-
-                    </div>
-                </div>
-            </section>
-
-            <!-- Global Date Filter Panel -->
-            <section class="panel" data-panel-key="date-filter">
-                <div class="panel-header">
-                    <h3 class="panel-title">📅 Date Range Filter</h3>
-                    <div class="panel-tools">
-                        <label class="switch-label">
-                            <input type="checkbox" id="date-enabled-toggle">
-                            <span class="switch"></span>
-                            <span class="switch-text">Enabled</span>
-                        </label>
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div id="date-filter-panel">
-                        <div class="date-range-group">
-                            <input type="date" id="date-from" placeholder="From date">
-                            <span>to</span>
-                            <input type="date" id="date-to" placeholder="To date">
-                        </div>
-                        <small class="threshold-help">Toggle OFF to temporarily search all dates without losing your
-                            selected range. Applies to both similarity and series analysis.</small>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Similarity Analysis Panel -->
-            <section class="panel" data-panel-key="analysis">
-                <div class="panel-header">
-                    <h3 class="panel-title">Similarity Analysis</h3>
-                    <div class="panel-tools">
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div class="analysis-options">
-
-                        <label for="similarity-threshold">Similarity Threshold:</label>
-                        <div class="threshold-input-group">
-                            <input type="range" id="similarity-threshold" min="0.5" max="0.99" step="0.01" value="0.90">
-                            <span id="threshold-value">0.90</span>
-                            <small class="threshold-help">Higher = more strict (fewer groups, very similar photos
-                                only)</small>
-                        </div>
-
-                        <label for="time-span">Time Window for Photo Sessions:</label>
-                        <div class="threshold-input-group">
-                            <input type="range" id="time-span" min="0" max="24" step="1" value="8">
-                            <span id="time-span-value">8 hours</span>
-                            <small class="threshold-help">Photos taken within this time window are considered part of
-                                the same session. Set to 0 to disable temporal clustering (compare all photos regardless of time).</small>
-                        </div>
-
-                        <label for="min-group-size">Minimum Group Size:</label>
-                        <div class="threshold-input-group">
-                            <input type="range" id="min-group-size" min="2" max="20" step="1" value="3">
-                            <span id="min-group-size-value">3 photos</span>
-                            <small class="threshold-help">Only show groups with at least this many similar
-                                photos</small>
-                        </div>
-                        
-                        <!-- Analysis Action -->
-                        <div class="analysis-action">
-                            <button id="start-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
-                        </div>
-
-                    </div>
-                </div>
-            </section>
-
-            <!-- Large Photo Series Panel -->
-            <section class="panel" data-panel-key="series">
-                <div class="panel-header">
-                    <h3 class="panel-title">Large Photo Series</h3>
-                    <div class="panel-tools">
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div class="analysis-options">
-                        <label for="series-min-group-size">Minimum Group Size:</label>
-                        <div class="threshold-input-group">
-                            <input type="range" id="series-min-group-size" min="5" max="100" step="5" value="20">
-                            <span id="series-min-group-size-value">20 photos</span>
-                            <small class="threshold-help">Only show series with at least this many photos</small>
-                        </div>
-
-                        <label for="series-min-density">Minimum Density:</label>
-                        <div class="threshold-input-group">
-                            <input type="range" id="series-min-density" min="0.5" max="10" step="0.5" value="3">
-                            <span id="series-min-density-value">3.0 photos/min</span>
-                            <small class="threshold-help">Minimum photos per minute to consider as a series</small>
-                        </div>
-
-                        <label for="series-time-gap">Maximum Time Gap:</label>
-                        <div class="threshold-input-group">
-                            <input type="range" id="series-time-gap" min="1" max="60" step="1" value="5">
-                            <span id="series-time-gap-value">5 minutes</span>
-                            <small class="threshold-help">Maximum time gap between photos to stay in same series</small>
-                        </div>
-                        
-                        <!-- Ignored Periods -->
-                        <div class="processing-row" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);">
-                            <h4>Ignored Periods</h4>
-                            <small class="threshold-help" style="display: block; margin-bottom: 12px;">
-                                Time periods that will be excluded from series analysis. Use the "Ignore" button on series results to add periods.
-                            </small>
-                            <div id="ignored-periods-list" class="ignored-periods-list">
-                                <p class="placeholder" style="margin: 0; color: #999; font-size: 0.9rem;">No ignored periods</p>
-                            </div>
-                        </div>
-                        
-                        <!-- Series Analysis Actions -->
-                        <div class="analysis-action">
-                            <button id="start-series-analysis-button" class="primary-action">Analyze All Indexed Photos</button>
-                        </div>
-
-                    </div>
-                </div>
-            </section>
-
-            <!-- Analysis Results Panel (Unified) -->
-            <section class="panel" data-panel-key="results">
-                <div class="panel-header">
-                    <h3 class="panel-title">Analysis Results</h3>
-                    <div class="panel-tools">
-                        <span id="results-type-label" style="font-size: 0.85rem; color: #999; margin-right: 0.5rem;">No results yet</span>
-                        <label for="results-sort">Sort:</label>
-                        <select id="results-sort">
-                            <option value="group-size">Size (Largest First)</option>
-                            <option value="date-desc">Date (Newest First)</option>
-                            <option value="date-asc">Date (Oldest First)</option>
-                            <option value="density">Density (Highest First)</option>
-                        </select>
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div id="results-container">
-                        <p class="placeholder">Run similarity analysis or series analysis to see results here.</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Embedding Backup & Sync Panel -->
-            <section class="panel" data-panel-key="backup">
-                <div class="panel-header">
-                    <h3 class="panel-title">Embedding Backup & Sync</h3>
-                    <div class="panel-tools">
-                        <button type="button" class="panel-toggle" aria-expanded="true">▾</button>
-                    </div>
-                </div>
-                <div class="panel-body">
-                    <div id="embedding-backup-panel">
-                        <div class="backup-controls">
-                            <div class="backup-section">
-                                <h4>Export to OneDrive</h4>
-                                <div class="backup-info">
-                                    <span id="export-info">Checking for embeddings...</span>
-                                </div>
-                                <button id="export-embeddings-btn">Export Embeddings</button>
-                            </div>
-
-                            <div class="backup-section">
-                                <h4>Import from OneDrive</h4>
-                                <div class="backup-info">
-                                    <span id="import-info">Click to check for available files</span>
-                                </div>
-                                <button id="import-embeddings-btn">Import Embeddings</button>
-                                <div id="embedding-files-list" style="display: none;">
-                                    <h5>Available Embedding Files:</h5>
-                                    <div id="file-list-container"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-        </main>
-    </div>
-    <div id="image-modal" class="modal" style="display:none;">
-        <span class="modal-close" id="modal-close">&times;</span>
-        <img class="modal-content" id="modal-img" src="" alt="Full Size Photo" />
-        <div class="image-metadata-overlay" id="image-metadata">
-            <div class="metadata-header">
-                <h4 id="photo-name">Photo Details</h4>
-                <div class="metadata-actions">
-                    <button class="metadata-toggle" id="metadata-toggle">📊</button>
-                    <button class="delete-photo-btn" id="modal-delete-btn" title="Delete this photo">🗑️</button>
-                </div>
-            </div>
-            <div class="metadata-content" id="metadata-content">
-                <div class="metric-row">
-                    <span class="metric-label">Sharpness:</span>
-                    <span class="metric-value" id="sharpness-value">-</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Exposure:</span>
-                    <span class="metric-value" id="exposure-value">-</span>
-                </div>
-                <div class="metric-row">
-                    <span class="metric-label">Quality Score:</span>
-                    <span class="metric-value" id="quality-score-value">-</span>
-                </div>
-                <button class="find-similar-btn" id="modal-find-similar-btn" title="Find photos similar to this one">🔍 Find Similar Photos</button>
-                <button class="view-in-folder-btn" id="modal-view-in-folder-btn" title="Open this photo's folder in browser">📁 View in Folder</button>
-            </div>
+      <!-- Left: Folder tree (220px) -->
+      <aside class="panel panel--folders" id="panel-folders">
+        <div class="panel__body" id="folder-tree"></div>
+        <div class="panel__footer">
+          <button id="btn-scan-all" class="btn-text">⬇ Scan all remaining</button>
+          <button id="btn-filter-date" class="btn-text">Filter by date…</button>
         </div>
-    </div>
+      </aside>
 
-    <!-- Import Modal -->
-    <div id="import-modal" class="modal" style="display:none;">
-        <div class="modal-content import-modal">
-            <div class="modal-header">
-                <h3>Import Embeddings from OneDrive</h3>
-                <span class="modal-close" id="import-modal-close">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div id="import-loading" style="display: none;">
-                    <p>Loading available files...</p>
-                    <progress></progress>
-                </div>
-
-                <div id="import-file-selection">
-                    <div id="import-file-list"></div>
-
-                    <div class="import-options" style="display: none;">
-                        <h4>Import Options</h4>
-                        <label for="conflict-strategy">What to do with existing embeddings:</label>
-                        <select id="conflict-strategy">
-                            <option value="skip">Skip existing (recommended)</option>
-                            <option value="overwrite">Overwrite existing</option>
-                        </select>
-
-                        <div class="import-actions">
-                            <button id="confirm-import-btn" disabled>Import Selected File</button>
-                            <button id="cancel-import-btn">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="import-progress" style="display: none;">
-                    <h4>Importing Embeddings...</h4>
-                    <progress id="import-progress-bar"></progress>
-                    <p id="import-status">Starting import...</p>
-                </div>
-
-                <div id="import-results" style="display: none;">
-                    <h4>Import Complete</h4>
-                    <div id="import-summary"></div>
-                    <button id="close-import-btn">Close</button>
-                </div>
-            </div>
+      <!-- Middle: Series list (flex) -->
+      <section class="panel panel--series" id="panel-series">
+        <div class="panel__header" id="series-header"></div>
+        <div class="panel__body" id="series-list"></div>
+        <div class="panel__footer">
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="series-progress-bar"></div>
+          </div>
+          <div class="progress-label" id="series-progress-label"></div>
         </div>
+      </section>
+
+      <!-- Right: Review grid (310px) -->
+      <aside class="panel panel--review" id="panel-review">
+        <div class="panel__header" id="review-header"></div>
+        <div class="panel__body" id="review-grid"></div>
+        <div class="panel__footer" id="review-footer"></div>
+      </aside>
+
     </div>
 
-    <!-- Debug Console for Mobile -->
-    <div id="debug-console" style="display: none;">
-        <div id="debug-header">
-            <span>Debug Console</span>
-            <div id="debug-controls">
-                <button id="debug-clear">Clear</button>
-                <button id="debug-toggle">_</button>
-                <button id="debug-close">×</button>
-            </div>
-        </div>
-        <div id="debug-content"></div>
+    <!-- Advanced settings drawer (hidden by default, overlays right panel) -->
+    <div class="settings-drawer" id="settings-drawer" hidden>
+      <div class="settings-drawer__content" id="settings-content"></div>
     </div>
 
-    <script type="module" src="/main.js"></script>
+    <!-- Full-screen preview overlay (hidden by default) -->
+    <div class="fullscreen-overlay" id="fullscreen-overlay" hidden>
+      <div class="fullscreen-overlay__photo" id="fullscreen-photo"></div>
+      <div class="fullscreen-overlay__sidebar" id="fullscreen-sidebar"></div>
+    </div>
+
+    <!-- Login screen (shown when not authenticated) -->
+    <div class="login-screen" id="login-screen" hidden>
+      <div class="login-card">
+        <h1>Photospace</h1>
+        <p>Sign in with your Microsoft account to access your OneDrive photos.</p>
+        <button id="btn-login" class="btn-primary">Sign in with Microsoft</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="./main.js"></script>
 </body>
-
 </html>
-
