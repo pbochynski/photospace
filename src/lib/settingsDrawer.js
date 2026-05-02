@@ -1,4 +1,4 @@
-import { getSetting, setSetting, getSeriesSettings, getIgnoredPeriods, addIgnoredPeriod, removeIgnoredPeriod } from './settingsManager.js';
+import { getSetting, setSetting, getSeriesSettings, getDateFilter, getIgnoredPeriods, addIgnoredPeriod, removeIgnoredPeriod } from './settingsManager.js';
 import { getCalibration } from './calibration.js';
 
 export class SettingsDrawer {
@@ -14,7 +14,6 @@ export class SettingsDrawer {
 
     async render() {
         const settings = await getSeriesSettings();
-        const { getDateFilter } = await import('./settingsManager.js');
         const dateFilter = await getDateFilter();
         const ignoredPeriods = await getIgnoredPeriods();
         const calibration = this._currentFolderId ? await getCalibration(this._currentFolderId) : null;
