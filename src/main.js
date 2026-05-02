@@ -5,6 +5,7 @@ import { FolderPanel } from './lib/folderPanel.js';
 import { SeriesPanel } from './lib/seriesPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
 import { getAuthToken, login, msalInstance } from './lib/auth.js';
+import { SettingsDrawer } from './lib/settingsDrawer.js';
 
 const appState = {
     authenticated: false,
@@ -20,10 +21,11 @@ const btnLogin      = document.getElementById('btn-login');
 const headerStatus  = document.getElementById('header-status');
 const btnQuick      = document.getElementById('btn-quick');
 const btnAdvanced   = document.getElementById('btn-advanced');
-const settingsDrawer = document.getElementById('settings-drawer');
+const settingsDrawerEl = document.getElementById('settings-drawer');
 
 // Panel renderers (created after DOM ready)
 let folderPanel, seriesPanel, reviewGrid;
+let settingsDrawerPanel;
 
 async function boot() {
     if ('serviceWorker' in navigator) {
@@ -55,15 +57,19 @@ async function boot() {
         }
     });
 
-    btnQuick?.addEventListener('click', () => toggleMode('quick'));
-    btnAdvanced?.addEventListener('click', () => toggleMode('advanced'));
+    btnQuick?.addEventListener('click', () => toggleMode('quick').catch(console.error));
+    btnAdvanced?.addEventListener('click', () => toggleMode('advanced').catch(console.error));
 }
 
-function toggleMode(mode) {
+async function toggleMode(mode) {
     const isAdvanced = mode === 'advanced';
     btnQuick.classList.toggle('mode-btn--active', !isAdvanced);
     btnAdvanced.classList.toggle('mode-btn--active', isAdvanced);
-    settingsDrawer.hidden = !isAdvanced;
+    settingsDrawerEl.hidden = !isAdvanced;
+    if (isAdvanced) {
+        if (appState.selectedFolderId) settingsDrawerPanel.setCurrentFolder(appState.selectedFolderId);
+        await settingsDrawerPanel.render();
+    }
 }
 
 async function onAuthenticated() {
@@ -89,6 +95,15 @@ async function onAuthenticated() {
         fullscreenOverlay: document.getElementById('fullscreen-overlay'),
         fullscreenPhoto:   document.getElementById('fullscreen-photo'),
         fullscreenSidebar: document.getElementById('fullscreen-sidebar'),
+    });
+
+    settingsDrawerPanel = new SettingsDrawer(document.getElementById('settings-content'), {
+        onSettingsChange: async () => {
+            if (appState.selectedFolderId) {
+                settingsDrawerPanel.setCurrentFolder(appState.selectedFolderId);
+                await seriesPanel.loadFolder(appState.selectedFolderId, appState.selectedFolderName);
+            }
+        }
     });
 
     // Check if first-run (no photos in db)
