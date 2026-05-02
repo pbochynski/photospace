@@ -1,3 +1,137 @@
+# Step 04: Three-Column UI Shell
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Replace the existing `src/index.html` and `src/style.css` with the new three-column layout. No logic in this step — just the HTML skeleton and CSS. Panels are empty placeholders with correct IDs.
+
+**Architecture:** Fixed 220px left panel, flex-grow middle panel (min 300px), fixed 310px right panel. Full-height flex row. Header bar across the top.
+
+**Tech Stack:** HTML5, CSS (no framework)
+
+---
+
+### Task 1: Rewrite index.html with three-column skeleton
+
+**Files:**
+- Modify: `src/index.html`
+
+- [ ] **Step 1: Read current src/index.html**
+
+Read `src/index.html` to understand existing head/meta tags, script imports, and auth hooks to preserve.
+
+- [ ] **Step 2: Rewrite src/index.html**
+
+Replace the body content entirely. Keep existing `<head>` meta tags, the Vite script tag, and the MSAL CDN script. Replace the `<body>` with:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photospace</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app" class="app-layout">
+
+    <!-- Header bar -->
+    <header class="app-header">
+      <div class="app-header__brand">📷 Photospace</div>
+      <div class="app-header__status" id="header-status"></div>
+      <div class="app-header__mode-toggle">
+        <button id="btn-quick" class="mode-btn mode-btn--active">Quick cleanup</button>
+        <button id="btn-advanced" class="mode-btn">Advanced</button>
+      </div>
+    </header>
+
+    <!-- Three-column body -->
+    <div class="app-columns">
+
+      <!-- Left: Folder tree (220px) -->
+      <aside class="panel panel--folders" id="panel-folders">
+        <div class="panel__body" id="folder-tree"></div>
+        <div class="panel__footer">
+          <button id="btn-scan-all" class="btn-text">⬇ Scan all remaining</button>
+          <button id="btn-filter-date" class="btn-text">Filter by date…</button>
+        </div>
+      </aside>
+
+      <!-- Middle: Series list (flex) -->
+      <section class="panel panel--series" id="panel-series">
+        <div class="panel__header" id="series-header"></div>
+        <div class="panel__body" id="series-list"></div>
+        <div class="panel__footer">
+          <div class="progress-bar-wrap">
+            <div class="progress-bar" id="series-progress-bar"></div>
+          </div>
+          <div class="progress-label" id="series-progress-label"></div>
+        </div>
+      </section>
+
+      <!-- Right: Review grid (310px) -->
+      <aside class="panel panel--review" id="panel-review">
+        <div class="panel__header" id="review-header"></div>
+        <div class="panel__body" id="review-grid"></div>
+        <div class="panel__footer" id="review-footer"></div>
+      </aside>
+
+    </div>
+
+    <!-- Advanced settings drawer (hidden by default, overlays right panel) -->
+    <div class="settings-drawer" id="settings-drawer" hidden>
+      <div class="settings-drawer__content" id="settings-content"></div>
+    </div>
+
+    <!-- Full-screen preview overlay (hidden by default) -->
+    <div class="fullscreen-overlay" id="fullscreen-overlay" hidden>
+      <div class="fullscreen-overlay__photo" id="fullscreen-photo"></div>
+      <div class="fullscreen-overlay__sidebar" id="fullscreen-sidebar"></div>
+    </div>
+
+    <!-- Login screen (shown when not authenticated) -->
+    <div class="login-screen" id="login-screen" hidden>
+      <div class="login-card">
+        <h1>Photospace</h1>
+        <p>Sign in with your Microsoft account to access your OneDrive photos.</p>
+        <button id="btn-login" class="btn-primary">Sign in with Microsoft</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
+```
+
+- [ ] **Step 3: Build to verify HTML parses**
+
+```bash
+npm run build 2>&1 | tail -10
+```
+
+Expected: Clean build.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/index.html
+git commit -m "feat: new three-column HTML skeleton"
+```
+
+---
+
+### Task 2: Write three-column CSS layout
+
+**Files:**
+- Modify: `src/style.css`
+
+- [ ] **Step 1: Replace src/style.css with new layout styles**
+
+Replace the entire content of `src/style.css` with:
+
+```css
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -330,14 +464,21 @@ body {
 }
 .onboarding-card h3 { margin-bottom: 8px; }
 .onboarding-card p  { color: var(--color-text-muted); line-height: 1.5; }
+```
 
-/* Settings fields */
-.settings-field {
-  margin-bottom: 16px;
-}
-.settings-field label {
-  display: block;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-bottom: 4px;
-}
+- [ ] **Step 2: Start dev server and verify layout renders**
+
+```bash
+npm run dev &
+sleep 3
+curl -s http://localhost:5173/ | grep -o 'panel--folders\|panel--series\|panel--review' | wc -l
+```
+
+Expected: Output shows 3 (all three panel classes present in HTML).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/style.css
+git commit -m "feat: new three-column CSS layout"
+```

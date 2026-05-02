@@ -70,6 +70,7 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
                     name: item.name,
                     size: item.size,
                     path: fullPath,
+                    folder_id: folderId,
                     last_modified: item.lastModifiedDateTime,
                     photo_taken_ts: item.photo.takenDateTime,
                     thumbnail_url: null,
@@ -575,15 +576,27 @@ async function createAppFolder() {
         }, getAuthToken);
         
         console.log('Successfully created Apps/Photospace folder structure');
-        
+
     } catch (error) {
         // Check if it's a conflict error (folder already exists)
         if (error.message.includes('nameAlreadyExists') || error.message.includes('already exists')) {
             console.log('Folder already exists, continuing...');
             return;
         }
-        
+
         console.error('Error creating app folder:', error);
         throw error;
     }
+}
+
+export async function getFolderChildren(folderId = 'root') {
+    const token = await getAuthToken();
+    if (!token) throw new Error('Not authenticated');
+    const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$filter=folder ne null&$select=id,name,folder,parentReference`;
+    const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
+    return response.value || [];
+}
+
+export async function getRootFolders() {
+    return getFolderChildren('root');
 }
