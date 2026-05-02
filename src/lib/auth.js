@@ -42,14 +42,7 @@ const loginRequest = {
 };
 
 export async function login() {
-    try {
-        const response = await msalInstance.loginPopup(loginRequest);
-        msalInstance.setActiveAccount(response.account);
-        return response.account;
-    } catch (error) {
-        console.error("Login failed:", error);
-        throw error;
-    }
+    await msalInstance.loginRedirect(loginRequest);
 }
 
 export function logout() {

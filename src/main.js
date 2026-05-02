@@ -36,7 +36,10 @@ async function boot() {
 
     // Initialize MSAL (handles redirect response if present)
     await msalInstance.initialize();
-    await msalInstance.handleRedirectPromise();
+    const redirectResult = await msalInstance.handleRedirectPromise();
+    if (redirectResult?.account) {
+        msalInstance.setActiveAccount(redirectResult.account);
+    }
 
     let token = null;
     try { token = await getAuthToken(); } catch (_) {}
@@ -47,15 +50,7 @@ async function boot() {
         loginScreen.hidden = false;
     }
 
-    btnLogin?.addEventListener('click', async () => {
-        try {
-            await login();
-            loginScreen.hidden = true;
-            await onAuthenticated();
-        } catch (e) {
-            console.error('Login failed:', e);
-        }
-    });
+    btnLogin?.addEventListener('click', () => login().catch(console.error));
 
     btnQuick?.addEventListener('click', () => toggleMode('quick').catch(console.error));
     btnAdvanced?.addEventListener('click', () => toggleMode('advanced').catch(console.error));
