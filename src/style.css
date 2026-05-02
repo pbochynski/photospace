@@ -208,6 +208,24 @@ body {
   justify-content: center;
 }
 .thumb-cell:hover .thumb-cell__overlay { display: flex; }
+.thumb-cell__toggle-btn {
+  background: rgba(0,0,0,0.6);
+  border: 2px solid rgba(255,255,255,0.7);
+  border-radius: 50%;
+  color: white;
+  font-size: 18px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.thumb-cell__toggle-btn:hover {
+  background: rgba(0,0,0,0.85);
+  border-color: white;
+}
 
 /* Delete button */
 .btn-delete {

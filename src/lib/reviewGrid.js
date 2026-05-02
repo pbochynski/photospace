@@ -71,12 +71,12 @@ export class ReviewGrid {
                 ${isKept ? '<span class="thumb-cell__star">★</span>' : ''}
                 <span class="thumb-cell__score">${score}</span>
                 <div class="thumb-cell__overlay">
-                    <span style="color:white;font-size:20px">${isKept ? '★' : '✕'}</span>
+                    <button class="thumb-cell__toggle-btn" title="${isKept ? 'Mark for deletion' : 'Keep'}">${isKept ? '★' : '✕'}</button>
                 </div>
             `;
 
             cell.addEventListener('click', (e) => {
-                if (e.target.classList.contains('thumb-cell__overlay') || e.target.closest('.thumb-cell__overlay')) {
+                if (e.target.closest('.thumb-cell__toggle-btn')) {
                     this._toggleKeep(photo.file_id);
                 } else {
                     this._openFullscreen(i);
