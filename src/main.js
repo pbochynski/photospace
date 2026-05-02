@@ -27,6 +27,16 @@ const settingsDrawerEl = document.getElementById('settings-drawer');
 let folderPanel, seriesPanel, reviewGrid;
 let settingsDrawerPanel;
 
+async function sendTokenToSW(token) {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        reg.active?.postMessage({ type: 'SET_TOKEN', token });
+    } catch (e) {
+        console.warn('Could not send token to service worker:', e);
+    }
+}
+
 async function boot() {
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(e => console.warn('SW registration failed:', e));
@@ -45,6 +55,7 @@ async function boot() {
     try { token = await getAuthToken(); } catch (_) {}
 
     if (token) {
+        await sendTokenToSW(token);
         await onAuthenticated();
     } else {
         loginScreen.hidden = false;
@@ -156,6 +167,10 @@ async function handlePromoteClick(folderId, folderName, driveId) {
 async function handleSeriesClick(series, folderId, index) {
     appState.selectedSeries = series;
     appState.selectedFolderIdForSeries = folderId;
+    try {
+        const token = await getAuthToken();
+        await sendTokenToSW(token);
+    } catch (_) {}
     await reviewGrid.loadSeries(series, folderId);
 }
 
