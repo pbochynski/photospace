@@ -130,6 +130,8 @@ body {
   border-radius: 3px;
   cursor: pointer;
 }
+.folder-item__chevron { display: inline-block; width: 12px; font-size: 10px; color: var(--color-text-muted); flex-shrink: 0; cursor: pointer; }
+.folder-item__chevron--leaf { cursor: default; }
 .folder-children { padding-left: 16px; }
 
 /* Series list */
