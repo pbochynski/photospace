@@ -4,15 +4,31 @@ import { db } from './db.js';
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class FolderPanel {
-    constructor(containerEl, { onFolderClick, onPromoteClick }) {
+    constructor(containerEl, { onFolderClick, onPromoteClick, onRecursiveScanClick }) {
         this._container = containerEl;
         this._onFolderClick = onFolderClick;
         this._onPromoteClick = onPromoteClick;
+        this._onRecursiveScanClick = onRecursiveScanClick;
         this._expandedFolders = new Set();
         this._folderStatus = new Map();
         this._selectedFolderId = null;
         this._childFolders = new Map();
         this._folderMeta = {};
+        this._contextMenu = document.getElementById('folder-context-menu');
+        this._ctxScanFolder = document.getElementById('ctx-scan-folder');
+        this._ctxScanRecursive = document.getElementById('ctx-scan-recursive');
+        this._bindContextMenuDismiss();
+    }
+
+    _hideContextMenu() {
+        this._contextMenu.hidden = true;
+    }
+
+    _bindContextMenuDismiss() {
+        document.addEventListener('click', () => this._hideContextMenu());
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this._hideContextMenu();
+        });
     }
 
     setFolderStatus(folderId, status, photoCount) {
@@ -114,6 +130,25 @@ export class FolderPanel {
                 } else {
                     this._onFolderClick(folder.id, folder.name, folder.parentReference?.driveId);
                 }
+            });
+
+            item.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const fId = folder.id;
+                const fName = folder.name;
+                const dId = folder.parentReference?.driveId;
+                this._ctxScanFolder.onclick = () => {
+                    this._onPromoteClick(fId, fName, dId);
+                    this._hideContextMenu();
+                };
+                this._ctxScanRecursive.onclick = () => {
+                    this._onRecursiveScanClick(fId, fName, dId);
+                    this._hideContextMenu();
+                };
+                this._contextMenu.style.left = `${e.clientX}px`;
+                this._contextMenu.style.top = `${e.clientY}px`;
+                this._contextMenu.hidden = false;
             });
 
             parentEl.appendChild(item);

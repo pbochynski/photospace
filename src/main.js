@@ -84,6 +84,7 @@ async function onAuthenticated() {
     folderPanel = new FolderPanel(document.getElementById('folder-tree'), {
         onFolderClick: handleFolderClick,
         onPromoteClick: handlePromoteClick,
+        onRecursiveScanClick: handleRecursiveScanClick,
     });
 
     seriesPanel = new SeriesPanel({
@@ -162,6 +163,10 @@ async function handleFolderClick(folderId, folderName, driveId) {
 
 async function handlePromoteClick(folderId, folderName, driveId) {
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high');
+}
+
+async function handleRecursiveScanClick(folderId, folderName, driveId) {
+    await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high', true);
 }
 
 async function handleSeriesClick(series, folderId, index) {
