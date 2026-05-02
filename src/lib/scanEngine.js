@@ -23,8 +23,8 @@ export class ScanEngine extends EventTarget {
         }));
     }
 
-    async enqueueFolder(folderId, folderPath, driveId, priority = 'normal') {
-        await scanQueue.enqueue({ folderId, folderPath, driveId, priority });
+    async enqueueFolder(folderId, folderPath, driveId, priority = 'normal', recursive = false) {
+        await scanQueue.enqueue({ folderId, folderPath, driveId, priority, recursive });
         if (!this._running) this.start();
     }
 
