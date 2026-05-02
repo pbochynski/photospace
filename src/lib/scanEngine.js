@@ -64,7 +64,7 @@ export class ScanEngine extends EventTarget {
                     detail: { folderId, folderPath, photoCount: photos.length }
                 }));
             } catch (err) {
-                console.error(`Scan failed for folder ${folderId}:`, err.message);
+                console.error(`Scan failed for folder ${folderId}:`, err);
                 this._setFolderStatus(folderId, 'error');
                 this.dispatchEvent(new CustomEvent('folder_scan_error', {
                     detail: { folderId, error: err.message }
