@@ -102,12 +102,12 @@ describe('findPhotoSeries — same-timestamp edge case', () => {
 
 describe('findPhotoSeries — ignoredPeriods', () => {
     it('excludes photos that fall within an ignored period', async () => {
-        // 30 photos: first 20 in ignored window, last 10 outside
+        // 20 photos in ignored window, 25 photos starting one interval after the boundary
         const ignored = Array.from({ length: 20 }, (_, i) =>
             makePhoto(`ignored${i}`, BASE + i * 30_000)
         );
         const outside = Array.from({ length: 25 }, (_, i) =>
-            makePhoto(`keep${i}`, BASE + 10 * MIN + i * 30_000)
+            makePhoto(`keep${i}`, BASE + 10 * MIN + 30_000 + i * 30_000)
         );
         const ignoredPeriods = [{ startTime: BASE, endTime: BASE + 20 * 30_000, label: 'test' }];
         const result = await findPhotoSeries([...ignored, ...outside], {
