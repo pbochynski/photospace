@@ -158,25 +158,44 @@ export class PhotoGridPanel {
 
         const header = document.createElement('div');
         header.className = 'series-block__header';
-        header.innerHTML = `
-            <span class="series-block__date">${date}</span>
-            <span class="series-block__tag ${tagClass}">${tagLabel}</span>
-            <span class="series-block__count">${series.photoCount} photos</span>
-            <span class="series-block__open">▶ open in review</span>
-        `;
+
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'series-block__date';
+        dateSpan.textContent = date;
+
+        const tagSpan = document.createElement('span');
+        tagSpan.className = `series-block__tag ${tagClass}`;
+        tagSpan.textContent = tagLabel;
+
+        const countSpan = document.createElement('span');
+        countSpan.className = 'series-block__count';
+        countSpan.textContent = `${series.photoCount} photos`;
+
+        const openSpan = document.createElement('span');
+        openSpan.className = 'series-block__open';
+        openSpan.textContent = '▶ open in review';
+
+        header.appendChild(dateSpan);
+        header.appendChild(tagSpan);
+        header.appendChild(countSpan);
+        header.appendChild(openSpan);
+
         header.addEventListener('click', () => this._onSeriesClick(series, this._folderId, seriesIndex));
         block.appendChild(header);
 
         const thumbsEl = document.createElement('div');
         thumbsEl.className = 'series-block__thumbs';
 
+        const keptSet = new Set(keptIds);
+        const deletedSet = new Set(deletedIds);
+
         const MAX_THUMBS = 12;
         const visiblePhotos = series.photos.slice(0, MAX_THUMBS);
         const overflowCount = series.photos.length - MAX_THUMBS;
 
         for (const photo of visiblePhotos) {
-            const isKept = keptIds.includes(photo.file_id);
-            const isDeleted = deletedIds.includes(photo.file_id);
+            const isKept = keptSet.has(photo.file_id);
+            const isDeleted = deletedSet.has(photo.file_id);
             const thumb = document.createElement('div');
             thumb.className = 'photo-thumb' +
                 (isKept ? ' photo-thumb--keep' : '') +
