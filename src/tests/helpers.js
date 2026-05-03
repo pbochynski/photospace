@@ -14,9 +14,9 @@ export function makePhoto(id, takenAtMs, qualityScore = null) {
  * @param {Object} overrides - Optional field overrides
  */
 export function makeSeries(photos, overrides = {}) {
-    const timestamps = photos.map(p => p.photo_taken_ts).filter(Boolean);
-    const startTime = Math.min(...timestamps);
-    const endTime = Math.max(...timestamps);
+    const timestamps = photos.map(p => p.photo_taken_ts).filter(t => t != null && !isNaN(t));
+    const startTime = timestamps.length ? Math.min(...timestamps) : 0;
+    const endTime = timestamps.length ? Math.max(...timestamps) : 0;
     const timeSpanMs = endTime - startTime;
     const timeSpanMinutes = timeSpanMs / 60000;
     const density = timeSpanMinutes > 0 ? photos.length / timeSpanMinutes : photos.length;
