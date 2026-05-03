@@ -30,6 +30,13 @@ describe('pickBestPhotoByQuality', () => {
         const result = await pickBestPhotoByQuality(photos);
         expect(result.file_id).toBe('b');
     });
+
+    it('does not mutate the input array', async () => {
+        const photos = [makePhoto('a', 1000, 0.5), makePhoto('b', 2000, 0.9)];
+        const before = photos.map(p => p.file_id);
+        await pickBestPhotoByQuality(photos);
+        expect(photos.map(p => p.file_id)).toEqual(before);
+    });
 });
 
 describe('findPhotoSeries — basic grouping', () => {

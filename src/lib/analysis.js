@@ -1,7 +1,6 @@
 export async function pickBestPhotoByQuality(photoGroup) {
     if (photoGroup.length === 1) return photoGroup[0];
-    photoGroup.sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0));
-    return photoGroup[0];
+    return [...photoGroup].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0))[0];
 }
 
 /**
