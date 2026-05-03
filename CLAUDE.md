@@ -16,6 +16,12 @@ npm run build
 
 # Preview production build
 npm run preview
+
+# Run tests (watch mode)
+npm test
+
+# Run tests once (CI / before committing)
+npm run test:run
 ```
 
 ### Optional Node.js embedding server (in server/)
@@ -89,3 +95,34 @@ The Azure App Registration must have a SPA redirect URI pointing to `http://loca
 - `envDir` is `..` (reads `.env.local` from project root)
 - A custom plugin copies `src/sw.js` to `dist/sw.js` verbatim (bypassing Vite bundling so the SW scope is correct)
 - Workers use `format: 'es'`
+- Vitest `include` pattern is `tests/**/*.test.js` (relative to `root: src/`, resolves to `src/tests/`)
+
+## Testing
+
+**Runner:** Vitest (node environment, no browser APIs needed for unit tests)
+
+**Test files:** `src/tests/*.test.js`
+
+**Helpers:** `src/tests/helpers.js` — `makePhoto(id, takenAtMs, qualityScore)` and `makeSeries(photos, overrides)`
+
+### What is tested (Phase A)
+
+Only pure logic functions with no external dependencies:
+
+| File | Functions covered |
+|------|------------------|
+| `src/lib/analysis.js` | `findPhotoSeries`, `pickBestPhotoByQuality` |
+| `src/lib/reviewManager.js` | `classifySeries`, `preselectSeries` |
+
+### What is NOT yet tested
+
+- `graph.js`, `scanEngine.js` — require Graph API mocking (future: MSW)
+- `db.js`, `settingsManager.js`, `calibration.js` — require IndexedDB (future: fake-indexeddb)
+- UI panel classes — require DOM (future: happy-dom or Playwright)
+- Web Worker (`worker.js`) — requires Worker API
+
+### Development workflow
+
+- **Write tests before implementation** (TDD) for any function in the testable layer
+- **Run `npm run test:run`** before every commit touching `src/lib/analysis.js`, `src/lib/reviewManager.js`, or `src/tests/`
+- Tests must pass before merging
