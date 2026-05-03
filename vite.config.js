@@ -28,5 +28,10 @@ export default defineConfig({
         copyFileSync('src/sw.js', 'dist/sw.js');
       }
     }
-  ]
+  ],
+
+  test: {
+    include: ['src/tests/**/*.test.js'],
+    environment: 'node',
+  }
 });
