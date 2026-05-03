@@ -87,3 +87,71 @@ describe('findPhotoSeries — basic grouping', () => {
         expect(result).toEqual([]);
     });
 });
+
+describe('findPhotoSeries — same-timestamp edge case', () => {
+    it('includes series where all photos share the same timestamp', async () => {
+        // Density is treated as infinite when timeSpan is 0
+        const photos = Array.from({ length: 25 }, (_, i) =>
+            makePhoto(`p${i}`, BASE)
+        );
+        const result = await findPhotoSeries(photos, { minGroupSize: 20, minDensity: 1 });
+        expect(result).toHaveLength(1);
+        expect(result[0].photoCount).toBe(25);
+    });
+});
+
+describe('findPhotoSeries — ignoredPeriods', () => {
+    it('excludes photos that fall within an ignored period', async () => {
+        // 30 photos: first 20 in ignored window, last 10 outside
+        const ignored = Array.from({ length: 20 }, (_, i) =>
+            makePhoto(`ignored${i}`, BASE + i * 30_000)
+        );
+        const outside = Array.from({ length: 25 }, (_, i) =>
+            makePhoto(`keep${i}`, BASE + 10 * MIN + i * 30_000)
+        );
+        const ignoredPeriods = [{ startTime: BASE, endTime: BASE + 20 * 30_000, label: 'test' }];
+        const result = await findPhotoSeries([...ignored, ...outside], {
+            minGroupSize: 20,
+            minDensity: 1,
+            ignoredPeriods,
+        });
+        // Only the 'keep' cluster should remain
+        expect(result).toHaveLength(1);
+        result[0].photos.forEach(p => expect(p.file_id).toMatch(/^keep/));
+    });
+});
+
+describe('findPhotoSeries — sortMethod', () => {
+    // Two series: A has 30 photos at high density, B has 25 photos at lower density
+    // A: 30 photos, 15 seconds apart over ~7.5 min → density ≈ 4 photos/min
+    // B: 25 photos, 30 seconds apart over ~12 min  → density ≈ 2 photos/min
+    const seriesA = Array.from({ length: 30 }, (_, i) =>
+        makePhoto(`a${i}`, BASE + i * 15_000)
+    );
+    const gapB = BASE + 30 * MIN;
+    const seriesB = Array.from({ length: 25 }, (_, i) =>
+        makePhoto(`b${i}`, gapB + i * 30_000)
+    );
+    const allPhotos = [...seriesA, ...seriesB];
+    const opts = { minGroupSize: 20, minDensity: 1 };
+
+    it('sorts by series-size descending by default', async () => {
+        const result = await findPhotoSeries(allPhotos, { ...opts, sortMethod: 'series-size' });
+        expect(result[0].photoCount).toBeGreaterThanOrEqual(result[1].photoCount);
+    });
+
+    it('sorts by density descending', async () => {
+        const result = await findPhotoSeries(allPhotos, { ...opts, sortMethod: 'density' });
+        expect(result[0].density).toBeGreaterThanOrEqual(result[1].density);
+    });
+
+    it('sorts by date descending', async () => {
+        const result = await findPhotoSeries(allPhotos, { ...opts, sortMethod: 'date-desc' });
+        expect(result[0].startTime).toBeGreaterThanOrEqual(result[1].startTime);
+    });
+
+    it('sorts by date ascending', async () => {
+        const result = await findPhotoSeries(allPhotos, { ...opts, sortMethod: 'date-asc' });
+        expect(result[0].startTime).toBeLessThanOrEqual(result[1].startTime);
+    });
+});
