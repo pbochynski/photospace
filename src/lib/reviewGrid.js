@@ -200,10 +200,12 @@ export class ReviewGrid {
                 ${this._scoreBar('Exposure', photo.exposure)}
                 ${photo.face?.detected ? this._scoreBar('Face', photo.face.score) : '<div style="color:#888;font-size:12px">Face — n/a</div>'}
             </div>
+            ${this._series ? `
             <button id="fs-toggle-keep"
                 style="width:100%;padding:8px;background:${isKept ? 'var(--color-keep)' : 'var(--color-delete)'};border:none;color:white;border-radius:4px;cursor:pointer;font-size:13px">
                 ${isKept ? '★ Kept — click to mark for deletion' : '✕ Marked for deletion — click to keep'}
             </button>
+            ` : ''}
         `;
         this._fsSidebar.querySelector('#fs-toggle-keep')?.addEventListener('click', () => this._toggleKeep(photo.file_id));
 

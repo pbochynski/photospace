@@ -181,16 +181,18 @@ async function handleSeriesClick(series, folderId, index) {
 }
 
 async function handlePhotoClick(photo, series) {
+    try {
+        const token = await getAuthToken();
+        await sendTokenToSW(token);
+    } catch (_) {}
     if (series) {
         appState.selectedSeries = series;
         appState.selectedFolderIdForSeries = appState.selectedFolderId;
-        try {
-            const token = await getAuthToken();
-            await sendTokenToSW(token);
-        } catch (_) {}
         await reviewGrid.loadSeries(series, appState.selectedFolderId);
         reviewGrid.openPhotoById(photo.file_id);
     } else {
+        appState.selectedSeries = null;
+        appState.selectedFolderIdForSeries = null;
         reviewGrid.openSinglePhoto(photo);
     }
 }
