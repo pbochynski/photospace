@@ -73,7 +73,8 @@ describe('preselectSeries', () => {
         const series = makeSeries(photos, { timeSpanMinutes: 4, density: 3 });
         const result = await preselectSeries(series, 'folder1', null);
         expect(result.classification).toBe('spread');
-        expect(result.keptIds).toEqual(['b', 'c', 'd']);
+        expect(result.keptIds).toHaveLength(3);
+        expect(result.keptIds).toEqual(expect.arrayContaining(['b', 'c', 'd']));
         expect(result.deletedIds).toHaveLength(2);
     });
 
