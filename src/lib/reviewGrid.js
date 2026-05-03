@@ -232,6 +232,19 @@ export class ReviewGrid {
         this._fsIndex = null;
     }
 
+    openPhotoById(fileId) {
+        const index = this._photos.findIndex(p => p.file_id === fileId);
+        if (index !== -1) this._openFullscreen(index);
+    }
+
+    openSinglePhoto(photo) {
+        this._photos = [photo];
+        this._keptIds = [];
+        this._deletedIds = [];
+        this._series = null;
+        this._openFullscreen(0);
+    }
+
     _escapeHtml(str) {
         return String(str)
             .replace(/&/g, '&amp;')
