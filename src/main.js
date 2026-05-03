@@ -2,7 +2,7 @@ import { db } from './lib/db.js';
 import { scanEngine } from './lib/scanEngine.js';
 import { qualityProcessor } from './lib/qualityProcessor.js';
 import { FolderPanel } from './lib/folderPanel.js';
-import { SeriesPanel } from './lib/seriesPanel.js';
+import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
 import { getAuthToken, login, msalInstance } from './lib/auth.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
@@ -24,7 +24,7 @@ const btnAdvanced   = document.getElementById('btn-advanced');
 const settingsDrawerEl = document.getElementById('settings-drawer');
 
 // Panel renderers (created after DOM ready)
-let folderPanel, seriesPanel, reviewGrid;
+let folderPanel, photoGridPanel, reviewGrid;
 let settingsDrawerPanel;
 
 async function sendTokenToSW(token) {
@@ -87,12 +87,13 @@ async function onAuthenticated() {
         onRecursiveScanClick: handleRecursiveScanClick,
     });
 
-    seriesPanel = new SeriesPanel({
-        headerEl:       document.getElementById('series-header'),
-        listEl:         document.getElementById('series-list'),
-        progressBarEl:  document.getElementById('series-progress-bar'),
+    photoGridPanel = new PhotoGridPanel({
+        headerEl:        document.getElementById('series-header'),
+        listEl:          document.getElementById('series-list'),
+        progressBarEl:   document.getElementById('series-progress-bar'),
         progressLabelEl: document.getElementById('series-progress-label'),
-        onSeriesClick:  handleSeriesClick,
+        onSeriesClick:   handleSeriesClick,
+        onPhotoClick:    handlePhotoClick,
     });
 
     reviewGrid = new ReviewGrid({
@@ -108,7 +109,7 @@ async function onAuthenticated() {
         onSettingsChange: async () => {
             if (appState.selectedFolderId) {
                 settingsDrawerPanel.setCurrentFolder(appState.selectedFolderId);
-                await seriesPanel.loadFolder(appState.selectedFolderId, appState.selectedFolderName);
+                await photoGridPanel.loadFolder(appState.selectedFolderId, appState.selectedFolderName);
             }
         }
     });
@@ -116,7 +117,7 @@ async function onAuthenticated() {
     // Check if first-run (no photos in db)
     const photoCount = await db.getPhotoCount();
     if (photoCount === 0) {
-        seriesPanel.showOnboarding();
+        photoGridPanel.showOnboarding();
     }
 
     // Wire scan engine events
@@ -124,7 +125,7 @@ async function onAuthenticated() {
         const { folderId, status, photoCount } = e.detail;
         folderPanel.setFolderStatus(folderId, status, photoCount);
         if (status === 'scanned' && folderId === appState.selectedFolderId) {
-            seriesPanel.loadFolder(folderId, appState.selectedFolderName);
+            photoGridPanel.loadFolder(folderId, appState.selectedFolderName);
         }
         updateHeaderStatus();
     });
@@ -157,7 +158,7 @@ async function handleFolderClick(folderId, folderName, driveId) {
     appState.selectedFolderId = folderId;
     appState.selectedFolderName = folderName;
     folderPanel.setSelected(folderId);
-    await seriesPanel.loadFolder(folderId, folderName);
+    await photoGridPanel.loadFolder(folderId, folderName);
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high');
 }
 
@@ -177,6 +178,21 @@ async function handleSeriesClick(series, folderId, index) {
         await sendTokenToSW(token);
     } catch (_) {}
     await reviewGrid.loadSeries(series, folderId);
+}
+
+async function handlePhotoClick(photo, series) {
+    if (series) {
+        appState.selectedSeries = series;
+        appState.selectedFolderIdForSeries = appState.selectedFolderId;
+        try {
+            const token = await getAuthToken();
+            await sendTokenToSW(token);
+        } catch (_) {}
+        await reviewGrid.loadSeries(series, appState.selectedFolderId);
+        reviewGrid.openPhotoById(photo.file_id);
+    } else {
+        reviewGrid.openSinglePhoto(photo);
+    }
 }
 
 function updateHeaderStatus() {
