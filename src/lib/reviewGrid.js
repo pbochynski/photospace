@@ -122,6 +122,7 @@ export class ReviewGrid {
     }
 
     async _markAllDelete() {
+        if (!this._series) return;
         this._keptIds = this._photos.slice(0, 1).map(p => p.file_id);
         this._deletedIds = this._photos.slice(1).map(p => p.file_id);
         await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);
@@ -129,6 +130,7 @@ export class ReviewGrid {
     }
 
     async _markAllKeep() {
+        if (!this._series) return;
         this._keptIds = this._photos.map(p => p.file_id);
         this._deletedIds = [];
         await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);

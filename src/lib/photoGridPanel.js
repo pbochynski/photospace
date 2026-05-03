@@ -27,6 +27,7 @@ export class PhotoGridPanel {
 
         const photos = await db.getPhotosByFolderId(folderId);
         if (photos.length === 0) {
+            this._photos = [];
             this._listEl.innerHTML = '<div style="padding:16px;color:#888">No photos scanned yet. Click ↑ to scan this folder.</div>';
             this._headerEl.textContent = folderName;
             return;
@@ -102,8 +103,8 @@ export class PhotoGridPanel {
         for (const photo of sorted) {
             const series = photoIdToSeries.get(photo.file_id);
             if (series) {
-                if (!emittedSeries.has(series.startTime)) {
-                    emittedSeries.add(series.startTime);
+                if (!emittedSeries.has(series)) {
+                    emittedSeries.add(series);
                     raw.push({ type: 'series', series, index: seriesIndexMap.get(series) });
                 }
             } else {
