@@ -113,6 +113,7 @@ export class ReviewGrid {
     }
 
     async _toggleKeep(fileId) {
+        if (!this._series) return;
         const result = await togglePhotoKeep(this._folderId, this._series.startTime, fileId, this._keptIds, this._deletedIds);
         this._keptIds = result.keptIds;
         this._deletedIds = result.deletedIds;
@@ -242,6 +243,7 @@ export class ReviewGrid {
         this._keptIds = [];
         this._deletedIds = [];
         this._series = null;
+        this._folderId = null;
         this._openFullscreen(0);
     }
 
