@@ -109,7 +109,7 @@ export class FolderPanel {
                                status === 'stale' ? 'folder-item__badge--stale' : '';
 
             const chevron = hasChildren
-                ? `<span class="folder-item__chevron" data-folder-id="${folder.id}">${isExpanded ? '▾' : '▸'}</span>`
+                ? `<span class="folder-item__chevron">${isExpanded ? '▾' : '▸'}</span>`
                 : `<span class="folder-item__chevron folder-item__chevron--leaf"></span>`;
 
             item.innerHTML = `
@@ -126,7 +126,7 @@ export class FolderPanel {
                     this._onPromoteClick(folder.id, folder.name, folder.parentReference?.driveId);
                 } else {
                     this._onFolderClick(folder.id, folder.name, folder.parentReference?.driveId);
-                    this._expandFolder(folder.id);
+                    this._expandFolder(folder.id).catch(err => console.error('Failed to expand folder:', err));
                 }
             });
 

@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../lib/graph.js', () => ({
+    getRootFolders: vi.fn().mockResolvedValue([]),
+    getFolderChildren: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../lib/db.js', () => ({
+    db: { getSetting: vi.fn().mockResolvedValue(null) },
+}));
+
 // Minimal DOM stubs needed by FolderPanel constructor
 function setupDom() {
     document.body.innerHTML = `
