@@ -1,5 +1,5 @@
 import { findPhotoSeries } from './analysis.js';
-import { classifySeries, isSeriesReviewed, loadSeriesState } from './reviewManager.js';
+import { classifySeries } from './reviewManager.js';
 import { getCalibration } from './calibration.js';
 import { db } from './db.js';
 
@@ -12,6 +12,8 @@ export class PhotoGridPanel {
         this._onSeriesClick = onSeriesClick;
         this._onPhotoClick = onPhotoClick;
         this._series = [];
+        this._photos = [];
+        this._calibration = null;
         this._folderId = null;
         this._folderName = null;
     }
@@ -40,35 +42,39 @@ export class PhotoGridPanel {
             maxTimeGap,
         });
 
-        await this._render(photos, calibration);
+        this._photos = photos;
+        this._calibration = calibration;
+        await this._render();
     }
 
-    async _render(photos, calibration) {
+    async _render() {
         this._listEl.innerHTML = '';
 
         let reviewedCount = 0;
+        const allReviewedState = (await db.getSetting('reviewedSeries')) || {};
         for (const s of this._series) {
-            if (await isSeriesReviewed(this._folderId, s.startTime)) reviewedCount++;
+            const key = `${this._folderId}_${s.startTime}`;
+            if (allReviewedState[key]) reviewedCount++;
         }
 
         if (this._series.length > 0) {
             const pct = Math.round(reviewedCount / this._series.length * 100);
-            this._headerEl.textContent = `${photos.length} photos · ${this._series.length} series · ${pct}% reviewed`;
+            this._headerEl.textContent = `${this._photos.length} photos · ${this._series.length} series · ${pct}% reviewed`;
             this._progressBarEl.style.width = `${pct}%`;
             this._progressLabelEl.textContent = `${reviewedCount} of ${this._series.length} series reviewed`;
         } else {
-            this._headerEl.textContent = `${photos.length} photos`;
+            this._headerEl.textContent = `${this._photos.length} photos`;
             this._progressBarEl.style.width = '0%';
             this._progressLabelEl.textContent = '';
         }
 
-        const timeline = this._buildTimeline(photos);
+        const timeline = this._buildTimeline(this._photos);
         const container = document.createElement('div');
         container.className = 'photo-grid-timeline';
 
         for (const item of timeline) {
             if (item.type === 'series') {
-                container.appendChild(await this._renderSeriesBlock(item.series, calibration));
+                container.appendChild(await this._renderSeriesBlock(item.series, item.index, this._calibration, allReviewedState));
             } else {
                 container.appendChild(this._renderStandaloneGroup(item.photos));
             }
@@ -91,13 +97,14 @@ export class PhotoGridPanel {
 
         const raw = [];
         const emittedSeries = new Set();
+        const seriesIndexMap = new Map(this._series.map((s, i) => [s, i]));
 
         for (const photo of sorted) {
             const series = photoIdToSeries.get(photo.file_id);
             if (series) {
                 if (!emittedSeries.has(series.startTime)) {
                     emittedSeries.add(series.startTime);
-                    raw.push({ type: 'series', series });
+                    raw.push({ type: 'series', series, index: seriesIndexMap.get(series) });
                 }
             } else {
                 raw.push({ type: 'photo', photo });
@@ -128,7 +135,7 @@ export class PhotoGridPanel {
         return timeline;
     }
 
-    async _renderSeriesBlock(series, calibration) {
+    async _renderSeriesBlock(series, seriesIndex, calibration, allReviewedState) {
         const classification = classifySeries(series, calibration);
         const modClass = classification === 'burst' ? 'series-block--burst' :
                          classification === 'sparse' ? 'series-block--sparse' : 'series-block--spread';
@@ -141,7 +148,8 @@ export class PhotoGridPanel {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
 
-        const state = await loadSeriesState(this._folderId, series.startTime);
+        const key = `${this._folderId}_${series.startTime}`;
+        const state = allReviewedState[key] || null;
         const keptIds = state?.keptIds ?? [];
         const deletedIds = state?.deletedIds ?? [];
 
@@ -156,7 +164,6 @@ export class PhotoGridPanel {
             <span class="series-block__count">${series.photoCount} photos</span>
             <span class="series-block__open">▶ open in review</span>
         `;
-        const seriesIndex = this._series.indexOf(series);
         header.addEventListener('click', () => this._onSeriesClick(series, this._folderId, seriesIndex));
         block.appendChild(header);
 
@@ -174,8 +181,12 @@ export class PhotoGridPanel {
             thumb.className = 'photo-thumb' +
                 (isKept ? ' photo-thumb--keep' : '') +
                 (isDeleted ? ' photo-thumb--delete' : '');
-            thumb.innerHTML = `<img src="/api/thumb/${photo.file_id}" alt="" loading="lazy"
-                onerror="this.style.background='#333';this.removeAttribute('src')" />`;
+            const img = document.createElement('img');
+            img.src = `/api/thumb/${photo.file_id}`;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.onerror = function() { this.style.background = '#333'; this.removeAttribute('src'); };
+            thumb.appendChild(img);
             thumb.addEventListener('click', () => this._onPhotoClick(photo, series));
             thumbsEl.appendChild(thumb);
         }
@@ -198,8 +209,12 @@ export class PhotoGridPanel {
         for (const photo of photos) {
             const thumb = document.createElement('div');
             thumb.className = 'photo-thumb';
-            thumb.innerHTML = `<img src="/api/thumb/${photo.file_id}" alt="" loading="lazy"
-                onerror="this.style.background='#333';this.removeAttribute('src')" />`;
+            const img = document.createElement('img');
+            img.src = `/api/thumb/${photo.file_id}`;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.onerror = function() { this.style.background = '#333'; this.removeAttribute('src'); };
+            thumb.appendChild(img);
             thumb.addEventListener('click', () => this._onPhotoClick(photo, null));
             wrap.appendChild(thumb);
         }
