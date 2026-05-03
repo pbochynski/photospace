@@ -1,6 +1,7 @@
 import { findPhotoSeries } from './analysis.js';
 import { classifySeries } from './reviewManager.js';
 import { getCalibration } from './calibration.js';
+import { getSeriesSettings } from './settingsManager.js';
 import { db } from './db.js';
 
 export class PhotoGridPanel {
@@ -34,13 +35,12 @@ export class PhotoGridPanel {
         }
 
         const calibration = await getCalibration(folderId);
-        const maxTimeGap = calibration?.maxTimeGap ?? 5;
-        const minDensity = calibration?.minDensity ?? 1;
+        const settings = await getSeriesSettings();
 
         this._series = await findPhotoSeries(photos, {
-            minGroupSize: 2,
-            minDensity,
-            maxTimeGap,
+            minGroupSize: settings.minGroupSize,
+            minDensity: settings.minDensity,
+            maxTimeGap: settings.maxTimeGap,
         });
 
         this._photos = photos;

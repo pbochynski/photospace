@@ -22,6 +22,7 @@ const headerStatus  = document.getElementById('header-status');
 const btnQuick      = document.getElementById('btn-quick');
 const btnAdvanced   = document.getElementById('btn-advanced');
 const settingsDrawerEl = document.getElementById('settings-drawer');
+const settingsBackdropEl = document.getElementById('settings-backdrop');
 
 // Panel renderers (created after DOM ready)
 let folderPanel, photoGridPanel, reviewGrid;
@@ -65,6 +66,8 @@ async function boot() {
 
     btnQuick?.addEventListener('click', () => toggleMode('quick').catch(console.error));
     btnAdvanced?.addEventListener('click', () => toggleMode('advanced').catch(console.error));
+    document.getElementById('btn-settings-close')?.addEventListener('click', () => toggleMode('quick').catch(console.error));
+    settingsBackdropEl?.addEventListener('click', () => toggleMode('quick').catch(console.error));
 }
 
 async function toggleMode(mode) {
@@ -72,6 +75,7 @@ async function toggleMode(mode) {
     btnQuick.classList.toggle('mode-btn--active', !isAdvanced);
     btnAdvanced.classList.toggle('mode-btn--active', isAdvanced);
     settingsDrawerEl.hidden = !isAdvanced;
+    settingsBackdropEl.hidden = !isAdvanced;
     if (isAdvanced) {
         if (appState.selectedFolderId) settingsDrawerPanel.setCurrentFolder(appState.selectedFolderId);
         await settingsDrawerPanel.render();
