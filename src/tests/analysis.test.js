@@ -74,12 +74,12 @@ describe('findPhotoSeries — basic grouping', () => {
         const photos = Array.from({ length: 10 }, (_, i) =>
             makePhoto(`p${i}`, BASE + i * 30_000)
         );
-        const result = await findPhotoSeries(photos, { minGroupSize: 20 });
+        const result = await findPhotoSeries(photos, { minGroupSize: 20, minDensity: 0 });
         expect(result).toEqual([]);
     });
 
     it('filters out series below minDensity', async () => {
-        // 20 photos spread over 60 minutes = 0.33 photos/min, below minDensity 1
+        // 20 photos spread over 57 minutes (~0.35 photos/min), below minDensity 1
         const photos = Array.from({ length: 20 }, (_, i) =>
             makePhoto(`p${i}`, BASE + i * 3 * MIN)
         );
