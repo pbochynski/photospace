@@ -124,11 +124,9 @@ export class FolderPanel {
                 if (e.target.classList.contains('folder-item__promote-btn')) {
                     e.stopPropagation();
                     this._onPromoteClick(folder.id, folder.name, folder.parentReference?.driveId);
-                } else if (e.target.classList.contains('folder-item__chevron') && hasChildren) {
-                    e.stopPropagation();
-                    this._expandFolder(folder.id);
                 } else {
                     this._onFolderClick(folder.id, folder.name, folder.parentReference?.driveId);
+                    this._expandFolder(folder.id);
                 }
             });
 
