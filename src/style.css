@@ -63,6 +63,17 @@ body {
   border-color: var(--color-accent);
   color: #fff;
 }
+.btn-logout {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 8px;
+}
+.btn-logout:hover { border-color: var(--color-text-muted); color: var(--color-text); }
 
 /* Three columns */
 .app-columns {

@@ -3,7 +3,7 @@ import { scanEngine } from './lib/scanEngine.js';
 import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
-import { getAuthToken, login, msalInstance } from './lib/auth.js';
+import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
 
 const appState = {
@@ -17,6 +17,7 @@ const appState = {
 // DOM refs
 const loginScreen   = document.getElementById('login-screen');
 const btnLogin      = document.getElementById('btn-login');
+const btnLogout     = document.getElementById('btn-logout');
 const headerStatus  = document.getElementById('header-status');
 const btnQuick      = document.getElementById('btn-quick');
 const btnAdvanced   = document.getElementById('btn-advanced');
@@ -62,6 +63,7 @@ async function boot() {
     }
 
     btnLogin?.addEventListener('click', () => login().catch(console.error));
+    btnLogout?.addEventListener('click', () => logout());
 
     btnQuick?.addEventListener('click', () => toggleMode('quick').catch(console.error));
     btnAdvanced?.addEventListener('click', () => toggleMode('advanced').catch(console.error));
@@ -83,6 +85,7 @@ async function toggleMode(mode) {
 
 async function onAuthenticated() {
     appState.authenticated = true;
+    btnLogout.hidden = false;
 
     folderPanel = new FolderPanel(document.getElementById('folder-tree'), {
         onFolderClick: handleFolderClick,

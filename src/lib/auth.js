@@ -43,6 +43,13 @@ export async function login() {
     await msalInstance.loginRedirect(loginRequest);
 }
 
+export function logout() {
+    msalInstance.logoutPopup({
+        account: msalInstance.getActiveAccount(),
+        postLogoutRedirectUri: window.location.origin
+    });
+}
+
 export async function getAuthToken() {
     const account = msalInstance.getActiveAccount();
     if (!account) {
