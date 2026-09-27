@@ -33,7 +33,7 @@ export class ScanEngine extends EventTarget {
         this._running = true;
         this.dispatchEvent(new CustomEvent('scan_started'));
 
-        while (!(await scanQueue.isEmpty())) {
+        while (this._running && !(await scanQueue.isEmpty())) {
             const entry = await scanQueue.dequeue();
             if (!entry) break;
 

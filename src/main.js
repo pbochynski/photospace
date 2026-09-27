@@ -1,6 +1,5 @@
 import { db } from './lib/db.js';
 import { scanEngine } from './lib/scanEngine.js';
-import { qualityProcessor } from './lib/qualityProcessor.js';
 import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
@@ -136,16 +135,11 @@ async function onAuthenticated() {
 
     scanEngine.addEventListener('scan_idle', () => updateHeaderStatus());
 
-    // Wire quality processor events
-    qualityProcessor.addEventListener('quality_done', () => updateHeaderStatus());
-
     // Load folder tree
     await folderPanel.loadRoot();
 
     // Resume any pending scan queue
     await scanEngine.start();
-
-    await qualityProcessor.init();
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') reviewGrid.closeFullscreen();
@@ -202,10 +196,7 @@ async function handlePhotoClick(photo, series) {
 }
 
 function updateHeaderStatus() {
-    const pending = qualityProcessor.pendingCount;
-    if (pending > 0) {
-        headerStatus.textContent = `● Quality scoring ${pending} photos`;
-    } else if (scanEngine._running) {
+    if (scanEngine._running) {
         headerStatus.textContent = '● Scanning…';
     } else {
         headerStatus.textContent = '';

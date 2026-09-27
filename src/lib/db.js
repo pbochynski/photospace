@@ -1,12 +1,11 @@
-class PhotoDB {
+export class PhotoDB {
     constructor() {
         this.db = null;
     }
 
     async init() {
         return new Promise((resolve, reject) => {
-            // Bump version to trigger onupgradeneeded for the new index
-            const request = indexedDB.open('PhotoSpaceDB', 5);
+            const request = indexedDB.open('PhotoSpaceDB', 7);
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
@@ -14,14 +13,21 @@ class PhotoDB {
                 if (!db.objectStoreNames.contains('photos')) {
                     store = db.createObjectStore('photos', { keyPath: 'file_id' });
                     store.createIndex('by_timestamp', 'photo_taken_ts');
-                    store.createIndex('by_embedding_status', 'embedding_status');
                 } else {
                     store = event.target.transaction.objectStore('photos');
                 }
-                
-                // NEW: Add an index for scan_id if it doesn't exist
+
+                if (store.indexNames.contains('by_embedding_status')) {
+                    store.deleteIndex('by_embedding_status');
+                }
                 if (!store.indexNames.contains('by_scan_id')) {
                     store.createIndex('by_scan_id', 'scan_id');
+                }
+                if (!store.indexNames.contains('by_folder_id')) {
+                    store.createIndex('by_folder_id', 'folder_id');
+                }
+                if (!store.indexNames.contains('by_item_type')) {
+                    store.createIndex('by_item_type', 'item_type');
                 }
 
                 if (!db.objectStoreNames.contains('settings')) {
@@ -42,7 +48,6 @@ class PhotoDB {
         });
     }
 
-    // --- NEW Smarter "upsert" function ---
     async addOrUpdatePhotos(photos) {
         return new Promise((resolve, reject) => {
             if (!this.db) return reject("Database not initialized.");
@@ -55,11 +60,9 @@ class PhotoDB {
                     request.onsuccess = () => {
                         const existingPhoto = request.result;
                         if (existingPhoto) {
-                            // Photo exists, preserve embedding
                             existingPhoto.scan_id = newPhoto.scan_id;
                             store.put(existingPhoto);
                         } else {
-                            // New photo, add it completely
                             store.put(newPhoto);
                         }
                         resolvePhoto();
@@ -75,17 +78,16 @@ class PhotoDB {
         });
     }
 
-    // --- NEW function to clean up old files ---
     async deletePhotosNotMatchingScanId(currentScanId) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('photos', 'readwrite');
             const store = tx.objectStore('photos');
             const index = store.index('by_scan_id');
-            const range = IDBKeyRange.upperBound(currentScanId, true); // Everything less than currentScanId
+            const range = IDBKeyRange.upperBound(currentScanId, true);
 
             let deletedCount = 0;
             const cursorRequest = index.openCursor(range);
-            
+
             cursorRequest.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (cursor) {
@@ -93,7 +95,6 @@ class PhotoDB {
                     deletedCount++;
                     cursor.continue();
                 } else {
-                    // End of cursor
                     console.log(`Deleted ${deletedCount} stale photos.`);
                     resolve(deletedCount);
                 }
@@ -102,40 +103,30 @@ class PhotoDB {
         });
     }
 
-    // --- Function to clean up photos from specific scanned folders only ---
     async deletePhotosFromScannedFoldersNotMatchingScanId(currentScanId, scannedFolderPaths) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('photos', 'readwrite');
             const store = tx.objectStore('photos');
             const index = store.index('by_scan_id');
-            const range = IDBKeyRange.upperBound(currentScanId, true); // Everything less than currentScanId
+            const range = IDBKeyRange.upperBound(currentScanId, true);
 
             let deletedCount = 0;
             const cursorRequest = index.openCursor(range);
-            
+
             cursorRequest.onsuccess = (event) => {
                 const cursor = event.target.result;
                 if (cursor) {
                     const photo = cursor.value;
-                    // Only delete if the photo is DIRECTLY in one of the scanned folders (not subfolders)
                     const isDirectlyInScannedFolder = scannedFolderPaths.some(folderPath => {
-                        if (!photo.path) return false;
-                        
-                        // Photo.path is always the folder path, so compare directly
-                        const photoDir = photo.path;
-                        
-                        
-                        // Check if the photo directory exactly matches the scanned folder path
-                        return photoDir === folderPath;
+                        return photo.path && photo.path === folderPath;
                     });
-                    
+
                     if (isDirectlyInScannedFolder) {
                         store.delete(cursor.primaryKey);
                         deletedCount++;
                     }
                     cursor.continue();
                 } else {
-                    // End of cursor
                     console.log(`Deleted ${deletedCount} stale photos from scanned folders.`);
                     resolve(deletedCount);
                 }
@@ -148,36 +139,45 @@ class PhotoDB {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('photos', 'readwrite');
             const store = tx.objectStore('photos');
-            const request = store.getAll();
+            const index = store.index('by_folder_id');
             let deletedCount = 0;
-            request.onsuccess = () => {
-                const photos = request.result;
-                const toDelete = photos.filter(p => p.folder_id === folderId && p.scan_id !== scanId);
-                const ops = toDelete.map(p => new Promise((res, rej) => {
-                    const dr = store.delete(p.file_id);
-                    dr.onsuccess = () => { deletedCount++; res(); };
-                    dr.onerror = rej;
-                }));
-                Promise.all(ops).then(() => {
-                    console.log(`Deleted ${deletedCount} stale photos from folder ${folderId}`);
+            const cursorRequest = index.openCursor(IDBKeyRange.only(folderId));
+            cursorRequest.onsuccess = (event) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    if (cursor.value.scan_id !== scanId) {
+                        store.delete(cursor.primaryKey);
+                        deletedCount++;
+                    }
+                    cursor.continue();
+                } else {
                     resolve(deletedCount);
-                }).catch(reject);
+                }
             };
-            request.onerror = (e) => reject(e.target.error);
+            cursorRequest.onerror = (e) => reject(e.target.error);
         });
     }
 
     async getPhotosByFolderId(folderId) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('photos', 'readonly');
-            const store = tx.objectStore('photos');
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result.filter(p => p.folder_id === folderId));
+            const index = tx.objectStore('photos').index('by_folder_id');
+            const request = index.getAll(folderId);
+            request.onsuccess = () => resolve(request.result);
             request.onerror = (e) => reject(e.target.error);
         });
     }
 
-    // NEW: Functions to get/set settings like the deltaLink
+    async getItemsByType(itemType) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readonly');
+            const index = tx.objectStore('photos').index('by_item_type');
+            const request = index.getAll(itemType);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
     async getSetting(key) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('settings', 'readonly');
@@ -222,272 +222,53 @@ class PhotoDB {
         });
     }
 
-    // Get all photos with embeddings for export
-    async getEmbeddingExportData() {
-        const tx = this.db.transaction('photos', 'readonly');
-        const store = tx.objectStore('photos');
-        const index = store.index('by_embedding_status');
-        return new Promise((resolve, reject) => {
-            const request = index.getAll(1);
-            request.onsuccess = () => {
-                const photos = request.result;
-                // Return only necessary data for export
-                const exportData = photos.map(photo => ({
-                    file_id: photo.file_id,
-                    embedding: photo.embedding,
-                    sharpness: photo.sharpness,
-                    exposure: photo.exposure,
-                    face: photo.face, // Export face detection metrics
-                    quality_score: photo.quality_score,
-                    photo_taken_ts: photo.photo_taken_ts,
-                    name: photo.name,
-                    path: photo.path,
-                    thumbnail_url: photo.thumbnail_url
-                }));
-                resolve(exportData);
-            };
-            request.onerror = (event) => reject(event.target.error);
-        });
-    }
-
-    // Import embedding data with conflict resolution
-    async importEmbeddingData(embeddingArray, conflictStrategy = 'skip') {
-        return new Promise((resolve, reject) => {
-            if (!this.db) return reject("Database not initialized.");
-            const tx = this.db.transaction('photos', 'readwrite');
-            const store = tx.objectStore('photos');
-            
-            let imported = 0, skipped = 0, updated = 0;
-            let processed = 0;
-            const total = embeddingArray.length;
-            
-            if (total === 0) {
-                resolve({ imported, skipped, updated });
-                return;
-            }
-            
-            embeddingArray.forEach(embeddingData => {
-                const getRequest = store.get(embeddingData.file_id);
-                
-                getRequest.onsuccess = () => {
-                    const existingPhoto = getRequest.result;
-                    
-                    if (existingPhoto) {
-                        // Photo exists in database
-                        if (existingPhoto.embedding && conflictStrategy === 'skip') {
-                            skipped++;
-                        } else {
-                            // Update photo with embedding data
-                            existingPhoto.embedding = embeddingData.embedding;
-                            existingPhoto.embedding_status = 1;
-                            existingPhoto.sharpness = embeddingData.sharpness;
-                            existingPhoto.exposure = embeddingData.exposure;
-                            existingPhoto.face = embeddingData.face; // Import face metrics
-                            existingPhoto.quality_score = embeddingData.quality_score;
-                            if (embeddingData.thumbnail_url) {
-                                existingPhoto.thumbnail_url = embeddingData.thumbnail_url;
-                            }
-                            
-                            store.put(existingPhoto);
-                            if (existingPhoto.embedding) {
-                                updated++;
-                            } else {
-                                imported++;
-                            }
-                        }
-                    } else {
-                        // Photo doesn't exist in database - create new record from embedding data
-                        const newPhoto = {
-                            file_id: embeddingData.file_id,
-                            name: embeddingData.name,
-                            path: embeddingData.path,
-                            photo_taken_ts: embeddingData.photo_taken_ts,
-                            thumbnail_url: embeddingData.thumbnail_url || null,
-                            embedding: embeddingData.embedding,
-                            embedding_status: 1,
-                            sharpness: embeddingData.sharpness,
-                            exposure: embeddingData.exposure,
-                            face: embeddingData.face, // Import face metrics
-                            quality_score: embeddingData.quality_score,
-                            // Set defaults for missing metadata (will be updated on next scan)
-                            size: 0,
-                            last_modified: new Date().toISOString(),
-                            scan_id: Date.now() // Use current timestamp as scan_id
-                        };
-                        
-                        store.put(newPhoto);
-                        imported++;
-                    }
-                    
-                    processed++;
-                    if (processed === total) {
-                        resolve({ imported, skipped, updated });
-                    }
-                };
-                
-                getRequest.onerror = () => {
-                    processed++;
-                    if (processed === total) {
-                        resolve({ imported, skipped, updated });
-                    }
-                };
-            });
-        });
-    }
-
-    // Get photo by ID
     async getPhotoById(fileId) {
         return new Promise((resolve, reject) => {
             if (!this.db) return reject("Database not initialized.");
             const tx = this.db.transaction('photos', 'readonly');
             const store = tx.objectStore('photos');
             const request = store.get(fileId);
-            
             request.onsuccess = () => resolve(request.result);
             request.onerror = (event) => reject(event.target.error);
         });
     }
-    
-    // --- Unchanged functions from before ---
-    async updatePhotoEmbedding(file_id, embedding) { /* ... same as before ... */ }
-    async getPhotosWithoutEmbedding() { /* ... same as before ... */ }
-    async getAllPhotosWithEmbedding() { /* ... same as before ... */ }
-    async getPhotoCount() { /* ... same as before ... */ }
-}
 
-// Re-paste unchanged functions here to have a complete file
-PhotoDB.prototype.updatePhotoEmbedding = async function(file_id, embedding, qualityMetrics = null) {
-    return new Promise((resolve, reject) => {
-        const tx = this.db.transaction('photos', 'readwrite');
-        const store = tx.objectStore('photos');
-        const request = store.get(file_id);
-        
-        request.onsuccess = () => {
-             const photo = request.result;
-             if (photo) {
-                 photo.embedding = embedding;
-                 photo.embedding_status = 1;
-                 
-                // Store quality metrics if provided
-                if (qualityMetrics) {
-                    photo.sharpness = qualityMetrics.sharpness;
-                    photo.exposure = qualityMetrics.exposure;
-                    photo.face = qualityMetrics.face; // Store face detection metrics
-                    photo.quality_score = qualityMetrics.qualityScore;
-                }
-                 
-                 store.put(photo);
-                 resolve();
-             } else {
-                 reject(`Photo with id ${file_id} not found.`);
-             }
-        };
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-PhotoDB.prototype.getPhotosWithoutEmbedding = async function() {
-    const tx = this.db.transaction('photos', 'readonly');
-    const store = tx.objectStore('photos');
-    const index = store.index('by_embedding_status');
-    return new Promise((resolve, reject) => {
-        const request = index.getAll(0);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-
-PhotoDB.prototype.getPhotosWithoutEmbeddingFromFolder = async function(folderPath) {
-    const tx = this.db.transaction('photos', 'readonly');
-    const store = tx.objectStore('photos');
-    const index = store.index('by_embedding_status');
-    return new Promise((resolve, reject) => {
-        const request = index.getAll(0);
-        request.onsuccess = () => {
-            const allPhotos = request.result;
-            // Filter photos based on folder path
-            const folderPhotos = folderPath === '/drive/root:' 
-                ? allPhotos // If root, include all photos
-                : allPhotos.filter(photo => {
-                    // Check if photo path starts with the selected folder path
-                    return photo.path && photo.path.startsWith(folderPath);
-                });
-            resolve(folderPhotos);
-        };
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-
-PhotoDB.prototype.getAllPhotosFromFolder = async function(folderPath) {
-    const tx = this.db.transaction('photos', 'readonly');
-    const store = tx.objectStore('photos');
-    return new Promise((resolve, reject) => {
-        const request = store.getAll();
-        request.onsuccess = () => {
-            const allPhotos = request.result;
-            // Filter photos based on folder path
-            const folderPhotos = folderPath === '/drive/root:' 
-                ? allPhotos // If root, include all photos
-                : allPhotos.filter(photo => {
-                    // Check if photo path starts with the selected folder path
-                    return photo.path && photo.path.startsWith(folderPath);
-                });
-            resolve(folderPhotos);
-        };
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-
-PhotoDB.prototype.getAllPhotos = async function() {
-    const tx = this.db.transaction('photos', 'readonly');
-    const store = tx.objectStore('photos');
-    return new Promise((resolve, reject) => {
-        const request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-
-PhotoDB.prototype.getAllPhotosWithEmbedding = async function() {
-    const tx = this.db.transaction('photos', 'readonly');
-    const store = tx.objectStore('photos');
-    const index = store.index('by_embedding_status');
-    return new Promise((resolve, reject) => {
-        const request = index.getAll(1);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-
-PhotoDB.prototype.getAllPhotosWithEmbeddingFromFolder = async function(folderPath) {
-    const tx = this.db.transaction('photos', 'readonly');
-    const store = tx.objectStore('photos');
-    const index = store.index('by_embedding_status');
-    return new Promise((resolve, reject) => {
-        const request = index.getAll(1);
-        request.onsuccess = () => {
-            const allPhotos = request.result;
-            // Filter photos based on folder path
-            const folderPhotos = folderPath === '/drive/root:' 
-                ? allPhotos // If root, include all photos
-                : allPhotos.filter(photo => {
-                    // Check if photo path starts with the selected folder path
-                    return photo.path && photo.path.startsWith(folderPath);
-                });
-            resolve(folderPhotos);
-        };
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
-PhotoDB.prototype.getPhotoCount = async function() {
-    return new Promise((resolve, reject) => {
-        if (!this.db) return reject("Database not initialized.");
+    async getAllPhotosFromFolder(folderPath) {
         const tx = this.db.transaction('photos', 'readonly');
         const store = tx.objectStore('photos');
-        const request = store.count();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-    });
-};
+        return new Promise((resolve, reject) => {
+            const request = store.getAll();
+            request.onsuccess = () => {
+                const allPhotos = request.result;
+                const folderPhotos = folderPath === '/drive/root:'
+                    ? allPhotos
+                    : allPhotos.filter(photo => photo.path && photo.path.startsWith(folderPath));
+                resolve(folderPhotos);
+            };
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
 
+    async getAllPhotos() {
+        const tx = this.db.transaction('photos', 'readonly');
+        const store = tx.objectStore('photos');
+        return new Promise((resolve, reject) => {
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
+
+    async getPhotoCount() {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("Database not initialized.");
+            const tx = this.db.transaction('photos', 'readonly');
+            const store = tx.objectStore('photos');
+            const request = store.count();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
+    }
+}
 
 export const db = new PhotoDB();
