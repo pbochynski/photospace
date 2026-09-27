@@ -48,8 +48,7 @@ export class PhotoDB {
         });
     }
 
-    async addOrUpdatePhotos(photos) {
-        return new Promise((resolve, reject) => {
+    async addOrUpdatePhotos(photos) {        return new Promise((resolve, reject) => {
             if (!this.db) return reject("Database not initialized.");
             const tx = this.db.transaction('photos', 'readwrite');
             const store = tx.objectStore('photos');
@@ -75,63 +74,6 @@ export class PhotoDB {
                 .then(() => tx.done)
                 .then(resolve)
                 .catch(reject);
-        });
-    }
-
-    async deletePhotosNotMatchingScanId(currentScanId) {
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('photos', 'readwrite');
-            const store = tx.objectStore('photos');
-            const index = store.index('by_scan_id');
-            const range = IDBKeyRange.upperBound(currentScanId, true);
-
-            let deletedCount = 0;
-            const cursorRequest = index.openCursor(range);
-
-            cursorRequest.onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (cursor) {
-                    store.delete(cursor.primaryKey);
-                    deletedCount++;
-                    cursor.continue();
-                } else {
-                    console.log(`Deleted ${deletedCount} stale photos.`);
-                    resolve(deletedCount);
-                }
-            };
-            cursorRequest.onerror = (event) => reject(event.target.error);
-        });
-    }
-
-    async deletePhotosFromScannedFoldersNotMatchingScanId(currentScanId, scannedFolderPaths) {
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction('photos', 'readwrite');
-            const store = tx.objectStore('photos');
-            const index = store.index('by_scan_id');
-            const range = IDBKeyRange.upperBound(currentScanId, true);
-
-            let deletedCount = 0;
-            const cursorRequest = index.openCursor(range);
-
-            cursorRequest.onsuccess = (event) => {
-                const cursor = event.target.result;
-                if (cursor) {
-                    const photo = cursor.value;
-                    const isDirectlyInScannedFolder = scannedFolderPaths.some(folderPath => {
-                        return photo.path && photo.path === folderPath;
-                    });
-
-                    if (isDirectlyInScannedFolder) {
-                        store.delete(cursor.primaryKey);
-                        deletedCount++;
-                    }
-                    cursor.continue();
-                } else {
-                    console.log(`Deleted ${deletedCount} stale photos from scanned folders.`);
-                    resolve(deletedCount);
-                }
-            };
-            cursorRequest.onerror = (event) => reject(event.target.error);
         });
     }
 
@@ -228,32 +170,6 @@ export class PhotoDB {
             const tx = this.db.transaction('photos', 'readonly');
             const store = tx.objectStore('photos');
             const request = store.get(fileId);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = (event) => reject(event.target.error);
-        });
-    }
-
-    async getAllPhotosFromFolder(folderPath) {
-        const tx = this.db.transaction('photos', 'readonly');
-        const store = tx.objectStore('photos');
-        return new Promise((resolve, reject) => {
-            const request = store.getAll();
-            request.onsuccess = () => {
-                const allPhotos = request.result;
-                const folderPhotos = folderPath === '/drive/root:'
-                    ? allPhotos
-                    : allPhotos.filter(photo => photo.path && photo.path.startsWith(folderPath));
-                resolve(folderPhotos);
-            };
-            request.onerror = (event) => reject(event.target.error);
-        });
-    }
-
-    async getAllPhotos() {
-        const tx = this.db.transaction('photos', 'readonly');
-        const store = tx.objectStore('photos');
-        return new Promise((resolve, reject) => {
-            const request = store.getAll();
             request.onsuccess = () => resolve(request.result);
             request.onerror = (event) => reject(event.target.error);
         });

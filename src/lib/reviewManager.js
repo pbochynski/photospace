@@ -58,7 +58,3 @@ export async function togglePhotoKeep(folderId, seriesStartMs, fileId, currentKe
     await saveSeriesState(folderId, seriesStartMs, keptIds, deletedIds);
     return { keptIds, deletedIds };
 }
-
-export async function isSeriesReviewed(folderId, seriesStartMs) {
-    return (await loadSeriesState(folderId, seriesStartMs)) !== null;
-}

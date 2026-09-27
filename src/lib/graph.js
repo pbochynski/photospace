@@ -1,8 +1,6 @@
 import { getAuthToken } from './auth.js';
 import { db } from './db.js';
 
-const MAX_CONCURRENCY = 5;
-
 async function fetchWithAutoRefresh(url, options, getAuthToken, retry = true) {
     let token = await getAuthToken();
     options = options || {};
@@ -87,94 +85,6 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
 
     console.log(`Processed ${photoCount} photos from folder ${folderId}`);
     return photoCount;
-}
-
-export async function fetchFolders(folderId = 'root') {
-    try {
-        const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children?$filter=folder ne null&$select=id,name,folder,parentReference&$orderby=name`;
-        const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
-        return response.value.map(item => ({
-            id: item.id,
-            name: item.name,
-            isFolder: true,
-            parentId: item.parentReference?.id || null,
-            path: item.parentReference?.path || ''
-        }));
-    } catch (error) {
-        console.error('Error fetching folders:', error);
-        throw error;
-    }
-}
-
-export async function fetchFolderChildren(folderId = 'root') {
-    try {
-        const folders = [];
-        const photos = [];
-        let nextPageUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
-
-        while (nextPageUrl) {
-            const response = await fetchWithAutoRefresh(nextPageUrl, {}, getAuthToken);
-
-            for (const item of response.value) {
-                if (item.folder) {
-                    folders.push({
-                        id: item.id,
-                        name: item.name,
-                        isFolder: true,
-                        parentId: item.parentReference?.id || null,
-                        path: item.parentReference?.path || ''
-                    });
-                } else if (item.photo && !item.video) {
-                    photos.push({
-                        file_id: item.id,
-                        name: item.name,
-                        size: item.size,
-                        path: item.parentReference?.path || '/drive/root:',
-                        last_modified: item.lastModifiedDateTime,
-                        photo_taken_ts: item.photo.takenDateTime || item.createdDateTime,
-                        thumbnail_url: null
-                    });
-                }
-            }
-
-            nextPageUrl = response['@odata.nextLink'] || null;
-        }
-
-        return { folders, photos };
-    } catch (error) {
-        console.error('Error fetching folder children:', error);
-        throw error;
-    }
-}
-
-export async function getFolderInfo(folderId = 'root') {
-    try {
-        const url = `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}`;
-        const response = await fetchWithAutoRefresh(url, {}, getAuthToken);
-        return {
-            id: response.id,
-            name: response.name,
-            path: response.parentReference?.path || '/drive/root:',
-            parentId: response.parentReference?.id || null
-        };
-    } catch (error) {
-        console.error('Error fetching folder info:', error);
-        throw error;
-    }
-}
-
-export async function getFolderPath(folderId = 'root') {
-    if (folderId === 'root') {
-        return '/drive/root:';
-    }
-    try {
-        const folderInfo = await getFolderInfo(folderId);
-        const parentPath = folderInfo.path === '/drive/root:' ? '/drive/root:' : folderInfo.path;
-        return `${parentPath}/${folderInfo.name}`;
-    } catch (error) {
-        console.error('Error getting folder path:', error);
-        return '/drive/root:';
-    }
 }
 
 export async function getFolderChildren(folderId = 'root') {

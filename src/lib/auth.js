@@ -1,5 +1,3 @@
-console.log("Vite Env Variables:", import.meta.env); 
-
 import { PublicClientApplication, LogLevel } from '@azure/msal-browser';
 
 const msalConfig = {
@@ -43,14 +41,6 @@ const loginRequest = {
 
 export async function login() {
     await msalInstance.loginRedirect(loginRequest);
-}
-
-export function logout() {
-    const logoutRequest = {
-        account: msalInstance.getActiveAccount(),
-        postLogoutRedirectUri: window.location.origin
-    };
-    msalInstance.logoutPopup(logoutRequest);
 }
 
 export async function getAuthToken() {
