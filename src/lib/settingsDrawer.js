@@ -56,14 +56,6 @@ export class SettingsDrawer {
             </div>
 
             <div class="settings-field">
-                <label>Worker count</label>
-                <div style="display:flex;align-items:center;gap:8px">
-                    <input type="range" id="s-worker-count" min="1" max="4" value="${settings.workerCount}" style="flex:1" />
-                    <span id="s-worker-count-val">${settings.workerCount}</span>
-                </div>
-            </div>
-
-            <div class="settings-field">
                 <label style="display:flex;align-items:center;gap:8px">
                     <input type="checkbox" id="s-date-enabled" ${dateFilter.enabled ? 'checked' : ''} />
                     Enable date filter
@@ -107,8 +99,6 @@ export class SettingsDrawer {
         wire('s-max-time-gap', 'seriesMaxTimeGap', Number);
         wire('s-min-density', 'seriesMinDensity', Number);
         wire('s-min-group-size', 'seriesMinGroupSize', Number);
-        wire('s-worker-count', 'workerCount', Number);
-
         const dateEnabled = this._contentEl.querySelector('#s-date-enabled');
         const dateFields = this._contentEl.querySelector('#s-date-fields');
         dateEnabled?.addEventListener('change', async () => {

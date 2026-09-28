@@ -11,13 +11,12 @@ export async function setSetting(key, value) {
 
 // Series analysis settings
 export async function getSeriesSettings() {
-    const [minGroupSize, minDensity, maxTimeGap, workerCount] = await Promise.all([
+    const [minGroupSize, minDensity, maxTimeGap] = await Promise.all([
         getSetting('seriesMinGroupSize', 2),
         getSetting('seriesMinDensity', 1),
         getSetting('seriesMaxTimeGap', 5),
-        getSetting('workerCount', 2),
     ]);
-    return { minGroupSize, minDensity, maxTimeGap, workerCount };
+    return { minGroupSize, minDensity, maxTimeGap };
 }
 
 export async function getDateFilter() {
