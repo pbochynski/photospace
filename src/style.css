@@ -663,3 +663,17 @@ body {
 }
 .scrubber-month:hover,
 .scrubber-month--active { background: var(--color-accent); color: #fff; }
+
+/* Series count badge on timeline thumbnails */
+.photo-thumb--series { position: relative; }
+.series-count-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  pointer-events: none;
+}
