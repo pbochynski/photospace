@@ -1,5 +1,5 @@
 import { saveSeriesState } from './reviewManager.js';
-import { computeDHash, hammingDistance } from './dhash.js';
+import { computeAHash, clusterByHash } from './dhash.js';
 
 const DHASH_THRESHOLD_DEFAULT = 20;
 
@@ -73,6 +73,8 @@ export class ReviewGrid {
         toolbar.querySelector('#threshold-slider')?.addEventListener('input', (e) => {
             this._hashThreshold = +e.target.value;
             toolbar.querySelector('#threshold-val').textContent = this._hashThreshold;
+        });
+        toolbar.querySelector('#threshold-slider')?.addEventListener('change', () => {
             this._updateGroupDividers();
         });
         this._gridEl.appendChild(toolbar);
@@ -80,28 +82,37 @@ export class ReviewGrid {
         const grid = document.createElement('div');
         grid.className = 'review-grid';
 
-        // Compute group boundaries from hashes if grouping is on
-        const groupBreaks = this._groupSimilar ? this._computeGroupBreaks() : new Set();
-        const groupSizes = this._groupSimilar ? this._groupSizes(groupBreaks) : [];
-        const sizeByStart = new Map(groupSizes.map(g => [g.startIndex, g.size]));
+        // When grouping, reorder display photos by cluster; keep this._photos unchanged for fullscreen nav
+        let displayPhotos = this._photos;
+        let groups = [];
+        if (this._groupSimilar) {
+            const labels = this._computeClusters();
+            const result = this._clustersToGroups(labels);
+            displayPhotos = result.orderedPhotos;
+            groups = result.groups;
+        }
+        const groupStartSet = new Map(groups.map(g => [g.startIndex, g]));
 
-        this._photos.forEach((photo, i) => {
-            if (groupBreaks.has(i) || (this._groupSimilar && i === 0 && groupSizes.length > 0)) {
+        displayPhotos.forEach((photo, displayIndex) => {
+            if (groupStartSet.has(displayIndex)) {
+                const { size } = groupStartSet.get(displayIndex);
                 const divider = document.createElement('div');
                 divider.className = 'review-group-divider';
-                if (sizeByStart.has(i)) {
+                if (size > 1) {
                     const label = document.createElement('span');
                     label.className = 'review-group-divider__label';
-                    label.textContent = `${sizeByStart.get(i)} similar`;
+                    label.textContent = `${size} similar`;
                     divider.appendChild(label);
                 }
                 grid.appendChild(divider);
             }
 
+            // data-index and click handler use index in this._photos (for fullscreen nav)
+            const photoIndex = this._photos.indexOf(photo);
             const isSelected = this._selectedIds.has(photo.file_id);
             const cell = document.createElement('div');
             cell.className = 'thumb-cell' + (isSelected ? ' thumb-cell--selected' : '');
-            cell.dataset.index = i;
+            cell.dataset.index = photoIndex;
 
             if (photo.width && photo.height) {
                 cell.style.setProperty('--aspect', photo.width / photo.height);
@@ -116,10 +127,9 @@ export class ReviewGrid {
                 if (img.naturalWidth && img.naturalHeight) {
                     cell.style.setProperty('--aspect', img.naturalWidth / img.naturalHeight);
                 }
-                // Compute and store hash; re-render dividers if grouping is active
                 if (!this._hashes.has(photo.file_id)) {
                     try {
-                        this._hashes.set(photo.file_id, computeDHash(img));
+                        this._hashes.set(photo.file_id, computeAHash(img));
                     } catch (_) {}
                     if (this._groupSimilar) this._updateGroupDividers();
                 }
@@ -143,7 +153,7 @@ export class ReviewGrid {
                 this._toggleSelect(photo.file_id);
             });
 
-            cell.addEventListener('click', () => this._openFullscreen(i));
+            cell.addEventListener('click', () => this._openFullscreen(photoIndex));
 
             grid.appendChild(cell);
         });
@@ -152,65 +162,39 @@ export class ReviewGrid {
         this._renderActionBar();
     }
 
-    _computeGroupBreaks() {
-        const breaks = new Set();
-        for (let i = 1; i < this._photos.length; i++) {
-            const h1 = this._hashes.get(this._photos[i - 1].file_id);
-            const h2 = this._hashes.get(this._photos[i].file_id);
-            if (!h1 || !h2) continue;
-            if (hammingDistance(h1, h2) > this._hashThreshold) breaks.add(i);
-        }
-        return breaks;
+    // Returns array of cluster labels (one per photo, in photo order)
+    _computeClusters() {
+        const ids = this._photos.map(p => p.file_id);
+        return clusterByHash(ids, this._hashes, this._hashThreshold);
     }
 
-    _groupSizes(breaks) {
-        const sizes = [];
-        let start = 0;
-        const sorted = [...breaks].sort((a, b) => a - b);
-        for (const b of sorted) {
-            sizes.push({ startIndex: start, size: b - start });
-            start = b;
+    // From cluster labels, reorder photos so all members of each cluster are adjacent.
+    // Cluster order = order of first appearance. Within each cluster, original order is preserved.
+    // Returns { orderedPhotos, groups } where groups = [{ startIndex, size }, ...]
+    _clustersToGroups(labels) {
+        const clusterOrder = [];
+        const clusterMap = new Map();
+        labels.forEach((label, i) => {
+            if (!clusterMap.has(label)) {
+                clusterMap.set(label, []);
+                clusterOrder.push(label);
+            }
+            clusterMap.get(label).push(this._photos[i]);
+        });
+
+        const orderedPhotos = [];
+        const groups = [];
+        for (const label of clusterOrder) {
+            const members = clusterMap.get(label);
+            groups.push({ startIndex: orderedPhotos.length, size: members.length });
+            orderedPhotos.push(...members);
         }
-        sizes.push({ startIndex: start, size: this._photos.length - start });
-        return sizes;
+        return { orderedPhotos, groups };
     }
 
     _updateGroupDividers() {
-        const grid = this._gridEl.querySelector('.review-grid');
-        if (!grid) return;
-        const breaks = this._computeGroupBreaks();
-        const sizes = this._groupSizes(breaks);
-
-        grid.querySelectorAll('.review-group-divider').forEach(d => d.remove());
-
-        const cells = [...grid.querySelectorAll('.thumb-cell')];
-        for (const { startIndex, size } of sizes) {
-            if (startIndex === 0) continue; // no divider before first group
-            const cell = cells[startIndex];
-            if (!cell) continue;
-            const divider = document.createElement('div');
-            divider.className = 'review-group-divider';
-            const label = document.createElement('span');
-            label.className = 'review-group-divider__label';
-            label.textContent = `${size} similar`;
-            divider.appendChild(label);
-            grid.insertBefore(divider, cell);
-        }
-
-        // Label the first group too — update or insert before first cell
-        if (cells[0] && sizes.length > 0) {
-            let firstDivider = cells[0].previousElementSibling;
-            if (!firstDivider || !firstDivider.classList.contains('review-group-divider')) {
-                firstDivider = document.createElement('div');
-                firstDivider.className = 'review-group-divider';
-                grid.insertBefore(firstDivider, cells[0]);
-            }
-            firstDivider.innerHTML = '';
-            const label = document.createElement('span');
-            label.className = 'review-group-divider__label';
-            label.textContent = `${sizes[0].size} similar`;
-            firstDivider.appendChild(label);
-        }
+        // Reorder may change, so do a full re-render when grouping is active
+        this._render();
     }
 
     _renderActionBar() {
