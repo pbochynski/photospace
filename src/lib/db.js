@@ -123,7 +123,7 @@ export class PhotoDB {
     async getPhotosByMonth(year, month) {
         const pad = (n) => String(n).padStart(2, '0');
         const lower = `${year}-${pad(month)}-01T00:00:00.000Z`;
-        const upper = `${year}-${pad(month)}-31T23:59:59.999Z`;
+        const upper = `${year}-${pad(month)}-31T23:59:59.999Z`; // day 31 is fine for lexicographic IDB range even for 28/30-day months
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('photos', 'readonly');
             const index = tx.objectStore('photos').index('by_timestamp');
