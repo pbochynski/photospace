@@ -148,3 +148,75 @@ describe('PhotoDB.deleteStalePhotosInFolder', () => {
         expect(count).toBe(2);
     });
 });
+
+describe('PhotoDB.getPhotosByMonth', () => {
+    let db;
+    beforeEach(async () => {
+        globalThis.indexedDB = new IDBFactory();
+        db = new PhotoDB();
+        await db.init();
+    });
+
+    it('returns photos whose photo_taken_ts falls within the given month', async () => {
+        await db.addOrUpdatePhotos([
+            { file_id: 'sep1', folder_id: 'f1', photo_taken_ts: '2026-09-15T10:00:00Z', scan_id: 's1', item_type: 'photo' },
+            { file_id: 'oct1', folder_id: 'f1', photo_taken_ts: '2026-10-01T00:00:00Z', scan_id: 's1', item_type: 'photo' },
+            { file_id: 'aug1', folder_id: 'f1', photo_taken_ts: '2026-08-31T23:59:59Z', scan_id: 's1', item_type: 'photo' },
+        ]);
+        const results = await db.getPhotosByMonth(2026, 9);
+        const ids = results.map(p => p.file_id).sort();
+        expect(ids).toEqual(['sep1']);
+    });
+
+    it('includes videos in results', async () => {
+        await db.addOrUpdatePhotos([
+            { file_id: 'vid1', folder_id: 'f1', photo_taken_ts: '2026-09-20T12:00:00Z', scan_id: 's1', item_type: 'video' },
+        ]);
+        const results = await db.getPhotosByMonth(2026, 9);
+        expect(results.some(p => p.file_id === 'vid1')).toBe(true);
+    });
+
+    it('excludes photos with null photo_taken_ts', async () => {
+        await db.addOrUpdatePhotos([
+            { file_id: 'nodate', folder_id: 'f1', photo_taken_ts: null, scan_id: 's1', item_type: 'photo' },
+        ]);
+        const results = await db.getPhotosByMonth(2026, 9);
+        expect(results.some(p => p.file_id === 'nodate')).toBe(false);
+    });
+});
+
+describe('PhotoDB.rebuildMonthIndex', () => {
+    let db;
+    beforeEach(async () => {
+        globalThis.indexedDB = new IDBFactory();
+        db = new PhotoDB();
+        await db.init();
+    });
+
+    it('returns a map of YYYY-MM to photo counts', async () => {
+        await db.addOrUpdatePhotos([
+            { file_id: 'a', folder_id: 'f1', photo_taken_ts: '2026-09-01T00:00:00Z', scan_id: 's1', item_type: 'photo' },
+            { file_id: 'b', folder_id: 'f1', photo_taken_ts: '2026-09-15T00:00:00Z', scan_id: 's1', item_type: 'photo' },
+            { file_id: 'c', folder_id: 'f1', photo_taken_ts: '2026-08-10T00:00:00Z', scan_id: 's1', item_type: 'photo' },
+        ]);
+        const index = await db.rebuildMonthIndex();
+        expect(index['2026-09']).toBe(2);
+        expect(index['2026-08']).toBe(1);
+    });
+
+    it('excludes photos with null photo_taken_ts from the index', async () => {
+        await db.addOrUpdatePhotos([
+            { file_id: 'nodate2', folder_id: 'f1', photo_taken_ts: null, scan_id: 's1', item_type: 'photo' },
+        ]);
+        const index = await db.rebuildMonthIndex();
+        // null entries must not appear as keys
+        expect(Object.keys(index).some(k => k === 'null' || k === 'undefined')).toBe(false);
+    });
+
+    it('saves the index to settings under key "monthIndex"', async () => {
+        await db.init();
+        await db.rebuildMonthIndex();
+        const saved = await db.getSetting('monthIndex');
+        expect(typeof saved).toBe('object');
+    });
+});

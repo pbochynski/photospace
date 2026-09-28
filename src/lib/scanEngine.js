@@ -60,6 +60,10 @@ export class ScanEngine extends EventTarget {
                 await db.setSetting('folderMeta', folderMeta);
 
                 this._setFolderStatus(folderId, 'scanned', photos.length);
+
+                // Rebuild month index in background — don't await (non-critical)
+                db.rebuildMonthIndex().catch(err => console.warn('monthIndex rebuild failed:', err));
+
                 this.dispatchEvent(new CustomEvent('folder_scan_complete', {
                     detail: { folderId, folderPath, photoCount: photos.length }
                 }));

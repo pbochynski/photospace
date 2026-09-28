@@ -3,9 +3,11 @@ import { scanEngine } from './lib/scanEngine.js';
 import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
+import { TimelinePanel } from './lib/timelinePanel.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
 import { buildFolderRoute, navigate, getCurrentRoute } from './lib/router.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
+import { buildFolderRoute, navigate, getCurrentRoute, buildTimeRoute } from './lib/router.js';
 
 const appState = {
     authenticated: false,
@@ -13,6 +15,9 @@ const appState = {
     selectedFolderName: null,
     selectedSeries: null,
     selectedFolderIdForSeries: null,
+    viewMode: 'folder',       // 'folder' | 'timeline'
+    lastTimelineYear: null,
+    lastTimelineMonth: null,
 };
 
 // DOM refs
@@ -25,9 +30,12 @@ const btnAdvanced   = document.getElementById('btn-advanced');
 const settingsDrawerEl = document.getElementById('settings-drawer');
 const settingsBackdropEl = document.getElementById('settings-backdrop');
 const appColumns    = document.getElementById('app-columns');
+const btnFolders    = document.getElementById('btn-folders');
+const btnTimeline   = document.getElementById('btn-timeline');
+const panelTimeline = document.getElementById('panel-timeline');
 
 // Panel renderers (created after DOM ready)
-let folderPanel, photoGridPanel, reviewGrid;
+let folderPanel, photoGridPanel, reviewGrid, timelinePanel;
 let settingsDrawerPanel;
 
 async function sendTokenToSW(token) {
@@ -38,6 +46,29 @@ async function sendTokenToSW(token) {
     } catch (e) {
         console.warn('Could not send token to service worker:', e);
     }
+}
+
+async function switchToTimeline(year, month) {
+    if (reviewGrid && appColumns.classList.contains('app-columns--review-open')) {
+        closeReviewMode();
+    }
+    appState.viewMode = 'timeline';
+    appState.lastTimelineYear = year;
+    appState.lastTimelineMonth = month;
+    appColumns.classList.add('app-columns--timeline');
+    panelTimeline.hidden = false;
+    btnFolders.classList.remove('mode-btn--active');
+    btnTimeline.classList.add('mode-btn--active');
+    await timelinePanel.show(year, month);
+}
+
+function switchToFolders() {
+    appState.viewMode = 'folder';
+    appColumns.classList.remove('app-columns--timeline');
+    panelTimeline.hidden = true;
+    btnTimeline.classList.remove('mode-btn--active');
+    btnFolders.classList.add('mode-btn--active');
+    timelinePanel.hide();
 }
 
 async function boot() {
@@ -71,6 +102,21 @@ async function boot() {
     btnAdvanced?.addEventListener('click', () => toggleMode('advanced').catch(console.error));
     document.getElementById('btn-settings-close')?.addEventListener('click', () => toggleMode('quick').catch(console.error));
     settingsBackdropEl?.addEventListener('click', () => toggleMode('quick').catch(console.error));
+
+    btnFolders?.addEventListener('click', () => {
+        const route = appState.selectedFolderId
+            ? buildFolderRoute(appState.selectedFolderId)
+            : '#/';
+        navigate(route);
+        switchToFolders();
+    });
+    btnTimeline?.addEventListener('click', () => {
+        const now = new Date();
+        const y = appState.lastTimelineYear ?? now.getFullYear();
+        const m = appState.lastTimelineMonth ?? (now.getMonth() + 1);
+        navigate(buildTimeRoute(y, m));
+        switchToTimeline(y, m).catch(console.error);
+    });
 }
 
 async function toggleMode(mode) {
@@ -112,6 +158,13 @@ async function onAuthenticated() {
         onClose: () => closeReviewMode(),
     });
 
+    timelinePanel = new TimelinePanel({
+        scrollEl:   document.getElementById('timeline-scroll'),
+        scrubberEl: document.getElementById('timeline-scrubber'),
+        onSeriesClick: handleSeriesClick,
+        onPhotoClick:  handlePhotoClick,
+    });
+
     settingsDrawerPanel = new SettingsDrawer(document.getElementById('settings-content'), {
         onSettingsChange: async () => {
             if (appState.selectedFolderId) {
@@ -134,6 +187,9 @@ async function onAuthenticated() {
         if (status === 'scanned' && folderId === appState.selectedFolderId) {
             photoGridPanel.loadFolder(folderId, appState.selectedFolderName);
         }
+        if (status === 'scanned' && appState.viewMode === 'timeline') {
+            timelinePanel.refreshScrubber().catch(console.error);
+        }
         updateHeaderStatus();
     });
 
@@ -142,7 +198,7 @@ async function onAuthenticated() {
     // Load folder tree
     await folderPanel.loadRoot();
 
-    // Restore folder from URL hash if present
+    // Restore view from URL hash if present
     const route = getCurrentRoute();
     if (route.type === 'folder') {
         const folder = folderPanel.findFolderById(route.folderId);
@@ -156,12 +212,18 @@ async function onAuthenticated() {
             appState.selectedFolderName = route.folderId;
             await photoGridPanel.loadFolder(route.folderId, route.folderId);
         }
+    } else if (route.type === 'time') {
+        await switchToTimeline(route.year, route.month);
     }
+
+    // Resume any pending scan queue
+    await scanEngine.start();
 
     // Wire popstate for Back/Forward
     window.addEventListener('popstate', async () => {
         const popRoute = getCurrentRoute();
         if (popRoute.type === 'folder') {
+            switchToFolders();
             const folder = folderPanel.findFolderById(popRoute.folderId);
             if (folder) {
                 appState.selectedFolderId = folder.id;
@@ -170,7 +232,10 @@ async function onAuthenticated() {
                 closeReviewMode();
                 await photoGridPanel.loadFolder(folder.id, folder.name);
             }
+        } else if (popRoute.type === 'time') {
+            await switchToTimeline(popRoute.year, popRoute.month);
         } else if (popRoute.type === 'none') {
+            switchToFolders();
             appState.selectedFolderId = null;
             appState.selectedFolderName = null;
             folderPanel.setSelected(null);
@@ -178,9 +243,6 @@ async function onAuthenticated() {
             photoGridPanel.clear();
         }
     });
-
-    // Resume any pending scan queue
-    await scanEngine.start();
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -256,6 +318,7 @@ async function handlePhotoClick(photo, series) {
     } else {
         appState.selectedSeries = null;
         appState.selectedFolderIdForSeries = null;
+        // TODO: pass timeline month photos as neighbor list (photoGridPanel.getPhotos() is empty/stale in timeline mode)
         reviewGrid.openSinglePhoto(photo, photoGridPanel.getPhotos());
     }
 }

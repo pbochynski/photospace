@@ -20,6 +20,10 @@ export function buildFolderRoute(folderId) {
     return `#/folder/${folderId}`;
 }
 
+export function buildTimeRoute(year, month) {
+    return `#/time/${year}-${String(month).padStart(2, '0')}`;
+}
+
 export function navigate(hash) {
     if (window.location.hash === hash) return;
     history.pushState({}, '', hash);

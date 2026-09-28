@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parseRoute, buildFolderRoute, navigate } from '../lib/router.js';
+import { parseRoute, buildFolderRoute, buildTimeRoute, navigate } from '../lib/router.js';
 
 describe('parseRoute', () => {
     it('parses a folder route', () => {
@@ -27,6 +27,16 @@ describe('parseRoute', () => {
 describe('buildFolderRoute', () => {
     it('builds the correct hash string', () => {
         expect(buildFolderRoute('01ABC123')).toBe('#/folder/01ABC123');
+    });
+});
+
+describe('buildTimeRoute', () => {
+    it('builds a zero-padded time route hash', () => {
+        expect(buildTimeRoute(2026, 9)).toBe('#/time/2026-09');
+    });
+
+    it('handles two-digit months without double-padding', () => {
+        expect(buildTimeRoute(2026, 11)).toBe('#/time/2026-11');
     });
 });
 
