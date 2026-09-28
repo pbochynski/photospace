@@ -152,5 +152,5 @@ The `folderId` passed to `onSeriesClick` is the series' `photos[0].folder_id` �
 ## Constraints
 
 - `photo_taken_ts` must be an ISO 8601 string with `Z` suffix for range queries to work correctly. Photos stored with local-time strings (no `Z`) may appear in wrong months — accepted limitation; Graph API returns UTC strings.
-- Timeline only shows photos of `item_type: 'photo'` (not videos) in v1 — same as the folder view's series detection.
+- Timeline shows both `item_type: 'photo'` and `item_type: 'video'`. Video tiles display a play-icon overlay (▶) on the thumbnail so they are visually distinguishable from photos. Videos are included in day groups and series detection (series are time-density based, not type-based).
 - Month index rebuild (on each scan) is O(n) over all IDB records — acceptable for 100k photos (~200ms); can be optimised to incremental later.
