@@ -17,6 +17,11 @@
         <button id="btn-quick" class="mode-btn mode-btn--active">Quick cleanup</button>
         <button id="btn-advanced" class="mode-btn">Advanced</button>
       </div>
+      <!-- View toggle -->
+      <div class="app-header__view-toggle">
+        <button id="btn-folders" class="mode-btn mode-btn--active">Folders</button>
+        <button id="btn-timeline" class="mode-btn">Timeline</button>
+      </div>
       <button id="btn-logout" class="btn-logout" hidden>Sign out</button>
     </header>
 
@@ -40,6 +45,12 @@
         <div class="panel__body" id="review-grid"></div>
         <div class="panel__footer" id="review-footer"></div>
       </aside>
+
+      <!-- Timeline view (full-width, hidden by default) -->
+      <section class="panel panel--timeline" id="panel-timeline" hidden>
+        <div class="timeline-scroll" id="timeline-scroll"></div>
+        <div class="timeline-scrubber" id="timeline-scrubber"></div>
+      </section>
 
     </div>
 
