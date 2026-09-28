@@ -4,6 +4,7 @@ import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
+import { buildFolderRoute, navigate, getCurrentRoute, parseRoute } from './lib/router.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
 
 const appState = {
@@ -172,6 +173,7 @@ async function handleFolderClick(folderId, folderName, driveId) {
     appState.selectedFolderName = folderName;
     folderPanel.setSelected(folderId);
     closeReviewMode();
+    navigate(buildFolderRoute(folderId));
     await photoGridPanel.loadFolder(folderId, folderName);
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high');
 }
