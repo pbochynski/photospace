@@ -5,9 +5,8 @@ import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
 import { TimelinePanel } from './lib/timelinePanel.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
-import { buildFolderRoute, navigate, getCurrentRoute } from './lib/router.js';
-import { SettingsDrawer } from './lib/settingsDrawer.js';
 import { buildFolderRoute, navigate, getCurrentRoute, buildTimeRoute } from './lib/router.js';
+import { SettingsDrawer } from './lib/settingsDrawer.js';
 
 const appState = {
     authenticated: false,
