@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { parseRoute, buildFolderRoute, navigate, buildTimeRoute } from '../lib/router.js';
+import { parseRoute, buildFolderRoute, navigate, buildTimeRoute, getCurrentRoute } from '../lib/router.js';
 
 describe('buildFolderRoute', () => {
     it('builds a folder route hash', () => {
@@ -36,7 +36,6 @@ describe('getCurrentRoute', () => {
 
     it('returns the current route', () => {
         window.location.hash = '#/folder/folder-123';
-        const { getCurrentRoute } = require('../lib/router.js');
         expect(getCurrentRoute()).toEqual({ type: 'folder', id: 'folder-123' });
     });
 });
