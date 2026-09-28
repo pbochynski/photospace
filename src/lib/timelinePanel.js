@@ -100,6 +100,14 @@ export class TimelinePanel {
             this._scrollEl.appendChild(chunk);
         }
         this._renderedMonths.add(key);
+
+        // Register new sentinels with the observer so virtual scroll keeps working
+        // for months loaded after the initial render.
+        if (this._observer) {
+            for (const s of chunk.querySelectorAll('.timeline-sentinel-top, .timeline-sentinel-bottom')) {
+                this._observer.observe(s);
+            }
+        }
     }
 
     /**
