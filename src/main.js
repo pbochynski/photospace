@@ -217,7 +217,7 @@ async function handlePhotoClick(photo, series) {
     } else {
         appState.selectedSeries = null;
         appState.selectedFolderIdForSeries = null;
-        reviewGrid.openSinglePhoto(photo);
+        reviewGrid.openSinglePhoto(photo, photoGridPanel.getPhotos());
     }
 }
 

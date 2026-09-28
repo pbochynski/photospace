@@ -1,4 +1,7 @@
 import { saveSeriesState } from './reviewManager.js';
+import { computeDHash, hammingDistance } from './dhash.js';
+
+const DHASH_THRESHOLD_DEFAULT = 20;
 
 export class ReviewGrid {
     constructor({ headerEl, gridEl, footerEl, fullscreenOverlay, fullscreenPhoto, fullscreenSidebar, onClose }) {
@@ -15,6 +18,9 @@ export class ReviewGrid {
         this._photos = [];
         this._selectedIds = new Set();
         this._fsIndex = null;
+        this._groupSimilar = false;
+        this._hashThreshold = DHASH_THRESHOLD_DEFAULT;
+        this._hashes = new Map(); // file_id → [hi, lo]
 
         this._fsOverlay.addEventListener('click', (e) => {
             if (e.target === this._fsOverlay) this.closeFullscreen();
@@ -26,6 +32,7 @@ export class ReviewGrid {
         this._folderId = folderId;
         this._photos = [...series.photos];
         this._selectedIds = new Set();
+        this._hashes = new Map();
         this._render();
     }
 
@@ -47,22 +54,55 @@ export class ReviewGrid {
             <button id="btn-select-all" class="btn-text">Select all</button>
             <button id="btn-deselect-all" class="btn-text">Deselect all</button>
             <button id="btn-invert" class="btn-text">Invert</button>
+            <button id="btn-group-similar" class="btn-text${this._groupSimilar ? ' btn-text--active' : ''}" title="Group visually similar photos together">⊞ Group similar</button>
+            ${this._groupSimilar ? `
+            <label class="review-toolbar__threshold">
+                Sensitivity
+                <input type="range" id="threshold-slider" min="5" max="40" value="${this._hashThreshold}" style="width:80px;vertical-align:middle">
+                <span id="threshold-val">${this._hashThreshold}</span>
+            </label>
+            ` : ''}
         `;
         toolbar.querySelector('#btn-select-all').addEventListener('click', () => this._selectAll());
         toolbar.querySelector('#btn-deselect-all').addEventListener('click', () => this._deselectAll());
         toolbar.querySelector('#btn-invert').addEventListener('click', () => this._invertSelection());
+        toolbar.querySelector('#btn-group-similar').addEventListener('click', () => {
+            this._groupSimilar = !this._groupSimilar;
+            this._render();
+        });
+        toolbar.querySelector('#threshold-slider')?.addEventListener('input', (e) => {
+            this._hashThreshold = +e.target.value;
+            toolbar.querySelector('#threshold-val').textContent = this._hashThreshold;
+            this._updateGroupDividers();
+        });
         this._gridEl.appendChild(toolbar);
 
         const grid = document.createElement('div');
         grid.className = 'review-grid';
 
+        // Compute group boundaries from hashes if grouping is on
+        const groupBreaks = this._groupSimilar ? this._computeGroupBreaks() : new Set();
+        const groupSizes = this._groupSimilar ? this._groupSizes(groupBreaks) : [];
+        const sizeByStart = new Map(groupSizes.map(g => [g.startIndex, g.size]));
+
         this._photos.forEach((photo, i) => {
+            if (groupBreaks.has(i) || (this._groupSimilar && i === 0 && groupSizes.length > 0)) {
+                const divider = document.createElement('div');
+                divider.className = 'review-group-divider';
+                if (sizeByStart.has(i)) {
+                    const label = document.createElement('span');
+                    label.className = 'review-group-divider__label';
+                    label.textContent = `${sizeByStart.get(i)} similar`;
+                    divider.appendChild(label);
+                }
+                grid.appendChild(divider);
+            }
+
             const isSelected = this._selectedIds.has(photo.file_id);
             const cell = document.createElement('div');
             cell.className = 'thumb-cell' + (isSelected ? ' thumb-cell--selected' : '');
             cell.dataset.index = i;
 
-            // Set initial aspect ratio from stored dimensions; update from image naturalWidth/Height on load
             if (photo.width && photo.height) {
                 cell.style.setProperty('--aspect', photo.width / photo.height);
             }
@@ -72,9 +112,16 @@ export class ReviewGrid {
             img.alt = '';
             img.loading = 'lazy';
             img.onerror = function() { this.style.background = '#333'; this.removeAttribute('src'); };
-            img.onload = function() {
-                if (this.naturalWidth && this.naturalHeight) {
-                    cell.style.setProperty('--aspect', this.naturalWidth / this.naturalHeight);
+            img.onload = () => {
+                if (img.naturalWidth && img.naturalHeight) {
+                    cell.style.setProperty('--aspect', img.naturalWidth / img.naturalHeight);
+                }
+                // Compute and store hash; re-render dividers if grouping is active
+                if (!this._hashes.has(photo.file_id)) {
+                    try {
+                        this._hashes.set(photo.file_id, computeDHash(img));
+                    } catch (_) {}
+                    if (this._groupSimilar) this._updateGroupDividers();
                 }
             };
 
@@ -103,6 +150,67 @@ export class ReviewGrid {
 
         this._gridEl.appendChild(grid);
         this._renderActionBar();
+    }
+
+    _computeGroupBreaks() {
+        const breaks = new Set();
+        for (let i = 1; i < this._photos.length; i++) {
+            const h1 = this._hashes.get(this._photos[i - 1].file_id);
+            const h2 = this._hashes.get(this._photos[i].file_id);
+            if (!h1 || !h2) continue;
+            if (hammingDistance(h1, h2) > this._hashThreshold) breaks.add(i);
+        }
+        return breaks;
+    }
+
+    _groupSizes(breaks) {
+        const sizes = [];
+        let start = 0;
+        const sorted = [...breaks].sort((a, b) => a - b);
+        for (const b of sorted) {
+            sizes.push({ startIndex: start, size: b - start });
+            start = b;
+        }
+        sizes.push({ startIndex: start, size: this._photos.length - start });
+        return sizes;
+    }
+
+    _updateGroupDividers() {
+        const grid = this._gridEl.querySelector('.review-grid');
+        if (!grid) return;
+        const breaks = this._computeGroupBreaks();
+        const sizes = this._groupSizes(breaks);
+
+        grid.querySelectorAll('.review-group-divider').forEach(d => d.remove());
+
+        const cells = [...grid.querySelectorAll('.thumb-cell')];
+        for (const { startIndex, size } of sizes) {
+            if (startIndex === 0) continue; // no divider before first group
+            const cell = cells[startIndex];
+            if (!cell) continue;
+            const divider = document.createElement('div');
+            divider.className = 'review-group-divider';
+            const label = document.createElement('span');
+            label.className = 'review-group-divider__label';
+            label.textContent = `${size} similar`;
+            divider.appendChild(label);
+            grid.insertBefore(divider, cell);
+        }
+
+        // Label the first group too — update or insert before first cell
+        if (cells[0] && sizes.length > 0) {
+            let firstDivider = cells[0].previousElementSibling;
+            if (!firstDivider || !firstDivider.classList.contains('review-group-divider')) {
+                firstDivider = document.createElement('div');
+                firstDivider.className = 'review-group-divider';
+                grid.insertBefore(firstDivider, cells[0]);
+            }
+            firstDivider.innerHTML = '';
+            const label = document.createElement('span');
+            label.className = 'review-group-divider__label';
+            label.textContent = `${sizes[0].size} similar`;
+            firstDivider.appendChild(label);
+        }
     }
 
     _renderActionBar() {
@@ -243,6 +351,7 @@ export class ReviewGrid {
                 <div style="color:#888;font-size:11px;margin-bottom:2px">Photo ${index + 1} of ${this._photos.length}</div>
                 <div style="font-size:12px;word-break:break-all">${this._escapeHtml(photo.name)}</div>
             </div>
+            <button id="fs-delete" class="btn-delete" style="width:100%">🗑 Delete this photo</button>
         `;
 
         if (this._series) {
@@ -259,11 +368,48 @@ export class ReviewGrid {
             });
         }
 
+        this._fsSidebar.querySelector('#fs-delete')?.addEventListener('click', () => this._deleteCurrentPhoto());
+
         document.getElementById('fs-prev')?.addEventListener('click', () => this._renderFullscreen(index - 1));
         document.getElementById('fs-next')?.addEventListener('click', () => this._renderFullscreen(index + 1));
         this._fsPhoto.querySelector('#fs-close')?.addEventListener('click', () => this.closeFullscreen());
 
         this._fsIndex = index;
+    }
+
+    async _deleteCurrentPhoto() {
+        if (this._fsIndex === null) return;
+        const photo = this._photos[this._fsIndex];
+        const confirmed = confirm(`Delete "${photo.name}"? This cannot be undone.`);
+        if (!confirmed) return;
+        try {
+            const { deletePhotoFromOneDrive } = await import('./photoDeleteManager.js');
+            await deletePhotoFromOneDrive(photo.file_id);
+        } catch (e) {
+            alert(`Delete failed: ${e.message}`);
+            return;
+        }
+
+        // Remove from local arrays
+        this._photos.splice(this._fsIndex, 1);
+        if (this._series) {
+            this._series.photos = this._series.photos.filter(p => p.file_id !== photo.file_id);
+            this._selectedIds.delete(photo.file_id);
+        }
+
+        if (this._photos.length === 0) {
+            this.closeFullscreen();
+            if (this._series) this._render();
+            return;
+        }
+
+        // Navigate: stay at same index (now pointing at next photo), or back one if we were at the end
+        const nextIndex = Math.min(this._fsIndex, this._photos.length - 1);
+        this._fsIndex = null; // reset so _renderFullscreen doesn't use stale index
+        this._renderFullscreen(nextIndex);
+
+        // Sync grid if in series mode
+        if (this._series) this._render();
     }
 
     toggleCurrentFullscreenSelection() {
@@ -289,12 +435,13 @@ export class ReviewGrid {
         if (index !== -1) this._openFullscreen(index);
     }
 
-    openSinglePhoto(photo) {
-        this._photos = [photo];
+    openSinglePhoto(photo, allPhotos = null) {
+        this._photos = allPhotos ? [...allPhotos] : [photo];
         this._selectedIds = new Set();
         this._series = null;
         this._folderId = null;
-        this._openFullscreen(0);
+        const index = this._photos.findIndex(p => p.file_id === photo.file_id);
+        this._openFullscreen(index !== -1 ? index : 0);
     }
 
     _escapeHtml(str) {

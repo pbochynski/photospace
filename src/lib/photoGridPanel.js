@@ -36,7 +36,7 @@ export class PhotoGridPanel {
             maxTimeGap: settings.maxTimeGap,
         });
 
-        this._photos = photos;
+        this._photos = photos.slice().sort((a, b) => (a.photo_taken_ts || 0) - (b.photo_taken_ts || 0));
         await this._render();
     }
 
@@ -202,6 +202,10 @@ export class PhotoGridPanel {
             wrap.appendChild(thumb);
         }
         return wrap;
+    }
+
+    getPhotos() {
+        return this._photos;
     }
 
     showOnboarding() {
