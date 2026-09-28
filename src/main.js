@@ -23,6 +23,7 @@ const btnQuick      = document.getElementById('btn-quick');
 const btnAdvanced   = document.getElementById('btn-advanced');
 const settingsDrawerEl = document.getElementById('settings-drawer');
 const settingsBackdropEl = document.getElementById('settings-backdrop');
+const appColumns    = document.getElementById('app-columns');
 
 // Panel renderers (created after DOM ready)
 let folderPanel, photoGridPanel, reviewGrid;
@@ -96,8 +97,6 @@ async function onAuthenticated() {
     photoGridPanel = new PhotoGridPanel({
         headerEl:        document.getElementById('series-header'),
         listEl:          document.getElementById('series-list'),
-        progressBarEl:   document.getElementById('series-progress-bar'),
-        progressLabelEl: document.getElementById('series-progress-label'),
         onSeriesClick:   handleSeriesClick,
         onPhotoClick:    handlePhotoClick,
     });
@@ -109,6 +108,7 @@ async function onAuthenticated() {
         fullscreenOverlay: document.getElementById('fullscreen-overlay'),
         fullscreenPhoto:   document.getElementById('fullscreen-photo'),
         fullscreenSidebar: document.getElementById('fullscreen-sidebar'),
+        onClose: () => closeReviewMode(),
     });
 
     settingsDrawerPanel = new SettingsDrawer(document.getElementById('settings-content'), {
@@ -145,7 +145,13 @@ async function onAuthenticated() {
     await scanEngine.start();
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') reviewGrid.closeFullscreen();
+        if (e.key === 'Escape') {
+            if (reviewGrid._fsIndex !== null) {
+                reviewGrid.closeFullscreen();
+            } else {
+                closeReviewMode();
+            }
+        }
         if (e.key === 'ArrowLeft' && reviewGrid._fsIndex !== null && reviewGrid._fsIndex > 0) {
             reviewGrid._renderFullscreen(reviewGrid._fsIndex - 1);
         }
@@ -159,6 +165,7 @@ async function handleFolderClick(folderId, folderName, driveId) {
     appState.selectedFolderId = folderId;
     appState.selectedFolderName = folderName;
     folderPanel.setSelected(folderId);
+    closeReviewMode();
     await photoGridPanel.loadFolder(folderId, folderName);
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high');
 }
@@ -171,6 +178,14 @@ async function handleRecursiveScanClick(folderId, folderName, driveId) {
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high', true);
 }
 
+function openReviewMode() {
+    appColumns.classList.add('app-columns--review-open');
+}
+
+function closeReviewMode() {
+    appColumns.classList.remove('app-columns--review-open');
+}
+
 async function handleSeriesClick(series, folderId, index) {
     appState.selectedSeries = series;
     appState.selectedFolderIdForSeries = folderId;
@@ -179,6 +194,7 @@ async function handleSeriesClick(series, folderId, index) {
         await sendTokenToSW(token);
     } catch (_) {}
     await reviewGrid.loadSeries(series, folderId);
+    openReviewMode();
 }
 
 async function handlePhotoClick(photo, series) {
@@ -190,6 +206,7 @@ async function handlePhotoClick(photo, series) {
         appState.selectedSeries = series;
         appState.selectedFolderIdForSeries = appState.selectedFolderId;
         await reviewGrid.loadSeries(series, appState.selectedFolderId);
+        openReviewMode();
         reviewGrid.openPhotoById(photo.file_id);
     } else {
         appState.selectedSeries = null;

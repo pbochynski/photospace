@@ -1,14 +1,14 @@
 import { preselectSeries, loadSeriesState, saveSeriesState, togglePhotoKeep } from './reviewManager.js';
-import { getCalibration } from './calibration.js';
 
 export class ReviewGrid {
-    constructor({ headerEl, gridEl, footerEl, fullscreenOverlay, fullscreenPhoto, fullscreenSidebar }) {
+    constructor({ headerEl, gridEl, footerEl, fullscreenOverlay, fullscreenPhoto, fullscreenSidebar, onClose }) {
         this._headerEl = headerEl;
         this._gridEl = gridEl;
         this._footerEl = footerEl;
         this._fsOverlay = fullscreenOverlay;
         this._fsPhoto = fullscreenPhoto;
         this._fsSidebar = fullscreenSidebar;
+        this._onClose = onClose;
 
         this._series = null;
         this._folderId = null;
@@ -25,15 +25,14 @@ export class ReviewGrid {
     async loadSeries(series, folderId) {
         this._series = series;
         this._folderId = folderId;
-        this._photos = [...series.photos].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0));
+        this._photos = [...series.photos];
 
         const saved = await loadSeriesState(folderId, series.startTime);
         if (saved) {
             this._keptIds = saved.keptIds;
             this._deletedIds = saved.deletedIds;
         } else {
-            const calibration = await getCalibration(folderId);
-            const preselect = await preselectSeries(series, folderId, calibration);
+            const preselect = await preselectSeries(series);
             this._keptIds = preselect.keptIds;
             this._deletedIds = preselect.deletedIds;
             await saveSeriesState(folderId, series.startTime, this._keptIds, this._deletedIds);
@@ -47,9 +46,11 @@ export class ReviewGrid {
 
         const date = new Date(this._series.startTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         this._headerEl.innerHTML = `
-            <strong>${date} · ${this._series.photoCount} photos</strong><br>
-            <span style="color:#888;font-size:12px">${this._deletedIds.length} pre-selected for deletion</span>
+            <button id="btn-review-back" style="background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:13px;padding:0;margin-right:10px">‹ back</button>
+            <strong>${date} · ${this._series.photoCount} photos</strong>
+            <span style="color:#888;font-size:12px;margin-left:8px">${this._deletedIds.length} marked for deletion</span>
         `;
+        this._headerEl.querySelector('#btn-review-back')?.addEventListener('click', () => this._onClose?.());
 
         this._gridEl.innerHTML = '';
         const grid = document.createElement('div');
@@ -64,12 +65,10 @@ export class ReviewGrid {
                 (isDeleted ? ' thumb-cell--delete' : '');
             cell.dataset.index = i;
 
-            const score = photo.quality_score != null ? photo.quality_score : '…';
             cell.innerHTML = `
                 <img src="/api/thumb/${photo.file_id}" alt="" loading="lazy"
                      onerror="this.style.background='#333';this.removeAttribute('src')" />
                 ${isKept ? '<span class="thumb-cell__star">★</span>' : ''}
-                <span class="thumb-cell__score">${score}</span>
                 <div class="thumb-cell__overlay">
                     <button class="thumb-cell__toggle-btn" title="${isKept ? 'Mark for deletion' : 'Keep'}">${isKept ? '★' : '✕'}</button>
                 </div>
@@ -195,13 +194,6 @@ export class ReviewGrid {
                 <div style="color:#888;font-size:11px;margin-bottom:2px">Photo ${index + 1} of ${this._photos.length}</div>
                 <div style="font-size:12px;word-break:break-all">${this._escapeHtml(photo.name)}</div>
             </div>
-            <div style="margin-bottom:16px">
-                <div style="font-weight:600;margin-bottom:8px">Quality Score</div>
-                ${this._scoreBar('Overall', photo.quality_score)}
-                ${this._scoreBar('Sharpness', photo.sharpness)}
-                ${this._scoreBar('Exposure', photo.exposure)}
-                ${photo.face?.detected ? this._scoreBar('Face', photo.face.score) : '<div style="color:#888;font-size:12px">Face — n/a</div>'}
-            </div>
             ${this._series ? `
             <button id="fs-toggle-keep"
                 style="width:100%;padding:8px;background:${isKept ? 'var(--color-keep)' : 'var(--color-delete)'};border:none;color:white;border-radius:4px;cursor:pointer;font-size:13px">
@@ -216,20 +208,6 @@ export class ReviewGrid {
         this._fsPhoto.querySelector('#fs-close')?.addEventListener('click', () => this.closeFullscreen());
 
         this._fsIndex = index;
-    }
-
-    _scoreBar(label, value) {
-        const v = value != null ? Math.round(value) : null;
-        return `
-            <div style="margin-bottom:6px">
-                <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
-                    <span>${label}</span><span>${v != null ? v : '…'}</span>
-                </div>
-                <div style="background:#333;border-radius:2px;height:4px">
-                    <div style="background:var(--color-accent);height:100%;border-radius:2px;width:${v != null ? v : 0}%"></div>
-                </div>
-            </div>
-        `;
     }
 
     closeFullscreen() {

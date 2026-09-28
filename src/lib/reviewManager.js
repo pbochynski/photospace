@@ -6,29 +6,12 @@ function seriesKey(folderId, seriesStartMs) {
     return `${folderId}_${seriesStartMs}`;
 }
 
-export function classifySeries(series, calibration) {
-    const durationMinutes = series.timeSpanMinutes || 0;
-    const density = series.density || 0;
-    const burstThreshold = calibration?.burstThreshold ?? 5;
-    if (durationMinutes > 10 && density < 1) return 'sparse';
-    if (density >= burstThreshold) return 'burst';
-    return 'spread';
-}
-
-export async function preselectSeries(series, folderId, calibration) {
-    const classification = classifySeries(series, calibration);
+export async function preselectSeries(series) {
     const photos = [...series.photos];
-
-    if (classification === 'sparse') {
-        return { keptIds: photos.map(p => p.file_id), deletedIds: [], classification };
-    }
-
-    const keepCount = classification === 'burst' ? 1 : 3;
-    const sorted = [...photos].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0));
+    const keepCount = Math.min(1, photos.length);
     return {
-        keptIds: sorted.slice(0, keepCount).map(p => p.file_id),
-        deletedIds: sorted.slice(keepCount).map(p => p.file_id),
-        classification
+        keptIds: photos.slice(0, keepCount).map(p => p.file_id),
+        deletedIds: photos.slice(keepCount).map(p => p.file_id),
     };
 }
 

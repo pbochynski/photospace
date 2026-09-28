@@ -1,6 +1,5 @@
 export async function pickBestPhotoByQuality(photoGroup) {
-    if (photoGroup.length === 1) return photoGroup[0];
-    return [...photoGroup].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0))[0];
+    return photoGroup[0];
 }
 
 /**
@@ -18,14 +17,13 @@ export async function pickBestPhotoByQuality(photoGroup) {
 export async function findPhotoSeries(photos, options = {}, progressCallback = null) {
     const {
         minGroupSize = 20,
-        minDensity = 3, // photos per minute
         maxTimeGap = 5, // minutes
         sortMethod = 'series-size',
         ignoredPeriods = []
     } = options;
 
     console.log(`📊 findPhotoSeries: Analyzing ${photos.length} photos`);
-    console.log(`📊 Parameters: minGroupSize=${minGroupSize}, minDensity=${minDensity} photos/min, maxTimeGap=${maxTimeGap} min`);
+    console.log(`📊 Parameters: minGroupSize=${minGroupSize}, maxTimeGap=${maxTimeGap} min`);
     if (ignoredPeriods.length > 0) {
         console.log(`📊 Ignored periods: ${ignoredPeriods.length}`);
         const formatDateTime = (date) => {
@@ -137,23 +135,12 @@ export async function findPhotoSeries(photos, options = {}, progressCallback = n
             continue;
         }
 
-        // Calculate time span and density
+        // Calculate time span
         const firstPhotoTime = seriesPhotos[0].photo_taken_ts;
         const lastPhotoTime = seriesPhotos[seriesPhotos.length - 1].photo_taken_ts;
         const timeSpanMs = lastPhotoTime - firstPhotoTime;
         const timeSpanMinutes = timeSpanMs / (60 * 1000);
 
-        // Handle edge case: all photos at same time (or very close)
-        const density = timeSpanMinutes > 0
-            ? seriesPhotos.length / timeSpanMinutes
-            : seriesPhotos.length; // If timeSpan is 0, density is infinite (use photo count)
-
-        // Skip if density too low
-        if (density < minDensity) {
-            continue;
-        }
-
-        // Calculate additional statistics
         const avgTimeBetweenPhotos = timeSpanMinutes > 0
             ? timeSpanMinutes / (seriesPhotos.length - 1)
             : 0;
@@ -165,8 +152,7 @@ export async function findPhotoSeries(photos, options = {}, progressCallback = n
             timeSpanMs: timeSpanMs,
             timeSpanMinutes: timeSpanMinutes,
             photoCount: seriesPhotos.length,
-            density: density, // photos per minute
-            avgTimeBetweenPhotos: avgTimeBetweenPhotos // minutes between photos
+            avgTimeBetweenPhotos: avgTimeBetweenPhotos
         });
 
         // Progress callback
@@ -175,15 +161,12 @@ export async function findPhotoSeries(photos, options = {}, progressCallback = n
         }
     }
 
-    console.log(`📊 After filtering: ${filteredSeries.length} series (minSize: ${minGroupSize}, minDensity: ${minDensity})`);
+    console.log(`📊 After filtering: ${filteredSeries.length} series (minSize: ${minGroupSize})`);
 
     // Sort results based on selected method
     switch (sortMethod) {
         case 'series-size':
             filteredSeries.sort((a, b) => b.photoCount - a.photoCount);
-            break;
-        case 'density':
-            filteredSeries.sort((a, b) => b.density - a.density);
             break;
         case 'date-desc':
             filteredSeries.sort((a, b) => b.startTime - a.startTime);
@@ -200,7 +183,6 @@ export async function findPhotoSeries(photos, options = {}, progressCallback = n
         console.log(`📊 Series analysis complete:`);
         console.log(`   - Total series found: ${filteredSeries.length}`);
         console.log(`   - Largest series: ${filteredSeries[0].photoCount} photos`);
-        console.log(`   - Highest density: ${Math.max(...filteredSeries.map(s => s.density)).toFixed(2)} photos/min`);
     }
 
     return filteredSeries;

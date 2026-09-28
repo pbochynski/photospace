@@ -21,30 +21,16 @@ export class SettingsDrawer {
         this._contentEl.innerHTML = `
             <h3 style="margin-bottom:16px">Advanced Settings</h3>
 
-            ${calibration ? `
-            <div style="background:#1e2a1e;border:1px solid #2d4a2d;border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px">
-                <div style="font-weight:600;margin-bottom:6px">Calibration result (auto)</div>
-                <div style="color:#888">Max time gap: ${calibration.maxTimeGap} min</div>
-                <div style="color:#888">Min density: ${calibration.minDensity} photos/min</div>
-                <div style="color:#888">Burst threshold: ${calibration.burstThreshold} photos/min</div>
-                <button id="btn-reset-calibration" class="btn-text" style="margin-top:6px">Reset to recommended</button>
-            </div>
-            ` : ''}
-
             <div class="settings-field">
                 <label>Max time gap between photos (minutes)</label>
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="s-max-time-gap" min="1" max="60" value="${settings.maxTimeGap}" style="flex:1" />
                     <span id="s-max-time-gap-val">${settings.maxTimeGap}</span>
                 </div>
-            </div>
-
-            <div class="settings-field">
-                <label>Min density (photos/min)</label>
-                <div style="display:flex;align-items:center;gap:8px">
-                    <input type="range" id="s-min-density" min="0.5" max="10" step="0.5" value="${settings.minDensity}" style="flex:1" />
-                    <span id="s-min-density-val">${settings.minDensity}</span>
-                </div>
+                ${calibration ? `<div style="color:#555;font-size:11px;margin-top:4px">
+                    Recommended for this folder: ${calibration.maxTimeGap} min
+                    <button id="btn-reset-calibration" class="btn-text" style="margin-left:6px">apply</button>
+                </div>` : ''}
             </div>
 
             <div class="settings-field">
@@ -97,8 +83,8 @@ export class SettingsDrawer {
         };
 
         wire('s-max-time-gap', 'seriesMaxTimeGap', Number);
-        wire('s-min-density', 'seriesMinDensity', Number);
         wire('s-min-group-size', 'seriesMinGroupSize', Number);
+
         const dateEnabled = this._contentEl.querySelector('#s-date-enabled');
         const dateFields = this._contentEl.querySelector('#s-date-fields');
         dateEnabled?.addEventListener('change', async () => {
@@ -138,7 +124,6 @@ export class SettingsDrawer {
             const cal = await getCalibration(this._currentFolderId);
             if (cal) {
                 await setSetting('seriesMaxTimeGap', cal.maxTimeGap);
-                await setSetting('seriesMinDensity', cal.minDensity);
                 await this.render();
                 this._onSettingsChange?.();
             }
