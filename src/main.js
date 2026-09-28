@@ -3,8 +3,10 @@ import { scanEngine } from './lib/scanEngine.js';
 import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
+import { TimelinePanel } from './lib/timelinePanel.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
+import { buildFolderRoute, navigate, getCurrentRoute, buildTimeRoute } from './lib/router.js';
 
 const appState = {
     authenticated: false,
@@ -12,6 +14,9 @@ const appState = {
     selectedFolderName: null,
     selectedSeries: null,
     selectedFolderIdForSeries: null,
+    viewMode: 'folder',       // 'folder' | 'timeline'
+    lastTimelineYear: null,
+    lastTimelineMonth: null,
 };
 
 // DOM refs
@@ -24,9 +29,12 @@ const btnAdvanced   = document.getElementById('btn-advanced');
 const settingsDrawerEl = document.getElementById('settings-drawer');
 const settingsBackdropEl = document.getElementById('settings-backdrop');
 const appColumns    = document.getElementById('app-columns');
+const btnFolders    = document.getElementById('btn-folders');
+const btnTimeline   = document.getElementById('btn-timeline');
+const panelTimeline = document.getElementById('panel-timeline');
 
 // Panel renderers (created after DOM ready)
-let folderPanel, photoGridPanel, reviewGrid;
+let folderPanel, photoGridPanel, reviewGrid, timelinePanel;
 let settingsDrawerPanel;
 
 async function sendTokenToSW(token) {
@@ -37,6 +45,29 @@ async function sendTokenToSW(token) {
     } catch (e) {
         console.warn('Could not send token to service worker:', e);
     }
+}
+
+async function switchToTimeline(year, month) {
+    if (reviewGrid && appColumns.classList.contains('app-columns--review-open')) {
+        closeReviewMode();
+    }
+    appState.viewMode = 'timeline';
+    appState.lastTimelineYear = year;
+    appState.lastTimelineMonth = month;
+    appColumns.classList.add('app-columns--timeline');
+    panelTimeline.hidden = false;
+    btnFolders.classList.remove('mode-btn--active');
+    btnTimeline.classList.add('mode-btn--active');
+    await timelinePanel.show(year, month);
+}
+
+function switchToFolders() {
+    appState.viewMode = 'folder';
+    appColumns.classList.remove('app-columns--timeline');
+    panelTimeline.hidden = true;
+    btnTimeline.classList.remove('mode-btn--active');
+    btnFolders.classList.add('mode-btn--active');
+    timelinePanel.hide();
 }
 
 async function boot() {
@@ -70,6 +101,21 @@ async function boot() {
     btnAdvanced?.addEventListener('click', () => toggleMode('advanced').catch(console.error));
     document.getElementById('btn-settings-close')?.addEventListener('click', () => toggleMode('quick').catch(console.error));
     settingsBackdropEl?.addEventListener('click', () => toggleMode('quick').catch(console.error));
+
+    btnFolders?.addEventListener('click', () => {
+        const route = appState.selectedFolderId
+            ? buildFolderRoute(appState.selectedFolderId)
+            : '#/';
+        navigate(route);
+        switchToFolders();
+    });
+    btnTimeline?.addEventListener('click', () => {
+        const now = new Date();
+        const y = appState.lastTimelineYear ?? now.getFullYear();
+        const m = appState.lastTimelineMonth ?? (now.getMonth() + 1);
+        navigate(buildTimeRoute(y, m));
+        switchToTimeline(y, m).catch(console.error);
+    });
 }
 
 async function toggleMode(mode) {
@@ -111,6 +157,13 @@ async function onAuthenticated() {
         onClose: () => closeReviewMode(),
     });
 
+    timelinePanel = new TimelinePanel({
+        scrollEl:   document.getElementById('timeline-scroll'),
+        scrubberEl: document.getElementById('timeline-scrubber'),
+        onSeriesClick: handleSeriesClick,
+        onPhotoClick:  handlePhotoClick,
+    });
+
     settingsDrawerPanel = new SettingsDrawer(document.getElementById('settings-content'), {
         onSettingsChange: async () => {
             if (appState.selectedFolderId) {
@@ -133,6 +186,9 @@ async function onAuthenticated() {
         if (status === 'scanned' && folderId === appState.selectedFolderId) {
             photoGridPanel.loadFolder(folderId, appState.selectedFolderName);
         }
+        if (status === 'scanned' && appState.viewMode === 'timeline') {
+            timelinePanel.refreshScrubber().catch(console.error);
+        }
         updateHeaderStatus();
     });
 
@@ -143,6 +199,38 @@ async function onAuthenticated() {
 
     // Resume any pending scan queue
     await scanEngine.start();
+
+    // Restore state from URL hash
+    const route = getCurrentRoute();
+    if (route?.type === 'folder') {
+        appState.selectedFolderId = route.id;
+        folderPanel.setSelected(route.id);
+        await photoGridPanel.loadFolder(route.id, route.id);
+    } else if (route?.type === 'time') {
+        const [year, month] = route.month.split('-').map(Number);
+        await switchToTimeline(year, month);
+    }
+
+    // Handle browser back/forward navigation
+    window.addEventListener('popstate', async () => {
+        const popRoute = getCurrentRoute();
+        if (popRoute?.type === 'folder') {
+            switchToFolders();
+            appState.selectedFolderId = popRoute.id;
+            folderPanel.setSelected(popRoute.id);
+            await photoGridPanel.loadFolder(popRoute.id, popRoute.id);
+        } else if (popRoute?.type === 'time') {
+            const [year, month] = popRoute.month.split('-').map(Number);
+            await switchToTimeline(year, month);
+        } else {
+            switchToFolders();
+            appState.selectedFolderId = null;
+            appState.selectedFolderName = null;
+            folderPanel.setSelected(null);
+            closeReviewMode();
+            photoGridPanel.clear();
+        }
+    });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
