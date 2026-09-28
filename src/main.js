@@ -4,6 +4,7 @@ import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
+import { buildFolderRoute, navigate, getCurrentRoute } from './lib/router.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
 
 const appState = {
@@ -141,6 +142,43 @@ async function onAuthenticated() {
     // Load folder tree
     await folderPanel.loadRoot();
 
+    // Restore folder from URL hash if present
+    const route = getCurrentRoute();
+    if (route.type === 'folder') {
+        const folder = folderPanel.findFolderById(route.folderId);
+        if (folder) {
+            await handleFolderClick(folder.id, folder.name, folder.driveId);
+        } else {
+            // Folder not found in the loaded root tree (e.g. lives in a not-yet-expanded subtree).
+            // We can restore cached photos but cannot enqueue a scan without a driveId.
+            // The user can navigate to the folder in the tree to trigger a scan.
+            appState.selectedFolderId = route.folderId;
+            appState.selectedFolderName = route.folderId;
+            await photoGridPanel.loadFolder(route.folderId, route.folderId);
+        }
+    }
+
+    // Wire popstate for Back/Forward
+    window.addEventListener('popstate', async () => {
+        const popRoute = getCurrentRoute();
+        if (popRoute.type === 'folder') {
+            const folder = folderPanel.findFolderById(popRoute.folderId);
+            if (folder) {
+                appState.selectedFolderId = folder.id;
+                appState.selectedFolderName = folder.name;
+                folderPanel.setSelected(folder.id);
+                closeReviewMode();
+                await photoGridPanel.loadFolder(folder.id, folder.name);
+            }
+        } else if (popRoute.type === 'none') {
+            appState.selectedFolderId = null;
+            appState.selectedFolderName = null;
+            folderPanel.setSelected(null);
+            closeReviewMode();
+            photoGridPanel.clear();
+        }
+    });
+
     // Resume any pending scan queue
     await scanEngine.start();
 
@@ -172,6 +210,7 @@ async function handleFolderClick(folderId, folderName, driveId) {
     appState.selectedFolderName = folderName;
     folderPanel.setSelected(folderId);
     closeReviewMode();
+    navigate(buildFolderRoute(folderId));
     await photoGridPanel.loadFolder(folderId, folderName);
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high');
 }

@@ -41,6 +41,18 @@ export class FolderPanel {
         this._rerender();
     }
 
+    findFolderById(folderId) {
+        for (const f of (this._rootFolders || [])) {
+            if (f.id === folderId) return { id: f.id, name: f.name, driveId: f.parentReference?.driveId };
+        }
+        for (const children of this._childFolders.values()) {
+            for (const f of children) {
+                if (f.id === folderId) return { id: f.id, name: f.name, driveId: f.parentReference?.driveId };
+            }
+        }
+        return null;
+    }
+
     async loadRoot() {
         try {
             const folders = await getRootFolders();
