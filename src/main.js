@@ -142,6 +142,41 @@ async function onAuthenticated() {
     // Load folder tree
     await folderPanel.loadRoot();
 
+    // Restore folder from URL hash if present
+    const route = getCurrentRoute();
+    if (route.type === 'folder') {
+        const folder = folderPanel.findFolderById(route.folderId);
+        if (folder) {
+            await handleFolderClick(folder.id, folder.name, folder.driveId);
+        } else {
+            // Folder not in loaded tree (may be in a collapsed subtree) — load by ID with placeholder label
+            appState.selectedFolderId = route.folderId;
+            appState.selectedFolderName = route.folderId;
+            await photoGridPanel.loadFolder(route.folderId, route.folderId);
+        }
+    }
+
+    // Wire popstate for Back/Forward
+    window.addEventListener('popstate', async () => {
+        const popRoute = getCurrentRoute();
+        if (popRoute.type === 'folder') {
+            const folder = folderPanel.findFolderById(popRoute.folderId);
+            if (folder) {
+                appState.selectedFolderId = folder.id;
+                appState.selectedFolderName = folder.name;
+                folderPanel.setSelected(folder.id);
+                closeReviewMode();
+                await photoGridPanel.loadFolder(folder.id, folder.name);
+            }
+        } else if (popRoute.type === 'none') {
+            appState.selectedFolderId = null;
+            appState.selectedFolderName = null;
+            folderPanel.setSelected(null);
+            closeReviewMode();
+            photoGridPanel.clear();
+        }
+    });
+
     // Resume any pending scan queue
     await scanEngine.start();
 

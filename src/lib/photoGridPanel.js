@@ -14,6 +14,11 @@ export class PhotoGridPanel {
         this._folderName = null;
     }
 
+    clear() {
+        this._headerEl.textContent = '';
+        this._listEl.innerHTML = '';
+    }
+
     async loadFolder(folderId, folderName) {
         this._folderId = folderId;
         this._folderName = folderName;
