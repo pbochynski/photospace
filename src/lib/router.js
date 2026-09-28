@@ -21,6 +21,7 @@ export function buildFolderRoute(folderId) {
 }
 
 export function navigate(hash) {
+    if (window.location.hash === hash) return;
     history.pushState({}, '', hash);
 }
 

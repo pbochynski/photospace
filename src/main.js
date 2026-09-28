@@ -4,7 +4,7 @@ import { FolderPanel } from './lib/folderPanel.js';
 import { PhotoGridPanel } from './lib/photoGridPanel.js';
 import { ReviewGrid } from './lib/reviewGrid.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
-import { buildFolderRoute, navigate, getCurrentRoute, parseRoute } from './lib/router.js';
+import { buildFolderRoute, navigate, getCurrentRoute } from './lib/router.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
 
 const appState = {
@@ -149,7 +149,9 @@ async function onAuthenticated() {
         if (folder) {
             await handleFolderClick(folder.id, folder.name, folder.driveId);
         } else {
-            // Folder not in loaded tree (may be in a collapsed subtree) — load by ID with placeholder label
+            // Folder not found in the loaded root tree (e.g. lives in a not-yet-expanded subtree).
+            // We can restore cached photos but cannot enqueue a scan without a driveId.
+            // The user can navigate to the folder in the tree to trigger a scan.
             appState.selectedFolderId = route.folderId;
             appState.selectedFolderName = route.folderId;
             await photoGridPanel.loadFolder(route.folderId, route.folderId);

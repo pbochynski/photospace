@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { parseRoute, buildFolderRoute } from '../lib/router.js';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { parseRoute, buildFolderRoute, navigate } from '../lib/router.js';
 
 describe('parseRoute', () => {
     it('parses a folder route', () => {
@@ -26,5 +27,29 @@ describe('parseRoute', () => {
 describe('buildFolderRoute', () => {
     it('builds the correct hash string', () => {
         expect(buildFolderRoute('01ABC123')).toBe('#/folder/01ABC123');
+    });
+});
+
+describe('navigate', () => {
+    let pushStateSpy;
+
+    beforeEach(() => {
+        pushStateSpy = vi.spyOn(history, 'pushState');
+    });
+
+    afterEach(() => {
+        pushStateSpy.mockRestore();
+    });
+
+    it('calls pushState when hash differs from current location', () => {
+        window.location.hash = '#/folder/OLD';
+        navigate('#/folder/NEW');
+        expect(pushStateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call pushState when hash already matches current location', () => {
+        window.location.hash = '#/folder/01ABC123';
+        navigate('#/folder/01ABC123');
+        expect(pushStateSpy).not.toHaveBeenCalled();
     });
 });
