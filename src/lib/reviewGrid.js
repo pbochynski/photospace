@@ -221,6 +221,7 @@ export class ReviewGrid {
 
     _renderFullscreen(index) {
         const photo = this._photos[index];
+        const isSelected = this._series && this._selectedIds.has(photo.file_id);
 
         this._fsPhoto.innerHTML = `
             <button id="fs-close"
@@ -230,6 +231,11 @@ export class ReviewGrid {
             <img src="/api/image/${photo.file_id}" style="max-width:100%;max-height:100%;object-fit:contain" />
             <button id="fs-next" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);border:none;color:white;font-size:28px;cursor:pointer;padding:8px 14px;border-radius:4px"
                 ${index === this._photos.length - 1 ? 'disabled' : ''}>›</button>
+            ${this._series ? `
+            <div id="fs-checkbox" class="fs-checkbox ${isSelected ? 'fs-checkbox--selected' : ''}" title="${isSelected ? 'Deselect' : 'Select for deletion'}">
+                ${isSelected ? '<span class="fs-checkbox__check">✓</span>' : ''}
+            </div>
+            ` : ''}
         `;
 
         this._fsSidebar.innerHTML = `
@@ -239,11 +245,38 @@ export class ReviewGrid {
             </div>
         `;
 
+        if (this._series) {
+            this._fsPhoto.querySelector('#fs-checkbox')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._toggleSelect(photo.file_id);
+                const nowSelected = this._selectedIds.has(photo.file_id);
+                const cb = this._fsPhoto.querySelector('#fs-checkbox');
+                if (cb) {
+                    cb.className = 'fs-checkbox' + (nowSelected ? ' fs-checkbox--selected' : '');
+                    cb.title = nowSelected ? 'Deselect' : 'Select for deletion';
+                    cb.innerHTML = nowSelected ? '<span class="fs-checkbox__check">✓</span>' : '';
+                }
+            });
+        }
+
         document.getElementById('fs-prev')?.addEventListener('click', () => this._renderFullscreen(index - 1));
         document.getElementById('fs-next')?.addEventListener('click', () => this._renderFullscreen(index + 1));
         this._fsPhoto.querySelector('#fs-close')?.addEventListener('click', () => this.closeFullscreen());
 
         this._fsIndex = index;
+    }
+
+    toggleCurrentFullscreenSelection() {
+        if (this._fsIndex === null || !this._series) return;
+        const photo = this._photos[this._fsIndex];
+        this._toggleSelect(photo.file_id);
+        const nowSelected = this._selectedIds.has(photo.file_id);
+        const cb = this._fsPhoto.querySelector('#fs-checkbox');
+        if (cb) {
+            cb.className = 'fs-checkbox' + (nowSelected ? ' fs-checkbox--selected' : '');
+            cb.title = nowSelected ? 'Deselect' : 'Select for deletion';
+            cb.innerHTML = nowSelected ? '<span class="fs-checkbox__check">✓</span>' : '';
+        }
     }
 
     closeFullscreen() {

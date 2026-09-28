@@ -152,11 +152,17 @@ async function onAuthenticated() {
                 closeReviewMode();
             }
         }
-        if (e.key === 'ArrowLeft' && reviewGrid._fsIndex !== null && reviewGrid._fsIndex > 0) {
-            reviewGrid._renderFullscreen(reviewGrid._fsIndex - 1);
-        }
-        if (e.key === 'ArrowRight' && reviewGrid._fsIndex !== null && reviewGrid._fsIndex < reviewGrid._photos.length - 1) {
-            reviewGrid._renderFullscreen(reviewGrid._fsIndex + 1);
+        if (reviewGrid._fsIndex !== null) {
+            if (e.key === 'ArrowLeft' && reviewGrid._fsIndex > 0) {
+                reviewGrid._renderFullscreen(reviewGrid._fsIndex - 1);
+            }
+            if (e.key === 'ArrowRight' && reviewGrid._fsIndex < reviewGrid._photos.length - 1) {
+                reviewGrid._renderFullscreen(reviewGrid._fsIndex + 1);
+            }
+            if (e.key === ' ') {
+                e.preventDefault();
+                reviewGrid.toggleCurrentFullscreenSelection();
+            }
         }
     });
 }

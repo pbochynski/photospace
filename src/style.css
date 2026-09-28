@@ -291,7 +291,40 @@ body {
   padding: 12px;
 }
 
-/* Settings backdrop */
+/* Fullscreen selection checkbox — same look as thumb-cell__checkbox but larger */
+.fs-checkbox {
+  position: absolute;
+  top: 52px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255,255,255,0.8);
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+}
+.fullscreen-overlay__photo:hover .fs-checkbox,
+.fs-checkbox--selected {
+  opacity: 1;
+}
+.fs-checkbox--selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.fs-checkbox__check {
+  color: white;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+
 .settings-backdrop {
   position: fixed;
   inset: 0;
