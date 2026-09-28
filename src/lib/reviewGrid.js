@@ -1,4 +1,4 @@
-import { preselectSeries, loadSeriesState, saveSeriesState, togglePhotoKeep } from './reviewManager.js';
+import { saveSeriesState } from './reviewManager.js';
 
 export class ReviewGrid {
     constructor({ headerEl, gridEl, footerEl, fullscreenOverlay, fullscreenPhoto, fullscreenSidebar, onClose }) {
@@ -13,8 +13,7 @@ export class ReviewGrid {
         this._series = null;
         this._folderId = null;
         this._photos = [];
-        this._keptIds = [];
-        this._deletedIds = [];
+        this._selectedIds = new Set();
         this._fsIndex = null;
 
         this._fsOverlay.addEventListener('click', (e) => {
@@ -26,18 +25,7 @@ export class ReviewGrid {
         this._series = series;
         this._folderId = folderId;
         this._photos = [...series.photos];
-
-        const saved = await loadSeriesState(folderId, series.startTime);
-        if (saved) {
-            this._keptIds = saved.keptIds;
-            this._deletedIds = saved.deletedIds;
-        } else {
-            const preselect = await preselectSeries(series);
-            this._keptIds = preselect.keptIds;
-            this._deletedIds = preselect.deletedIds;
-            await saveSeriesState(folderId, series.startTime, this._keptIds, this._deletedIds);
-        }
-
+        this._selectedIds = new Set();
         this._render();
     }
 
@@ -48,101 +36,159 @@ export class ReviewGrid {
         this._headerEl.innerHTML = `
             <button id="btn-review-back" style="background:none;border:none;color:var(--color-text-muted);cursor:pointer;font-size:13px;padding:0;margin-right:10px">‹ back</button>
             <strong>${date} · ${this._series.photoCount} photos</strong>
-            <span style="color:#888;font-size:12px;margin-left:8px">${this._deletedIds.length} marked for deletion</span>
         `;
         this._headerEl.querySelector('#btn-review-back')?.addEventListener('click', () => this._onClose?.());
 
         this._gridEl.innerHTML = '';
+
+        const toolbar = document.createElement('div');
+        toolbar.className = 'review-toolbar';
+        toolbar.innerHTML = `
+            <button id="btn-select-all" class="btn-text">Select all</button>
+            <button id="btn-deselect-all" class="btn-text">Deselect all</button>
+            <button id="btn-invert" class="btn-text">Invert</button>
+        `;
+        toolbar.querySelector('#btn-select-all').addEventListener('click', () => this._selectAll());
+        toolbar.querySelector('#btn-deselect-all').addEventListener('click', () => this._deselectAll());
+        toolbar.querySelector('#btn-invert').addEventListener('click', () => this._invertSelection());
+        this._gridEl.appendChild(toolbar);
+
         const grid = document.createElement('div');
         grid.className = 'review-grid';
 
         this._photos.forEach((photo, i) => {
-            const isKept = this._keptIds.includes(photo.file_id);
-            const isDeleted = this._deletedIds.includes(photo.file_id);
+            const isSelected = this._selectedIds.has(photo.file_id);
             const cell = document.createElement('div');
-            cell.className = 'thumb-cell' +
-                (isKept ? ' thumb-cell--keep' : '') +
-                (isDeleted ? ' thumb-cell--delete' : '');
+            cell.className = 'thumb-cell' + (isSelected ? ' thumb-cell--selected' : '');
             cell.dataset.index = i;
 
-            cell.innerHTML = `
-                <img src="/api/thumb/${photo.file_id}" alt="" loading="lazy"
-                     onerror="this.style.background='#333';this.removeAttribute('src')" />
-                ${isKept ? '<span class="thumb-cell__star">★</span>' : ''}
-                <div class="thumb-cell__overlay">
-                    <button class="thumb-cell__toggle-btn" title="${isKept ? 'Mark for deletion' : 'Keep'}">${isKept ? '★' : '✕'}</button>
-                </div>
-            `;
+            // Set initial aspect ratio from stored dimensions; update from image naturalWidth/Height on load
+            if (photo.width && photo.height) {
+                cell.style.setProperty('--aspect', photo.width / photo.height);
+            }
 
-            cell.addEventListener('click', (e) => {
-                if (e.target.closest('.thumb-cell__toggle-btn')) {
-                    this._toggleKeep(photo.file_id);
-                } else {
-                    this._openFullscreen(i);
+            const img = document.createElement('img');
+            img.src = `/api/thumb/${photo.file_id}`;
+            img.alt = '';
+            img.loading = 'lazy';
+            img.onerror = function() { this.style.background = '#333'; this.removeAttribute('src'); };
+            img.onload = function() {
+                if (this.naturalWidth && this.naturalHeight) {
+                    cell.style.setProperty('--aspect', this.naturalWidth / this.naturalHeight);
                 }
+            };
+
+            const checkbox = document.createElement('div');
+            checkbox.className = 'thumb-cell__checkbox';
+            checkbox.title = isSelected ? 'Deselect' : 'Select for deletion';
+            if (isSelected) {
+                const check = document.createElement('span');
+                check.className = 'thumb-cell__check';
+                check.textContent = '✓';
+                checkbox.appendChild(check);
+            }
+
+            cell.appendChild(img);
+            cell.appendChild(checkbox);
+
+            checkbox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this._toggleSelect(photo.file_id);
             });
 
-            cell.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                this._toggleKeep(photo.file_id);
-            });
+            cell.addEventListener('click', () => this._openFullscreen(i));
 
             grid.appendChild(cell);
         });
 
         this._gridEl.appendChild(grid);
-        this._renderFooter();
+        this._renderActionBar();
     }
 
-    _renderFooter() {
-        const deleteCount = this._deletedIds.length;
+    _renderActionBar() {
+        const count = this._selectedIds.size;
+        if (count === 0) {
+            this._footerEl.innerHTML = '';
+            return;
+        }
         this._footerEl.innerHTML = `
-            <button id="btn-delete-series" class="btn-delete" ${deleteCount === 0 ? 'disabled' : ''}>
-                🗑 Delete ${deleteCount} photo${deleteCount !== 1 ? 's' : ''}
-            </button>
-            <div style="display:flex;gap:12px;margin-top:6px">
-                <button id="btn-select-all" class="btn-text">Deselect all</button>
-                <button id="btn-deselect-all" class="btn-text">Keep all</button>
+            <div class="action-bar">
+                <div style="flex:1"></div>
+                <button id="btn-delete-selected" class="btn-delete">
+                    🗑 Delete ${count} photo${count !== 1 ? 's' : ''}
+                </button>
             </div>
         `;
-
-        this._footerEl.querySelector('#btn-delete-series')?.addEventListener('click', () => this._confirmDelete());
-        this._footerEl.querySelector('#btn-select-all')?.addEventListener('click', () => this._markAllDelete());
-        this._footerEl.querySelector('#btn-deselect-all')?.addEventListener('click', () => this._markAllKeep());
+        this._footerEl.querySelector('#btn-delete-selected')?.addEventListener('click', () => this._confirmDelete());
     }
 
-    async _toggleKeep(fileId) {
-        if (!this._series) return;
-        const result = await togglePhotoKeep(this._folderId, this._series.startTime, fileId, this._keptIds, this._deletedIds);
-        this._keptIds = result.keptIds;
-        this._deletedIds = result.deletedIds;
-        this._render();
-        if (this._fsIndex !== null) this._renderFullscreen(this._fsIndex);
+    _toggleSelect(fileId) {
+        const nowSelected = !this._selectedIds.has(fileId);
+        if (nowSelected) {
+            this._selectedIds.add(fileId);
+        } else {
+            this._selectedIds.delete(fileId);
+        }
+
+        // Update only the affected cell — no full re-render
+        const index = this._photos.findIndex(p => p.file_id === fileId);
+        if (index !== -1) {
+            const cell = this._gridEl.querySelector(`[data-index="${index}"]`);
+            if (cell) {
+                cell.classList.toggle('thumb-cell--selected', nowSelected);
+                const checkbox = cell.querySelector('.thumb-cell__checkbox');
+                if (checkbox) {
+                    checkbox.title = nowSelected ? 'Deselect' : 'Select for deletion';
+                    checkbox.innerHTML = nowSelected ? '<span class="thumb-cell__check">✓</span>' : '';
+                }
+            }
+        }
+
+        this._renderActionBar();
     }
 
-    async _markAllDelete() {
-        if (!this._series) return;
-        this._keptIds = this._photos.slice(0, 1).map(p => p.file_id);
-        this._deletedIds = this._photos.slice(1).map(p => p.file_id);
-        await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);
-        this._render();
+    _selectAll() {
+        this._selectedIds = new Set(this._photos.map(p => p.file_id));
+        this._applySelectionToDOM();
     }
 
-    async _markAllKeep() {
-        if (!this._series) return;
-        this._keptIds = this._photos.map(p => p.file_id);
-        this._deletedIds = [];
-        await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);
-        this._render();
+    _deselectAll() {
+        this._selectedIds = new Set();
+        this._applySelectionToDOM();
+    }
+
+    _invertSelection() {
+        const next = new Set();
+        for (const photo of this._photos) {
+            if (!this._selectedIds.has(photo.file_id)) next.add(photo.file_id);
+        }
+        this._selectedIds = next;
+        this._applySelectionToDOM();
+    }
+
+    _applySelectionToDOM() {
+        this._photos.forEach((photo, i) => {
+            const isSelected = this._selectedIds.has(photo.file_id);
+            const cell = this._gridEl.querySelector(`[data-index="${i}"]`);
+            if (!cell) return;
+            cell.classList.toggle('thumb-cell--selected', isSelected);
+            const checkbox = cell.querySelector('.thumb-cell__checkbox');
+            if (checkbox) {
+                checkbox.title = isSelected ? 'Deselect' : 'Select for deletion';
+                checkbox.innerHTML = isSelected ? '<span class="thumb-cell__check">✓</span>' : '';
+            }
+        });
+        this._renderActionBar();
     }
 
     async _confirmDelete() {
-        if (this._deletedIds.length === 0) return;
-        const confirmed = confirm(`Delete ${this._deletedIds.length} photos? This cannot be undone.`);
+        const count = this._selectedIds.size;
+        if (count === 0) return;
+        const confirmed = confirm(`Delete ${count} photo${count !== 1 ? 's' : ''}? This cannot be undone.`);
         if (!confirmed) return;
         try {
             const { deletePhotoFromOneDrive } = await import('./photoDeleteManager.js');
-            const idsToDelete = [...this._deletedIds];
+            const idsToDelete = [...this._selectedIds];
             const deletedSuccessfully = [];
             let lastError = null;
             for (const fileId of idsToDelete) {
@@ -155,10 +201,8 @@ export class ReviewGrid {
             }
             if (deletedSuccessfully.length > 0) {
                 this._series.photos = this._series.photos.filter(p => !deletedSuccessfully.includes(p.file_id));
-                this._deletedIds = this._deletedIds.filter(id => !deletedSuccessfully.includes(id));
-                this._keptIds = this._series.photos.map(p => p.file_id);
-                await saveSeriesState(this._folderId, this._series.startTime, this._keptIds, this._deletedIds);
-                this._photos = [...this._series.photos].sort((a, b) => (b.quality_score || 0) - (a.quality_score || 0));
+                this._photos = [...this._series.photos];
+                for (const id of deletedSuccessfully) this._selectedIds.delete(id);
                 this._render();
             }
             if (lastError) {
@@ -177,7 +221,6 @@ export class ReviewGrid {
 
     _renderFullscreen(index) {
         const photo = this._photos[index];
-        const isKept = this._keptIds.includes(photo.file_id);
 
         this._fsPhoto.innerHTML = `
             <button id="fs-close"
@@ -194,14 +237,7 @@ export class ReviewGrid {
                 <div style="color:#888;font-size:11px;margin-bottom:2px">Photo ${index + 1} of ${this._photos.length}</div>
                 <div style="font-size:12px;word-break:break-all">${this._escapeHtml(photo.name)}</div>
             </div>
-            ${this._series ? `
-            <button id="fs-toggle-keep"
-                style="width:100%;padding:8px;background:${isKept ? 'var(--color-keep)' : 'var(--color-delete)'};border:none;color:white;border-radius:4px;cursor:pointer;font-size:13px">
-                ${isKept ? '★ Kept — click to mark for deletion' : '✕ Marked for deletion — click to keep'}
-            </button>
-            ` : ''}
         `;
-        this._fsSidebar.querySelector('#fs-toggle-keep')?.addEventListener('click', () => this._toggleKeep(photo.file_id));
 
         document.getElementById('fs-prev')?.addEventListener('click', () => this._renderFullscreen(index - 1));
         document.getElementById('fs-next')?.addEventListener('click', () => this._renderFullscreen(index + 1));
@@ -222,8 +258,7 @@ export class ReviewGrid {
 
     openSinglePhoto(photo) {
         this._photos = [photo];
-        this._keptIds = [];
-        this._deletedIds = [];
+        this._selectedIds = new Set();
         this._series = null;
         this._folderId = null;
         this._openFullscreen(0);

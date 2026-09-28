@@ -71,6 +71,8 @@ export async function fetchPhotosFromSingleFolder(scanId, folderId = 'root') {
                     thumbnail_url: null,
                     scan_id: scanId,
                     item_type: 'photo',
+                    width: item.image?.width ?? null,
+                    height: item.image?.height ?? null,
                 });
                 photoCount++;
             }

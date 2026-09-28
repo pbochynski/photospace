@@ -97,7 +97,6 @@ Only pure logic functions with no external dependencies:
 | File | Functions covered |
 |------|------------------|
 | `src/lib/analysis.js` | `findPhotoSeries`, `pickBestPhotoByQuality` |
-| `src/lib/reviewManager.js` | `classifySeries`, `preselectSeries` |
 
 ### What is NOT yet tested
 
