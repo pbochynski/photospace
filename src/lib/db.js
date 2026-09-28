@@ -120,6 +120,37 @@ export class PhotoDB {
         });
     }
 
+    async getPhotosByMonth(year, month) {
+        const pad = (n) => String(n).padStart(2, '0');
+        const lower = `${year}-${pad(month)}-01T00:00:00.000Z`;
+        const upper = `${year}-${pad(month)}-31T23:59:59.999Z`;
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readonly');
+            const index = tx.objectStore('photos').index('by_timestamp');
+            const range = IDBKeyRange.bound(lower, upper);
+            const request = index.getAll(range);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+    }
+
+    async rebuildMonthIndex() {
+        const index = {};
+        const photos = await new Promise((resolve, reject) => {
+            const tx = this.db.transaction('photos', 'readonly');
+            const request = tx.objectStore('photos').getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (e) => reject(e.target.error);
+        });
+        for (const photo of photos) {
+            if (!photo.photo_taken_ts) continue;
+            const key = photo.photo_taken_ts.slice(0, 7); // "YYYY-MM"
+            index[key] = (index[key] || 0) + 1;
+        }
+        await this.setSetting('monthIndex', index);
+        return index;
+    }
+
     async getSetting(key) {
         return new Promise((resolve, reject) => {
             const tx = this.db.transaction('settings', 'readonly');
