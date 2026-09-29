@@ -205,7 +205,7 @@ async function onAuthenticated() {
         if (folder) {
             await handleFolderClick(folder.id, folder.name, folder.driveId);
         } else {
-            // Folder not in loaded root tree — look up persisted name/driveId
+            // Folder not in loaded root tree — look up persisted name/driveId and expand tree
             const folderNames = await db.getSetting('folderNames');
             const saved = folderNames?.[route.folderId];
             const name = saved?.name || route.folderId;
@@ -215,6 +215,8 @@ async function onAuthenticated() {
             folderPanel.setSelected(route.folderId);
             await photoGridPanel.loadFolder(route.folderId, name);
             if (driveId) await scanEngine.enqueueFolder(route.folderId, name, driveId, 'high');
+            // Expand tree in background (don't block photo load)
+            folderPanel.expandToFolder(route.folderId).catch(console.error);
         }
     } else if (route.type === 'time') {
         await switchToTimeline(route.year, route.month);
@@ -277,9 +279,9 @@ async function handleFolderClick(folderId, folderName, driveId) {
     folderPanel.setSelected(folderId);
     closeReviewMode();
     navigate(buildFolderRoute(folderId));
-    // Persist name+driveId so boot-time restore can use them without a Graph call
+    // Persist name+driveId+parentId so boot-time restore can expand the tree
     db.getSetting('folderNames').then(names => {
-        const updated = { ...(names || {}), [folderId]: { name: folderName, driveId } };
+        const updated = { ...(names || {}), [folderId]: { name: folderName, driveId, parentId: folderPanel._parentOf.get(folderId) ?? null } };
         db.setSetting('folderNames', updated);
     });
     await photoGridPanel.loadFolder(folderId, folderName);

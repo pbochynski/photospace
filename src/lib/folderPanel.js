@@ -13,6 +13,7 @@ export class FolderPanel {
         this._folderStatus = new Map();
         this._selectedFolderId = null;
         this._childFolders = new Map();
+        this._parentOf = new Map(); // childId → parentId (null for root)
         this._folderMeta = {};
         this._contextMenu = document.getElementById('folder-context-menu');
         this._ctxScanFolder = document.getElementById('ctx-scan-folder');
@@ -59,6 +60,7 @@ export class FolderPanel {
             this._rootFolders = folders;
             this._folderMeta = (await db.getSetting('folderMeta')) || {};
             folders.forEach(folder => {
+                this._parentOf.set(folder.id, null);
                 const meta = this._folderMeta[folder.id];
                 if (meta) {
                     const status = (Date.now() - meta.lastScannedAt > STALE_MS) ? 'stale' : 'scanned';
@@ -71,6 +73,72 @@ export class FolderPanel {
         }
     }
 
+    // Expand the tree to reveal folderId, loading parent levels as needed.
+    // Returns true if the folder was found, false if it doesn't exist in OneDrive.
+    async expandToFolder(folderId) {
+        // Already known — just expand ancestors
+        if (this._parentOf.has(folderId)) {
+            await this._expandAncestors(folderId);
+            return true;
+        }
+        // Unknown — fetch via parentReference.id stored in folderNames setting
+        const folderNames = await db.getSetting('folderNames');
+        const saved = folderNames?.[folderId];
+        if (!saved?.parentId) return false;
+
+        // Walk up: load each ancestor level until we reach an already-known parent
+        const chain = [folderId];
+        let cur = saved.parentId;
+        while (cur && !this._parentOf.has(cur)) {
+            const parentSaved = folderNames?.[cur];
+            if (!parentSaved?.parentId) break;
+            chain.push(cur);
+            cur = parentSaved.parentId;
+        }
+        chain.push(cur); // the known anchor
+
+        // Expand from the anchor down the chain
+        for (let i = chain.length - 2; i >= 0; i--) {
+            const parentId = chain[i + 1];
+            if (!this._childFolders.has(parentId)) {
+                await this._loadChildren(parentId);
+            }
+            this._expandedFolders.add(parentId);
+        }
+        this._rerender();
+        return this._parentOf.has(folderId);
+    }
+
+    async _expandAncestors(folderId) {
+        const ancestors = [];
+        let cur = this._parentOf.get(folderId);
+        while (cur !== undefined && cur !== null) {
+            ancestors.unshift(cur);
+            cur = this._parentOf.get(cur);
+        }
+        for (const ancestorId of ancestors) {
+            if (!this._childFolders.has(ancestorId)) {
+                await this._loadChildren(ancestorId);
+            }
+            this._expandedFolders.add(ancestorId);
+        }
+        this._rerender();
+    }
+
+    async _loadChildren(folderId) {
+        const children = await getFolderChildren(folderId);
+        children.forEach(child => {
+            this._parentOf.set(child.id, folderId);
+            const meta = this._folderMeta[child.id];
+            if (meta) {
+                const status = (Date.now() - meta.lastScannedAt > STALE_MS) ? 'stale' : 'scanned';
+                this._folderStatus.set(child.id, { status, photoCount: meta.photoCount });
+            }
+        });
+        this._childFolders.set(folderId, children);
+        return children;
+    }
+
     async _expandFolder(folderId) {
         if (this._expandedFolders.has(folderId)) {
             this._expandedFolders.delete(folderId);
@@ -79,15 +147,7 @@ export class FolderPanel {
         }
         this._expandedFolders.add(folderId);
         if (!this._childFolders.has(folderId)) {
-            const children = await getFolderChildren(folderId);
-            children.forEach(child => {
-                const meta = this._folderMeta[child.id];
-                if (meta) {
-                    const status = (Date.now() - meta.lastScannedAt > STALE_MS) ? 'stale' : 'scanned';
-                    this._folderStatus.set(child.id, { status, photoCount: meta.photoCount });
-                }
-            });
-            this._childFolders.set(folderId, children);
+            const children = await this._loadChildren(folderId);
             if (children.length === 0) {
                 this._expandedFolders.delete(folderId);
             }
