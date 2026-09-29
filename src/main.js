@@ -318,6 +318,7 @@ function openReviewMode() {
     if (appState.viewMode === 'timeline') {
         appState.reviewReturnMode = 'timeline';
         appColumns.classList.remove('app-columns--timeline');
+        appColumns.classList.add('app-columns--review-from-timeline');
         panelTimeline.hidden = true;
         btnTimeline.classList.remove('mode-btn--active');
         btnFolders.classList.add('mode-btn--active');
@@ -330,6 +331,7 @@ function openReviewMode() {
 
 function closeReviewMode() {
     appColumns.classList.remove('app-columns--review-open');
+    appColumns.classList.remove('app-columns--review-from-timeline');
     if (appState.reviewReturnMode === 'timeline' && appState.lastTimelineYear) {
         switchToTimeline(appState.lastTimelineYear, appState.lastTimelineMonth).catch(console.error);
     }

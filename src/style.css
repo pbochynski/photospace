@@ -96,6 +96,8 @@ body {
 
 .app-columns--review-open .panel--series { display: none; }
 .app-columns--review-open .panel--review { display: flex; flex: 1; width: auto; }
+/* When review was opened from timeline, also hide the folder panel */
+.app-columns--review-from-timeline .panel--folders { display: none; }
 
 .panel__header {
   padding: 8px 12px;
