@@ -18,6 +18,14 @@ export async function getSeriesSettings() {
     return { minGroupSize, maxTimeGap };
 }
 
+export async function getPhotoViewSettings() {
+    const [viewMode, thumbRowHeight] = await Promise.all([
+        getSetting('photoViewMode', 'series'),
+        getSetting('thumbRowHeight', 160),
+    ]);
+    return { viewMode, thumbRowHeight };
+}
+
 export async function getDateFilter() {
     const [enabled, from, to] = await Promise.all([
         getSetting('dateEnabled', false),

@@ -6,17 +6,20 @@ import { buildTimeRoute, navigate } from './router.js';
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 export class TimelinePanel {
-    constructor({ scrollEl, scrubberEl, onSeriesClick, onPhotoClick }) {
+    constructor({ scrollEl, scrubberEl, onSeriesClick, onPhotoClick, onViewModeChange, initialViewMode = 'series' }) {
         this._scrollEl = scrollEl;
         this._scrubberEl = scrubberEl;
         this._onSeriesClick = onSeriesClick;
         this._onPhotoClick = onPhotoClick;
+        this._onViewModeChange = onViewModeChange;
+        this._viewMode = initialViewMode;
         this._monthIndex = {};
         this._renderedMonths = new Set(); // "YYYY-MM" keys currently in DOM
         this._loadedPhotos = new Map();   // "YYYY-MM" → Photo[]
         this._observer = null;
         this._currentYear = null;
         this._currentMonth = null;
+        this._scrollEl.classList.add('timeline-scroll--with-toolbar');
     }
 
     getLoadedPhotos() {
@@ -25,12 +28,19 @@ export class TimelinePanel {
         return all.sort((a, b) => (a.photo_taken_ts || '') < (b.photo_taken_ts || '') ? -1 : 1);
     }
 
+    setViewMode(mode) {
+        this._viewMode = mode;
+        if (this._currentYear !== null) return this.show(this._currentYear, this._currentMonth);
+    }
+
     async show(year, month) {
         this._currentYear = year;
         this._currentMonth = month;
         this._scrollEl.innerHTML = '';
         this._renderedMonths.clear();
         this._loadedPhotos.clear();
+
+        this._scrollEl.appendChild(this._buildToolbar());
 
         // Load month index for scrubber
         this._monthIndex = (await db.getSetting('monthIndex')) || {};
@@ -54,6 +64,37 @@ export class TimelinePanel {
     }
 
     // ── private ──────────────────────────────────────────────────────────────
+
+    _buildToolbar() {
+        const bar = document.createElement('div');
+        bar.className = 'timeline-toolbar';
+
+        const toggle = document.createElement('div');
+        toggle.className = 'view-toggle';
+
+        const btnSeries = document.createElement('button');
+        btnSeries.className = 'view-toggle__btn' + (this._viewMode === 'series' ? ' view-toggle__btn--active' : '');
+        btnSeries.textContent = 'Series';
+
+        const btnAll = document.createElement('button');
+        btnAll.className = 'view-toggle__btn' + (this._viewMode === 'allphotos' ? ' view-toggle__btn--active' : '');
+        btnAll.textContent = 'All photos';
+
+        btnSeries.addEventListener('click', () => this._handleToggle('series'));
+        btnAll.addEventListener('click', () => this._handleToggle('allphotos'));
+
+        toggle.appendChild(btnSeries);
+        toggle.appendChild(btnAll);
+        bar.appendChild(toggle);
+        return bar;
+    }
+
+    _handleToggle(mode) {
+        if (this._viewMode === mode) return;
+        this._viewMode = mode;
+        this._onViewModeChange?.(mode);
+        this.show(this._currentYear, this._currentMonth);
+    }
 
     _buildSpacers(targetYear, targetMonth) {
         const months = Object.keys(this._monthIndex)
@@ -221,21 +262,53 @@ export class TimelinePanel {
         header.textContent = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
         wrap.appendChild(header);
 
-        const thumbsRow = document.createElement('div');
-        thumbsRow.className = 'standalone-photos'; // reuse existing CSS
-        wrap.appendChild(thumbsRow);
-
-        for (const item of items) {
-            if (item.type === 'series') {
-                thumbsRow.appendChild(this._renderSeriesThumb(item.series));
-            } else {
-                // item.type === 'standalone'
-                for (const photo of item.photos) {
-                    thumbsRow.appendChild(this._renderThumb(photo));
+        if (this._viewMode === 'allphotos') {
+            const grid = document.createElement('div');
+            grid.className = 'review-grid';
+            for (const item of items) {
+                const photos = item.type === 'series' ? item.series.photos : item.photos;
+                for (const photo of photos) {
+                    grid.appendChild(this._renderAllPhotosCell(photo));
+                }
+            }
+            wrap.appendChild(grid);
+        } else {
+            const thumbsRow = document.createElement('div');
+            thumbsRow.className = 'standalone-photos';
+            wrap.appendChild(thumbsRow);
+            for (const item of items) {
+                if (item.type === 'series') {
+                    thumbsRow.appendChild(this._renderSeriesThumb(item.series));
+                } else {
+                    for (const photo of item.photos) {
+                        thumbsRow.appendChild(this._renderThumb(photo));
+                    }
                 }
             }
         }
+
         return wrap;
+    }
+
+    _renderAllPhotosCell(photo) {
+        const cell = document.createElement('div');
+        cell.className = 'thumb-cell thumb-cell--sm' + (photo.item_type === 'video' ? ' thumb-cell--video' : '');
+        if (photo.width && photo.height) {
+            cell.style.setProperty('--aspect', photo.width / photo.height);
+        }
+        const img = document.createElement('img');
+        img.src = `/api/thumb/${photo.file_id}`;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = function() { this.style.background = '#333'; this.removeAttribute('src'); };
+        img.onload = () => {
+            if (img.naturalWidth && img.naturalHeight) {
+                cell.style.setProperty('--aspect', img.naturalWidth / img.naturalHeight);
+            }
+        };
+        cell.appendChild(img);
+        cell.addEventListener('click', () => this._onPhotoClick(photo, null));
+        return cell;
     }
 
     _renderSeriesThumb(series) {

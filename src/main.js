@@ -7,6 +7,7 @@ import { TimelinePanel } from './lib/timelinePanel.js';
 import { getAuthToken, login, logout, msalInstance } from './lib/auth.js';
 import { buildFolderRoute, navigate, getCurrentRoute, buildTimeRoute } from './lib/router.js';
 import { SettingsDrawer } from './lib/settingsDrawer.js';
+import { getPhotoViewSettings, getSetting, setSetting } from './lib/settingsManager.js';
 
 const appState = {
     authenticated: false,
@@ -135,6 +136,9 @@ async function onAuthenticated() {
     appState.authenticated = true;
     btnLogout.hidden = false;
 
+    const { viewMode: initialViewMode, thumbRowHeight } = await getPhotoViewSettings();
+    document.documentElement.style.setProperty('--thumb-row-height', thumbRowHeight + 'px');
+
     folderPanel = new FolderPanel(document.getElementById('folder-tree'), {
         onFolderClick: handleFolderClick,
         onPromoteClick: handlePromoteClick,
@@ -142,10 +146,12 @@ async function onAuthenticated() {
     });
 
     photoGridPanel = new PhotoGridPanel({
-        headerEl:        document.getElementById('series-header'),
-        listEl:          document.getElementById('series-list'),
-        onSeriesClick:   handleSeriesClick,
-        onPhotoClick:    handlePhotoClick,
+        headerEl:          document.getElementById('series-header'),
+        listEl:            document.getElementById('series-list'),
+        onSeriesClick:     handleSeriesClick,
+        onPhotoClick:      handlePhotoClick,
+        initialViewMode,
+        onViewModeChange:  handlePhotoViewModeChange,
     });
 
     reviewGrid = new ReviewGrid({
@@ -159,14 +165,18 @@ async function onAuthenticated() {
     });
 
     timelinePanel = new TimelinePanel({
-        scrollEl:   document.getElementById('timeline-scroll'),
-        scrubberEl: document.getElementById('timeline-scrubber'),
-        onSeriesClick: handleSeriesClick,
-        onPhotoClick:  handlePhotoClick,
+        scrollEl:          document.getElementById('timeline-scroll'),
+        scrubberEl:        document.getElementById('timeline-scrubber'),
+        onSeriesClick:     handleSeriesClick,
+        onPhotoClick:      handlePhotoClick,
+        initialViewMode,
+        onViewModeChange:  handlePhotoViewModeChange,
     });
 
     settingsDrawerPanel = new SettingsDrawer(document.getElementById('settings-content'), {
         onSettingsChange: async () => {
+            const h = await getSetting('thumbRowHeight', 160);
+            document.documentElement.style.setProperty('--thumb-row-height', h + 'px');
             if (appState.selectedFolderId) {
                 settingsDrawerPanel.setCurrentFolder(appState.selectedFolderId);
                 await photoGridPanel.loadFolder(appState.selectedFolderId, appState.selectedFolderName);
@@ -294,6 +304,13 @@ async function handlePromoteClick(folderId, folderName, driveId) {
 
 async function handleRecursiveScanClick(folderId, folderName, driveId) {
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high', true);
+}
+
+async function handlePhotoViewModeChange(mode) {
+    await setSetting('photoViewMode', mode);
+    // Sync the inactive panel's view mode so it starts in the right state when switched to
+    photoGridPanel._viewMode = mode;
+    timelinePanel._viewMode = mode;
 }
 
 function openReviewMode() {

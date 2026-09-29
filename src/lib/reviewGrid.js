@@ -331,9 +331,10 @@ export class ReviewGrid {
         `;
 
         this._fsSidebar.innerHTML = `
-            <div style="margin-bottom:12px">
-                <div style="color:#888;font-size:11px;margin-bottom:2px">Photo ${index + 1} of ${this._photos.length}</div>
-                <div style="font-size:12px;word-break:break-all">${this._escapeHtml(photo.name)}</div>
+            <div style="margin-bottom:16px">
+                <div style="color:#888;font-size:11px;margin-bottom:4px">${photo.item_type === 'video' ? 'Video' : 'Photo'} ${index + 1} of ${this._photos.length}</div>
+                <div style="font-size:13px;font-weight:600;word-break:break-all;margin-bottom:12px">${this._escapeHtml(photo.name)}</div>
+                ${this._renderPhotoMetadata(photo)}
             </div>
             <button id="fs-delete" class="btn-delete" style="width:100%">🗑 Delete this photo</button>
         `;
@@ -359,6 +360,53 @@ export class ReviewGrid {
         this._fsPhoto.querySelector('#fs-close')?.addEventListener('click', () => this.closeFullscreen());
 
         this._fsIndex = index;
+    }
+
+    _renderPhotoMetadata(photo) {
+        const rows = [];
+
+        const takenTs = photo.photo_taken_ts;
+        if (takenTs) {
+            const d = new Date(takenTs);
+            if (!isNaN(d)) {
+                rows.push(['Date taken', d.toLocaleString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                })]);
+            }
+        }
+
+        const w = photo.item_type === 'video' ? photo.video_width : photo.width;
+        const h = photo.item_type === 'video' ? photo.video_height : photo.height;
+        if (w && h) rows.push(['Dimensions', `${w} × ${h}`]);
+
+        if (photo.size) {
+            const mb = photo.size / (1024 * 1024);
+            rows.push(['File size', mb >= 1 ? `${mb.toFixed(1)} MB` : `${(photo.size / 1024).toFixed(0)} KB`]);
+        }
+
+        if (photo.item_type === 'video' && photo.video_duration_ms) {
+            const secs = Math.round(photo.video_duration_ms / 1000);
+            const m = Math.floor(secs / 60);
+            const s = secs % 60;
+            rows.push(['Duration', `${m}:${String(s).padStart(2, '0')}`]);
+        }
+
+        if (photo.path) {
+            // Strip /drive/root: prefix for readability
+            const display = decodeURIComponent(photo.path.replace(/^\/drive\/root:/, '') || '/');
+            rows.push(['Path', display]);
+        }
+
+        if (!rows.length) return '';
+
+        const rowHtml = rows.map(([label, value]) => `
+            <div style="margin-bottom:8px">
+                <div style="color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px">${label}</div>
+                <div style="font-size:12px;word-break:break-all">${this._escapeHtml(String(value))}</div>
+            </div>`).join('');
+
+        return `<div style="border-top:1px solid #333;padding-top:12px">${rowHtml}</div>`;
     }
 
     async _deleteCurrentPhoto() {

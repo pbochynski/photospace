@@ -3,11 +3,13 @@ import { getSeriesSettings } from './settingsManager.js';
 import { db } from './db.js';
 
 export class PhotoGridPanel {
-    constructor({ headerEl, listEl, onSeriesClick, onPhotoClick }) {
+    constructor({ headerEl, listEl, onSeriesClick, onPhotoClick, onViewModeChange, initialViewMode = 'series' }) {
         this._headerEl = headerEl;
         this._listEl = listEl;
         this._onSeriesClick = onSeriesClick;
         this._onPhotoClick = onPhotoClick;
+        this._onViewModeChange = onViewModeChange;
+        this._viewMode = initialViewMode;
         this._series = [];
         this._photos = [];
         this._folderId = null;
@@ -15,22 +17,27 @@ export class PhotoGridPanel {
     }
 
     clear() {
-        this._headerEl.textContent = '';
+        this._headerEl.innerHTML = '';
         this._listEl.innerHTML = '';
+    }
+
+    setViewMode(mode) {
+        this._viewMode = mode;
+        if (this._folderId !== null) this._render().catch(console.error);
     }
 
     async loadFolder(folderId, folderName) {
         this._folderId = folderId;
         this._folderName = folderName;
         this._series = [];
-        this._headerEl.textContent = `Loading ${folderName}…`;
+        this._headerEl.innerHTML = `Loading ${folderName}…`;
         this._listEl.innerHTML = '';
 
         const photos = await db.getPhotosByFolderId(folderId);
         if (photos.length === 0) {
             this._photos = [];
             this._listEl.innerHTML = '<div style="padding:16px;color:#888">No photos scanned yet. Click ↑ to scan this folder.</div>';
-            this._headerEl.textContent = folderName;
+            this._renderHeader();
             return;
         }
 
@@ -47,13 +54,58 @@ export class PhotoGridPanel {
 
     async _render() {
         this._listEl.innerHTML = '';
-
-        if (this._series.length > 0) {
-            this._headerEl.textContent = `${this._photos.length} photos · ${this._series.length} series`;
+        this._renderHeader();
+        if (this._viewMode === 'allphotos') {
+            this._renderAllPhotos();
         } else {
-            this._headerEl.textContent = `${this._photos.length} photos`;
+            await this._renderSeriesView();
         }
+    }
 
+    _renderHeader() {
+        this._headerEl.innerHTML = '';
+        this._headerEl.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+        const info = document.createElement('span');
+        info.style.flex = '1';
+        if (this._folderId && this._photos.length > 0) {
+            const seriesInfo = this._series.length > 0 ? ` · ${this._series.length} series` : '';
+            info.textContent = `${this._photos.length} photos${seriesInfo}`;
+        } else if (this._folderId) {
+            info.textContent = this._folderName || '';
+        }
+        this._headerEl.appendChild(info);
+        this._headerEl.appendChild(this._buildToggle());
+    }
+
+    _buildToggle() {
+        const wrap = document.createElement('div');
+        wrap.className = 'view-toggle';
+
+        const btnSeries = document.createElement('button');
+        btnSeries.className = 'view-toggle__btn' + (this._viewMode === 'series' ? ' view-toggle__btn--active' : '');
+        btnSeries.textContent = 'Series';
+
+        const btnAll = document.createElement('button');
+        btnAll.className = 'view-toggle__btn' + (this._viewMode === 'allphotos' ? ' view-toggle__btn--active' : '');
+        btnAll.textContent = 'All photos';
+
+        btnSeries.addEventListener('click', () => this._handleToggle('series'));
+        btnAll.addEventListener('click', () => this._handleToggle('allphotos'));
+
+        wrap.appendChild(btnSeries);
+        wrap.appendChild(btnAll);
+        return wrap;
+    }
+
+    _handleToggle(mode) {
+        if (this._viewMode === mode) return;
+        this._viewMode = mode;
+        this._render().catch(console.error);
+        this._onViewModeChange?.(mode);
+    }
+
+    async _renderSeriesView() {
         const timeline = this._buildTimeline(this._photos);
         const container = document.createElement('div');
         container.className = 'photo-grid-timeline';
@@ -67,6 +119,36 @@ export class PhotoGridPanel {
         }
 
         this._listEl.appendChild(container);
+    }
+
+    _renderAllPhotos() {
+        const grid = document.createElement('div');
+        grid.className = 'review-grid';
+        for (const photo of this._photos) {
+            grid.appendChild(this._makeAllPhotoCell(photo));
+        }
+        this._listEl.appendChild(grid);
+    }
+
+    _makeAllPhotoCell(photo) {
+        const cell = document.createElement('div');
+        cell.className = 'thumb-cell thumb-cell--sm' + (photo.item_type === 'video' ? ' thumb-cell--video' : '');
+        if (photo.width && photo.height) {
+            cell.style.setProperty('--aspect', photo.width / photo.height);
+        }
+        const img = document.createElement('img');
+        img.src = `/api/thumb/${photo.file_id}`;
+        img.alt = '';
+        img.loading = 'lazy';
+        img.onerror = function() { this.style.background = '#333'; this.removeAttribute('src'); };
+        img.onload = () => {
+            if (img.naturalWidth && img.naturalHeight) {
+                cell.style.setProperty('--aspect', img.naturalWidth / img.naturalHeight);
+            }
+        };
+        cell.appendChild(img);
+        cell.addEventListener('click', () => this._onPhotoClick(photo, null));
+        return cell;
     }
 
     _buildTimeline(photos) {
@@ -220,6 +302,6 @@ export class PhotoGridPanel {
                 <p>Navigate to a folder in the left panel. Photospace will scan it and find burst series — groups of photos taken in quick succession. Then pick the best shots and delete the rest.</p>
             </div>
         `;
-        this._headerEl.textContent = '';
+        this._headerEl.innerHTML = '';
     }
 }

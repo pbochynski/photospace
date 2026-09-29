@@ -1,4 +1,4 @@
-import { getSetting, setSetting, getSeriesSettings, getDateFilter, getIgnoredPeriods, addIgnoredPeriod, removeIgnoredPeriod } from './settingsManager.js';
+import { getSetting, setSetting, getSeriesSettings, getPhotoViewSettings, getDateFilter, getIgnoredPeriods, addIgnoredPeriod, removeIgnoredPeriod } from './settingsManager.js';
 import { getCalibration } from './calibration.js';
 
 export class SettingsDrawer {
@@ -17,6 +17,7 @@ export class SettingsDrawer {
         const dateFilter = await getDateFilter();
         const ignoredPeriods = await getIgnoredPeriods();
         const calibration = this._currentFolderId ? await getCalibration(this._currentFolderId) : null;
+        const viewSettings = await getPhotoViewSettings();
 
         this._contentEl.innerHTML = `
             <h3 style="margin-bottom:16px">Advanced Settings</h3>
@@ -38,6 +39,14 @@ export class SettingsDrawer {
                 <div style="display:flex;align-items:center;gap:8px">
                     <input type="range" id="s-min-group-size" min="2" max="100" value="${settings.minGroupSize}" style="flex:1" />
                     <span id="s-min-group-size-val">${settings.minGroupSize}</span>
+                </div>
+            </div>
+
+            <div class="settings-field">
+                <label>All-photos row height (px)</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <input type="range" id="s-thumb-row-height" min="80" max="300" value="${viewSettings.thumbRowHeight}" style="flex:1" />
+                    <span id="s-thumb-row-height-val">${viewSettings.thumbRowHeight}</span>
                 </div>
             </div>
 
@@ -84,6 +93,7 @@ export class SettingsDrawer {
 
         wire('s-max-time-gap', 'seriesMaxTimeGap', Number);
         wire('s-min-group-size', 'seriesMinGroupSize', Number);
+        wire('s-thumb-row-height', 'thumbRowHeight', Number);
 
         const dateEnabled = this._contentEl.querySelector('#s-date-enabled');
         const dateFields = this._contentEl.querySelector('#s-date-fields');
