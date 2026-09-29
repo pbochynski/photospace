@@ -285,6 +285,14 @@ async function handleRecursiveScanClick(folderId, folderName, driveId) {
 }
 
 function openReviewMode() {
+    // If in timeline mode, exit it so the review panel is visible
+    if (appState.viewMode === 'timeline') {
+        appColumns.classList.remove('app-columns--timeline');
+        panelTimeline.hidden = true;
+        btnTimeline.classList.remove('mode-btn--active');
+        btnFolders.classList.add('mode-btn--active');
+        timelinePanel.hide();
+    }
     appColumns.classList.add('app-columns--review-open');
 }
 
