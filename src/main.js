@@ -17,6 +17,7 @@ const appState = {
     viewMode: 'folder',       // 'folder' | 'timeline'
     lastTimelineYear: null,
     lastTimelineMonth: null,
+    reviewReturnMode: 'folder', // 'folder' | 'timeline'
 };
 
 // DOM refs
@@ -287,17 +288,23 @@ async function handleRecursiveScanClick(folderId, folderName, driveId) {
 function openReviewMode() {
     // If in timeline mode, exit it so the review panel is visible
     if (appState.viewMode === 'timeline') {
+        appState.reviewReturnMode = 'timeline';
         appColumns.classList.remove('app-columns--timeline');
         panelTimeline.hidden = true;
         btnTimeline.classList.remove('mode-btn--active');
         btnFolders.classList.add('mode-btn--active');
         timelinePanel.hide();
+    } else {
+        appState.reviewReturnMode = 'folder';
     }
     appColumns.classList.add('app-columns--review-open');
 }
 
 function closeReviewMode() {
     appColumns.classList.remove('app-columns--review-open');
+    if (appState.reviewReturnMode === 'timeline' && appState.lastTimelineYear) {
+        switchToTimeline(appState.lastTimelineYear, appState.lastTimelineMonth).catch(console.error);
+    }
 }
 
 async function handleSeriesClick(series, folderId, index) {
