@@ -13,9 +13,16 @@ export class TimelinePanel {
         this._onPhotoClick = onPhotoClick;
         this._monthIndex = {};
         this._renderedMonths = new Set(); // "YYYY-MM" keys currently in DOM
+        this._loadedPhotos = new Map();   // "YYYY-MM" → Photo[]
         this._observer = null;
         this._currentYear = null;
         this._currentMonth = null;
+    }
+
+    getLoadedPhotos() {
+        const all = [];
+        for (const photos of this._loadedPhotos.values()) all.push(...photos);
+        return all.sort((a, b) => (a.photo_taken_ts || '') < (b.photo_taken_ts || '') ? -1 : 1);
     }
 
     async show(year, month) {
@@ -23,6 +30,7 @@ export class TimelinePanel {
         this._currentMonth = month;
         this._scrollEl.innerHTML = '';
         this._renderedMonths.clear();
+        this._loadedPhotos.clear();
 
         // Load month index for scrubber
         this._monthIndex = (await db.getSetting('monthIndex')) || {};
@@ -73,6 +81,7 @@ export class TimelinePanel {
         if (this._renderedMonths.has(key)) return;
 
         const photos = await db.getPhotosByMonth(year, month);
+        this._loadedPhotos.set(key, photos);
         const settings = await getSeriesSettings();
 
         // findPhotoSeries mutates photo_taken_ts from ISO string to numeric ms.
