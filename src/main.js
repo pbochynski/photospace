@@ -317,8 +317,9 @@ async function handlePhotoClick(photo, series) {
     } else {
         appState.selectedSeries = null;
         appState.selectedFolderIdForSeries = null;
+        const neighbors = photoGridPanel.getPhotos().length > 0 ? photoGridPanel.getPhotos() : [photo];
         // TODO: pass timeline month photos as neighbor list (photoGridPanel.getPhotos() is empty/stale in timeline mode)
-        reviewGrid.openSinglePhoto(photo, photoGridPanel.getPhotos());
+        reviewGrid.openSinglePhoto(photo, neighbors);
     }
 }
 
