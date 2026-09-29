@@ -205,12 +205,16 @@ async function onAuthenticated() {
         if (folder) {
             await handleFolderClick(folder.id, folder.name, folder.driveId);
         } else {
-            // Folder not found in the loaded root tree (e.g. lives in a not-yet-expanded subtree).
-            // We can restore cached photos but cannot enqueue a scan without a driveId.
-            // The user can navigate to the folder in the tree to trigger a scan.
+            // Folder not in loaded root tree — look up persisted name/driveId
+            const folderNames = await db.getSetting('folderNames');
+            const saved = folderNames?.[route.folderId];
+            const name = saved?.name || route.folderId;
+            const driveId = saved?.driveId || null;
             appState.selectedFolderId = route.folderId;
-            appState.selectedFolderName = route.folderId;
-            await photoGridPanel.loadFolder(route.folderId, route.folderId);
+            appState.selectedFolderName = name;
+            folderPanel.setSelected(route.folderId);
+            await photoGridPanel.loadFolder(route.folderId, name);
+            if (driveId) await scanEngine.enqueueFolder(route.folderId, name, driveId, 'high');
         }
     } else if (route.type === 'time') {
         await switchToTimeline(route.year, route.month);
@@ -273,6 +277,11 @@ async function handleFolderClick(folderId, folderName, driveId) {
     folderPanel.setSelected(folderId);
     closeReviewMode();
     navigate(buildFolderRoute(folderId));
+    // Persist name+driveId so boot-time restore can use them without a Graph call
+    db.getSetting('folderNames').then(names => {
+        const updated = { ...(names || {}), [folderId]: { name: folderName, driveId } };
+        db.setSetting('folderNames', updated);
+    });
     await photoGridPanel.loadFolder(folderId, folderName);
     await scanEngine.enqueueFolder(folderId, folderName, driveId, 'high');
 }
